@@ -24,7 +24,7 @@
 <body>
   <nav class="navbar" role="navigation" aria-label="main navigation">
     <div class="navbar-brand">
-      <a class="navbar-item" href="https://bulma.io">
+      <a class="navbar-item" href="{{ url('/') }}">
         <img src="https://bulma.io/images/bulma-logo.png" width="112" height="28">
       </a>
 
@@ -32,6 +32,7 @@
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
+
       </a>
     </div>
 
@@ -68,22 +69,41 @@
         </div>
       </div>
 
+
+
       <div class="navbar-end">
         <div class="navbar-item">
           <div class="buttons">
-            <a class="button is-primary">
-              <strong>Sign up</strong>
+            @if (Route::has('login'))
+
+            @auth
+            <a class="button is-primary" href="{{ url('/') }}">
+              <strong>Home</strong>
             </a>
-            <a class="button is-light">
-              Log in
+            <a class="button is-danger" href="{{ url('/logout') }}">
+              <strong>Logout</strong>
             </a>
+            @else
+
+            <a class="button is-primary" href="{{ route('login') }}">
+              <strong>Login</strong>
+            </a>
+            @if (Route::has('register'))
+            <a class="button" href="{{ route('register') }}">
+              <strong>Register</strong>
+            </a>
+
+            @endif
+            @endif
+
+            @endif
           </div>
         </div>
       </div>
     </div>
   </nav>
 
-  <main class="py-4">
+  <main class="py-4 bg-gray-900">
     @yield('content')
   </main>
 </body>

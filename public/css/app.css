@@ -1,6 +1,11 @@
 @import url(https://fonts.googleapis.com/css?family=Nunito);
 @charset "UTF-8";
 
+.bg-gray-900 {
+  --bg-opacity: 1;
+  background-color: rgba(26, 32, 44, var(--bg-opacity));
+}
+
 /*! bulma.io v0.9.2 | MIT License | github.com/jgthms/bulma */
 
 /* Bulma Utilities */

@@ -1,3 +1,8 @@
+
+.bg-gray-900 {
+  --bg-opacity: 1;
+  background-color: rgba(26, 32, 44, var(--bg-opacity))
+}
 // Fonts
 @import url('https://fonts.googleapis.com/css?family=Nunito');
 
