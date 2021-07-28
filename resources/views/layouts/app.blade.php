@@ -1,107 +1,46 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{{ config('app.name', 'Laravel') }}</title>
 
-    <!-- CSRF Token -->
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap">
 
-    <title>{{ config('app.name', 'Laravel') }}</title>
+        <!-- Styles -->
+        <link rel="stylesheet" href="{{ mix('css/app.css') }}">
 
-    <!-- Scripts -->
-    <script src="{{ asset('js/app.js') }}" defer></script>
+        @livewireStyles
 
-    <!-- Fonts -->
-    <link rel="dns-prefetch" href="//fonts.gstatic.com">
-    <link href="https://fonts.googleapis.com/css?family=Nunito" rel="stylesheet">
+        <!-- Scripts -->
+        <script src="{{ mix('js/app.js') }}" defer></script>
+    </head>
+    <body class="font-sans antialiased">
+        <x-jet-banner />
 
-    <!-- Styles -->
-    <link href="{{ asset('css/app.css') }}" rel="stylesheet">
-</head>
+        <div class="min-h-screen bg-gray-100">
+            @livewire('navigation-menu')
 
-<body>
-    <nav class="navbar" role="navigation" aria-label="main navigation">
-        <div class="navbar-brand">
-            <a class="navbar-item" href="{{ url('/') }}">
-                <img src="https://bulma.io/images/bulma-logo.png" width="112" height="28">
-            </a>
- 
-            <a class="navbar-item" href="{{ url('/home') }}">
-                    Dashboard
-                </a>
-                
-        </div>
-        
-
-        <div id="navbarBasicExample" class="navbar-menu">
-            <div class="navbar-start">
-
-                <a class="navbar-item" href="{{ url('/home') }}">
-                    Dashboard
-                </a>
-
-                <div class="navbar-item has-dropdown is-hoverable">
-                    <a class="navbar-link">
-                        More
-                    </a>
-
-                    <div class="navbar-dropdown">
-                        <a class="navbar-item">
-                            About
-                        </a>
-                        <a class="navbar-item">
-                            Jobs
-                        </a>
-                        <a class="navbar-item">
-                            Contact
-                        </a>
-                        <hr class="navbar-divider">
-                        <a class="navbar-item">
-                            Report an issue
-                        </a>
+            <!-- Page Heading -->
+            @if (isset($header))
+                <header class="bg-white shadow">
+                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                        {{ $header }}
                     </div>
-                </div>
-            </div>
+                </header>
+            @endif
 
-
-
-            <div class="navbar-end">
-                <div class="navbar-item">
-                    <div class="buttons">
-                        @if (Route::has('login'))
-
-                        @auth
-                        <a class="button is-primary" href="{{ url('/') }}">
-                            <strong>Home</strong>
-                        </a>
-                        <a class="button is-danger" href="{{ url('/logout') }}">
-                            <strong>Logout</strong>
-                        </a>
-                        @else
-
-                        <a class="button is-primary" href="{{ route('login') }}">
-                            <strong>Login</strong>
-                        </a>
-                        @if (Route::has('register'))
-                        <a class="button" href="{{ route('register') }}">
-                            <strong>Register</strong>
-                        </a>
-
-                        @endif
-                        @endif
-
-                        @endif
-                    </div>
-                </div>
-            </div>
+            <!-- Page Content -->
+            <main>
+                {{ $slot }}
+            </main>
         </div>
-    </nav>
 
-    <main class="py-4 bg-gray-900">
-        @yield('content')
-    </main>
-</body>
+        @stack('modals')
 
+        @livewireScripts
+    </body>
 </html>
