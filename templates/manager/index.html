@@ -1,0 +1,73 @@
+{{template "title" .}}
+{{define "title"}}Dashboard{{end}}
+
+{{define "content"}}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Today's Sales</h3>
+        <p class="text-3xl font-bold text-gray-900 mt-2">฿0.00</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Orders</h3>
+        <p class="text-3xl font-bold text-gray-900 mt-2">0</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Menu Items</h3>
+        <p class="text-3xl font-bold text-gray-900 mt-2" id="menu-count">-</p>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Categories -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <h2 class="text-lg font-bold">Categories</h2>
+        </div>
+        <div class="p-6" id="categories-list"></div>
+    </div>
+
+    <!-- Menu Items -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <h2 class="text-lg font-bold">Menu Items</h2>
+        </div>
+        <div class="p-6" id="menus-list"></div>
+    </div>
+</div>
+
+<script>
+async function init() {
+    const [menuRes, catRes] = await Promise.all([
+        fetch('/api/menus'),
+        fetch('/api/menu-categories'),
+    ]);
+    const menus = await menuRes.json();
+    const categories = await catRes.json();
+
+    document.getElementById('menu-count').textContent = menus.length;
+
+    document.getElementById('categories-list').innerHTML = categories.length
+        ? categories.map(c => `
+            <div class="flex justify-between items-center py-3 border-b last:border-0">
+                <span class="font-medium">${c.name}</span>
+                <span class="text-sm text-gray-500">ID: ${c.id}</span>
+            </div>
+        `).join('')
+        : '<p class="text-gray-500">No categories</p>';
+
+    document.getElementById('menus-list').innerHTML = menus.length
+        ? menus.map(m => `
+            <div class="flex justify-between items-center py-3 border-b last:border-0">
+                <div>
+                    <span class="font-medium">${m.name}</span>
+                    <span class="text-xs text-gray-400 ml-2">${categories.find(c => c.id === m.category_id)?.name || 'Uncategorized'}</span>
+                </div>
+                <span class="text-sm font-medium text-blue-600">฿${m.price.toFixed(2)}</span>
+            </div>
+        `).join('')
+        : '<p class="text-gray-500">No menu items</p>';
+}
+
+init();
+</script>
+{{end}}

@@ -1,3 +1,4 @@
+# Laravel / PHP
 /node_modules
 /public/hot
 /public/storage
@@ -11,5 +12,40 @@ Homestead.json
 Homestead.yaml
 npm-debug.log
 yarn-error.log
+
+# Go binaries and output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test and coverage
+*.test
+*.out
+coverage.html
+
+# Go workspace
+go.work.sum
+
+# Go vendor (uncomment if not vendoring)
+# vendor/
+
+# Build output
+/bin/
+/dist/
+
+# IDE / Editor
 /.idea
 /.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug
+*.log
+__debug_bin*
