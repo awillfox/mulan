@@ -2,42 +2,97 @@
 {{define "title"}}POS{{end}}
 
 {{define "content"}}
-<div class="flex h-[768px] w-[1024px]">
+<div class="relative flex h-[768px] w-[1024px] overflow-hidden">
     <!-- Left: Menu Items -->
-    <div class="flex-1 flex flex-col">
+    <div class="flex-1 flex flex-col min-w-0">
         <!-- Category Tabs -->
-        <div class="flex bg-white border-b px-2 pt-2 gap-1" id="category-tabs">
+        <div class="flex bg-white border-b px-2 pt-2 gap-1 flex-shrink-0" id="category-tabs">
             <button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>
         </div>
 
-        <!-- Menu Grid -->
-        <div class="flex-1 overflow-y-auto p-3">
-            <div class="grid grid-cols-4 gap-2" id="menu-grid"></div>
+        <!-- Menu Grid — fills remaining height, no scroll -->
+        <div class="flex-1 p-3 min-h-0">
+            <div class="grid grid-cols-4 grid-rows-4 gap-2 h-full" id="menu-grid"></div>
+        </div>
+
+        <!-- Menu Pagination -->
+        <div class="flex items-center justify-between px-4 py-2 border-t bg-white flex-shrink-0">
+            <button id="menu-prev" onclick="menuPrev()"
+                class="px-8 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold text-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
+                ◀ Prev
+            </button>
+            <span id="menu-page-info" class="text-sm text-gray-500 font-medium"></span>
+            <button id="menu-next" onclick="menuNext()"
+                class="px-8 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold text-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
+                Next ▶
+            </button>
         </div>
     </div>
 
     <!-- Right: Order Summary -->
     <div class="w-[320px] bg-white border-l flex flex-col">
-        <div class="p-3 border-b">
+        <div class="p-3 border-b flex-shrink-0 flex items-center justify-between">
             <h2 class="text-lg font-bold">Order</h2>
+            <button onclick="openSettings()"
+                class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200 text-xl">
+                ⚙
+            </button>
         </div>
-        <div class="flex-1 overflow-y-auto p-3" id="order-items"></div>
-        <div class="border-t p-3">
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="hidden absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-64 flex flex-col gap-4">
+                <h3 class="text-lg font-bold text-center">Settings</h3>
+                <button onclick="toggleFullscreen()"
+                    id="fullscreen-btn"
+                    class="w-full py-4 bg-blue-500 text-white rounded-xl font-bold text-base hover:bg-blue-600 active:bg-blue-700">
+                    Enter Full Screen
+                </button>
+                <button onclick="closeSettings()"
+                    class="w-full py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-base hover:bg-gray-300 active:bg-gray-400">
+                    Close
+                </button>
+            </div>
+        </div>
+
+        <!-- Order Items — no scroll -->
+        <div class="flex-1 px-3 pt-2 min-h-0" id="order-items"></div>
+
+        <!-- Order Pagination (shown only when order exceeds one page) -->
+        <div id="order-pagination" class="hidden flex-shrink-0 flex items-center justify-between px-3 py-2 border-t">
+            <button id="order-prev" onclick="orderPrev()"
+                class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
+                ◀
+            </button>
+            <span id="order-page-info" class="text-xs text-gray-500"></span>
+            <button id="order-next" onclick="orderNext()"
+                class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
+                ▶
+            </button>
+        </div>
+
+        <!-- Total + Pay -->
+        <div class="border-t p-3 flex-shrink-0">
             <div class="flex justify-between text-lg font-bold mb-3">
                 <span>Total</span>
                 <span id="order-total">฿0.00</span>
             </div>
-            <button class="w-full bg-green-500 text-white py-3 rounded text-lg font-bold hover:bg-green-600" onclick="checkout()">Pay</button>
+            <button class="w-full bg-green-500 text-white py-3 rounded text-lg font-bold hover:bg-green-600 active:bg-green-700" onclick="checkout()">Pay</button>
         </div>
     </div>
 </div>
 
 <script>
 const API_BASE = "{{.APIBase}}";
+const MENU_PAGE_SIZE = 16;
+const ORDER_PAGE_SIZE = 8;
+
 let menus = [];
 let categories = [];
 let order = [];
 let activeCategory = null;
+let menuPage = 0;
+let orderPage = 0;
 
 async function init() {
     const [menuRes, catRes] = await Promise.all([
@@ -60,25 +115,43 @@ function renderCategories() {
 
 function filterCategory(id) {
     activeCategory = id;
+    menuPage = 0;
     document.querySelectorAll('#category-tabs button').forEach((btn, i) => {
-        if ((id === null && i === 0) || (id !== null && i > 0 && categories[i-1].id === id)) {
-            btn.className = 'px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t';
-        } else {
-            btn.className = 'px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300';
-        }
+        const active = (id === null && i === 0) || (id !== null && i > 0 && categories[i - 1].id === id);
+        btn.className = active
+            ? 'px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t'
+            : 'px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300';
     });
     renderMenus();
 }
 
+function filteredMenus() {
+    return activeCategory === null ? menus : menus.filter(m => m.category_id === activeCategory);
+}
+
 function renderMenus() {
-    const grid = document.getElementById('menu-grid');
-    const filtered = activeCategory === null ? menus : menus.filter(m => m.category_id === activeCategory);
-    grid.innerHTML = filtered.map(m => `
-        <button onclick="addToOrder(${m.id})" class="bg-white border rounded p-3 text-center hover:bg-blue-50 active:bg-blue-100">
-            <div class="font-medium text-sm">${m.name}</div>
-            <div class="text-blue-600 text-sm mt-1">฿${m.price.toFixed(2)}</div>
+    const all = filteredMenus();
+    const totalPages = Math.max(1, Math.ceil(all.length / MENU_PAGE_SIZE));
+    if (menuPage >= totalPages) menuPage = totalPages - 1;
+
+    const page = all.slice(menuPage * MENU_PAGE_SIZE, (menuPage + 1) * MENU_PAGE_SIZE);
+
+    document.getElementById('menu-grid').innerHTML = page.map(m => `
+        <button onclick="addToOrder(${m.id})"
+            class="w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100">
+            <div class="font-bold text-base px-1 text-center leading-tight">${m.name}</div>
+            <div class="text-blue-600 font-medium text-sm mt-1">฿${m.price.toFixed(2)}</div>
         </button>
     `).join('');
+
+    document.getElementById('menu-page-info').textContent = `${menuPage + 1} / ${totalPages}`;
+    document.getElementById('menu-prev').disabled = menuPage === 0;
+    document.getElementById('menu-next').disabled = menuPage >= totalPages - 1;
+}
+
+function menuPrev() { if (menuPage > 0) { menuPage--; renderMenus(); } }
+function menuNext() {
+    if (menuPage < Math.ceil(filteredMenus().length / MENU_PAGE_SIZE) - 1) { menuPage++; renderMenus(); }
 }
 
 function addToOrder(menuId) {
@@ -90,6 +163,13 @@ function addToOrder(menuId) {
         order.push({ id: menu.id, name: menu.name, price: menu.price, qty: 1 });
     }
     renderOrder();
+
+    const item = order.find(o => o.id === menuId);
+    fetch('/vfd/item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: menu.vfd_name || menu.name, qty: item.qty, total: item.price * item.qty }),
+    });
 }
 
 function removeFromOrder(menuId) {
@@ -102,30 +182,77 @@ function removeFromOrder(menuId) {
 }
 
 function renderOrder() {
-    const items = document.getElementById('order-items');
-    items.innerHTML = order.map(o => `
-        <div class="flex justify-between items-center py-2 border-b">
-            <div>
-                <div class="text-sm font-medium">${o.name}</div>
+    const totalPages = Math.max(1, Math.ceil(order.length / ORDER_PAGE_SIZE));
+    if (orderPage >= totalPages) orderPage = totalPages - 1;
+
+    const page = order.slice(orderPage * ORDER_PAGE_SIZE, (orderPage + 1) * ORDER_PAGE_SIZE);
+
+    document.getElementById('order-items').innerHTML = page.map(o => `
+        <div class="flex items-center py-2 border-b gap-2">
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">${o.name}</div>
                 <div class="text-xs text-gray-500">฿${o.price.toFixed(2)} x ${o.qty}</div>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="text-sm font-medium">฿${(o.price * o.qty).toFixed(2)}</span>
-                <button onclick="removeFromOrder(${o.id})" class="text-red-500 text-xs px-1">✕</button>
-            </div>
+            <span class="text-sm font-semibold flex-shrink-0">฿${(o.price * o.qty).toFixed(2)}</span>
+            <button onclick="removeFromOrder(${o.id})"
+                class="w-10 h-10 flex-shrink-0 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-red-200 active:bg-red-300">
+                ✕
+            </button>
         </div>
     `).join('');
 
     const total = order.reduce((sum, o) => sum + o.price * o.qty, 0);
     document.getElementById('order-total').textContent = `฿${total.toFixed(2)}`;
+
+    const pagination = document.getElementById('order-pagination');
+    if (order.length > ORDER_PAGE_SIZE) {
+        pagination.classList.remove('hidden');
+        document.getElementById('order-page-info').textContent = `${orderPage + 1} / ${totalPages}`;
+        document.getElementById('order-prev').disabled = orderPage === 0;
+        document.getElementById('order-next').disabled = orderPage >= totalPages - 1;
+    } else {
+        pagination.classList.add('hidden');
+    }
+}
+
+function orderPrev() { if (orderPage > 0) { orderPage--; renderOrder(); } }
+function orderNext() {
+    if (orderPage < Math.ceil(order.length / ORDER_PAGE_SIZE) - 1) { orderPage++; renderOrder(); }
 }
 
 function checkout() {
     if (order.length === 0) return;
-    alert('Total: ฿' + order.reduce((sum, o) => sum + o.price * o.qty, 0).toFixed(2));
+    fetch('/cash-drawer/open', { method: 'POST' });
     order = [];
+    orderPage = 0;
     renderOrder();
 }
+
+function openSettings() {
+    document.getElementById('settings-modal').classList.remove('hidden');
+    updateFullscreenBtn();
+}
+
+function closeSettings() {
+    document.getElementById('settings-modal').classList.add('hidden');
+}
+
+function updateFullscreenBtn() {
+    const btn = document.getElementById('fullscreen-btn');
+    btn.textContent = document.fullscreenElement ? 'Exit Full Screen' : 'Enter Full Screen';
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+document.addEventListener('fullscreenchange', () => {
+    updateFullscreenBtn();
+});
 
 init();
 </script>

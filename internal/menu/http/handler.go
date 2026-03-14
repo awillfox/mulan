@@ -14,10 +14,11 @@ type MenuHandler struct {
 }
 
 type menuResponse struct {
-	ID    int     `json:"id"`
-	Name  string  `json:"name"`
-	Price float64 `json:"price"`
-	CategoryID *int `json:"category_id,omitempty"`
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	Price      float64 `json:"price"`
+	CategoryID *int32  `json:"category_id,omitempty"`
+	VfdName    *string `json:"vfd_name,omitempty"`
 }
 
 func NewMenuHandler(s *service.MenuService) *MenuHandler {
@@ -25,15 +26,28 @@ func NewMenuHandler(s *service.MenuService) *MenuHandler {
 }
 
 func (h *MenuHandler) List(w http.ResponseWriter, r *http.Request) {
-	menus := h.service.List()
+	menus, err := h.service.List(r.Context())
+	if err != nil {
+		http.Error(w, "failed to list menus", http.StatusInternalServerError)
+		return
+	}
 
 	resp := make([]menuResponse, len(menus))
 	for i, m := range menus {
+		var catID *int32
+		if m.CategoryID.Valid {
+			catID = &m.CategoryID.Int32
+		}
+		var vfdName *string
+		if m.VfdName.Valid {
+			vfdName = &m.VfdName.String
+		}
 		resp[i] = menuResponse{
-			ID:    m.ID,
-			Name:  m.Name,
-			Price: money.New(m.Price, money.THB).AsMajorUnits(),
-			CategoryID: m.CategoryID,
+			ID:         int(m.ID),
+			Name:       m.Name,
+			Price:      money.New(m.Price, money.THB).AsMajorUnits(),
+			CategoryID: catID,
+			VfdName:    vfdName,
 		}
 	}
 

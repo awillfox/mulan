@@ -1,65 +1,31 @@
 package service
 
 import (
-	"errors"
-	"sync"
+	"context"
 
-	"mulan/internal/menucategory/domain"
+	db "mulan/sqlc"
 )
 
 type CategoryService struct {
-	mu         sync.Mutex
-	categories []domain.Category
-	nextID     int
+	q *db.Queries
 }
 
-func NewCategoryService() *CategoryService {
-	return &CategoryService{
-		categories: []domain.Category{
-			{ID: 1, Name: "Coffee"},
-			{ID: 2, Name: "Cold"},
-		},
-		nextID: 3,
-	}
+func NewCategoryService(q *db.Queries) *CategoryService {
+	return &CategoryService{q: q}
 }
 
-func (s *CategoryService) List() []domain.Category {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]domain.Category, len(s.categories))
-	copy(out, s.categories)
-	return out
+func (s *CategoryService) List(ctx context.Context) ([]db.MenuCategory, error) {
+	return s.q.ListMenuCategories(ctx)
 }
 
-func (s *CategoryService) Create(name string) domain.Category {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c := domain.Category{ID: s.nextID, Name: name}
-	s.nextID++
-	s.categories = append(s.categories, c)
-	return c
+func (s *CategoryService) Create(ctx context.Context, name string) (db.MenuCategory, error) {
+	return s.q.CreateMenuCategory(ctx, name)
 }
 
-func (s *CategoryService) Update(id int, name string) (domain.Category, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, c := range s.categories {
-		if c.ID == id {
-			s.categories[i].Name = name
-			return s.categories[i], nil
-		}
-	}
-	return domain.Category{}, errors.New("category not found")
+func (s *CategoryService) Update(ctx context.Context, id int32, name string) (db.MenuCategory, error) {
+	return s.q.UpdateMenuCategory(ctx, db.UpdateMenuCategoryParams{ID: id, Name: name})
 }
 
-func (s *CategoryService) Delete(id int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, c := range s.categories {
-		if c.ID == id {
-			s.categories = append(s.categories[:i], s.categories[i+1:]...)
-			return nil
-		}
-	}
-	return errors.New("category not found")
+func (s *CategoryService) Delete(ctx context.Context, id int32) error {
+	return s.q.DeleteMenuCategory(ctx, id)
 }

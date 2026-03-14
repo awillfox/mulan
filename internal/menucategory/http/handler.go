@@ -19,7 +19,11 @@ func NewCategoryHandler(s *service.CategoryService) *CategoryHandler {
 }
 
 func (h *CategoryHandler) List(w http.ResponseWriter, r *http.Request) {
-	categories := h.service.List()
+	categories, err := h.service.List(r.Context())
+	if err != nil {
+		http.Error(w, "failed to list categories", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(categories)
 }
@@ -39,7 +43,11 @@ func (h *CategoryHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := h.service.Create(req.Name)
+	c, err := h.service.Create(r.Context(), req.Name)
+	if err != nil {
+		http.Error(w, "failed to create category", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(c)
@@ -66,7 +74,7 @@ func (h *CategoryHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := h.service.Update(id, req.Name)
+	c, err := h.service.Update(r.Context(), int32(id), req.Name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -83,7 +91,7 @@ func (h *CategoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Delete(id); err != nil {
+	if err := h.service.Delete(r.Context(), int32(id)); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

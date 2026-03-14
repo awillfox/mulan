@@ -36,6 +36,10 @@ table "menus" {
     type = int
     null = true
   }
+  column "vfd_name" {
+    type = varchar(20)
+    null = true
+  }
 
   primary_key {
     columns = [column.id]
