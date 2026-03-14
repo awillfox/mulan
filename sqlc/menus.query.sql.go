@@ -10,7 +10,7 @@ import (
 )
 
 const getMenu = `-- name: GetMenu :one
-SELECT id, name, price, category_id, vfd_name FROM menus WHERE id = $1
+SELECT id, name, price, category_id, vfd_name, active FROM menus WHERE id = $1
 `
 
 func (q *Queries) GetMenu(ctx context.Context, id int32) (Menu, error) {
@@ -22,12 +22,13 @@ func (q *Queries) GetMenu(ctx context.Context, id int32) (Menu, error) {
 		&i.Price,
 		&i.CategoryID,
 		&i.VfdName,
+		&i.Active,
 	)
 	return i, err
 }
 
 const listMenus = `-- name: ListMenus :many
-SELECT id, name, price, category_id, vfd_name FROM menus ORDER BY id
+SELECT id, name, price, category_id, vfd_name, active FROM menus ORDER BY id
 `
 
 func (q *Queries) ListMenus(ctx context.Context) ([]Menu, error) {
@@ -45,6 +46,7 @@ func (q *Queries) ListMenus(ctx context.Context) ([]Menu, error) {
 			&i.Price,
 			&i.CategoryID,
 			&i.VfdName,
+			&i.Active,
 		); err != nil {
 			return nil, err
 		}

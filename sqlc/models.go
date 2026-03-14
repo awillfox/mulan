@@ -14,9 +14,26 @@ type Menu struct {
 	Price      int64       `json:"price"`
 	CategoryID pgtype.Int4 `json:"category_id"`
 	VfdName    pgtype.Text `json:"vfd_name"`
+	Active     bool        `json:"active"`
 }
 
 type MenuCategory struct {
 	ID   int32  `json:"id"`
 	Name string `json:"name"`
+}
+
+type Order struct {
+	ID        int32              `json:"id"`
+	Code      string             `json:"code"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type OrderItem struct {
+	ID      int32       `json:"id"`
+	OrderID int32       `json:"order_id"`
+	MenuID  pgtype.Int4 `json:"menu_id"`
+	Name    string      `json:"name"`
+	Price   int64       `json:"price"`
+	Qty     int32       `json:"qty"`
 }

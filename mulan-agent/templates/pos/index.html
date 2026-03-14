@@ -90,6 +90,7 @@ const ORDER_PAGE_SIZE = 8;
 let menus = [];
 let categories = [];
 let order = [];
+let orderCode = null;
 let activeCategory = null;
 let menuPage = 0;
 let orderPage = 0;
@@ -136,13 +137,18 @@ function renderMenus() {
 
     const page = all.slice(menuPage * MENU_PAGE_SIZE, (menuPage + 1) * MENU_PAGE_SIZE);
 
-    document.getElementById('menu-grid').innerHTML = page.map(m => `
-        <button onclick="addToOrder(${m.id})"
+    document.getElementById('menu-grid').innerHTML = page.map(m => m.active
+        ? `<button data-menu-id="${m.id}" onclick="addToOrder(${m.id})"
             class="w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100">
             <div class="font-bold text-base px-1 text-center leading-tight">${m.name}</div>
             <div class="text-blue-600 font-medium text-sm mt-1">฿${m.price.toFixed(2)}</div>
-        </button>
-    `).join('');
+        </button>`
+        : `<button data-menu-id="${m.id}" disabled
+            class="w-full h-full bg-gray-100 border-2 border-gray-200 rounded-xl flex flex-col items-center justify-center opacity-50 cursor-not-allowed">
+            <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${m.name}</div>
+            <div class="text-gray-400 font-medium text-sm mt-1">Unavailable</div>
+        </button>`
+    ).join('');
 
     document.getElementById('menu-page-info').textContent = `${menuPage + 1} / ${totalPages}`;
     document.getElementById('menu-prev').disabled = menuPage === 0;
@@ -154,7 +160,14 @@ function menuNext() {
     if (menuPage < Math.ceil(filteredMenus().length / MENU_PAGE_SIZE) - 1) { menuPage++; renderMenus(); }
 }
 
-function addToOrder(menuId) {
+async function addToOrder(menuId) {
+    // Create order on first item
+    if (!orderCode) {
+        const res = await fetch(API_BASE + '/api/orders', { method: 'POST' });
+        const data = await res.json();
+        orderCode = data.code;
+    }
+
     const menu = menus.find(m => m.id === menuId);
     const existing = order.find(o => o.id === menuId);
     if (existing) {
@@ -220,10 +233,33 @@ function orderNext() {
     if (orderPage < Math.ceil(order.length / ORDER_PAGE_SIZE) - 1) { orderPage++; renderOrder(); }
 }
 
-function checkout() {
-    if (order.length === 0) return;
-    fetch('/cash-drawer/open', { method: 'POST' });
+async function checkout() {
+    if (order.length === 0 || !orderCode) return;
+    const btn = document.querySelector('button[onclick="checkout()"]');
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    try {
+        await fetch('/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                order_code: orderCode,
+                items: order.map(o => ({
+                    menu_id: o.id,
+                    name: o.name,
+                    price: o.price,
+                    qty: o.qty,
+                })),
+            }),
+        });
+    } catch (e) {
+        console.error('checkout error:', e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Pay';
+    }
     order = [];
+    orderCode = null;
     orderPage = 0;
     renderOrder();
 }
@@ -254,6 +290,73 @@ document.addEventListener('fullscreenchange', () => {
     updateFullscreenBtn();
 });
 
+// ── Toast ──────────────────────────────────────────────────────────────
+function showToast(msg) {
+    const el = document.createElement('div');
+    el.className = 'bg-gray-900 text-white text-sm px-5 py-3 rounded-xl shadow-lg opacity-0 transition-opacity duration-300';
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+    setTimeout(() => {
+        el.style.opacity = '0';
+        el.addEventListener('transitionend', () => el.remove());
+    }, 5000);
+}
+
+// ── SSE — menu status updates ──────────────────────────────────────────
+function connectEvents() {
+    const url = API_BASE.replace(/^http/, 'http') + '/events';
+    const es = new EventSource(url);
+
+    es.addEventListener('menu_status', e => {
+        const { id, active, name } = JSON.parse(e.data);
+
+        // 1. Update in-memory menu list
+        const menu = menus.find(m => m.id === id);
+        if (menu) menu.active = active;
+
+        // 2. Patch the visible button in-place if it's on the current page
+        const btn = document.querySelector(`[data-menu-id="${id}"]`);
+        if (btn) {
+            if (active) {
+                btn.disabled = false;
+                btn.className = 'w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100';
+                btn.innerHTML = `
+                    <div class="font-bold text-base px-1 text-center leading-tight">${menu.name}</div>
+                    <div class="text-blue-600 font-medium text-sm mt-1">฿${menu.price.toFixed(2)}</div>`;
+            } else {
+                btn.disabled = true;
+                btn.className = 'w-full h-full bg-gray-100 border-2 border-gray-200 rounded-xl flex flex-col items-center justify-center opacity-50 cursor-not-allowed';
+                btn.innerHTML = `
+                    <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${menu.name}</div>
+                    <div class="text-gray-400 font-medium text-sm mt-1">Unavailable</div>`;
+            }
+        }
+
+        // 3. Remove disabled item from current order
+        if (!active) {
+            const idx = order.findIndex(o => o.id === id);
+            if (idx !== -1) {
+                order.splice(idx, 1);
+                renderOrder();
+                showToast(`"${name}" was disabled and removed from your order.`);
+                return;
+            }
+        }
+
+        // 4. Toast for status change (no order impact)
+        showToast(active ? `"${name}" is now available.` : `"${name}" is now unavailable.`);
+    });
+
+    es.onerror = () => {
+        // browser will auto-reconnect; silence the console noise
+    };
+}
+
 init();
+connectEvents();
 </script>
+
+<!-- Toast container -->
+<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none"></div>
 {{end}}

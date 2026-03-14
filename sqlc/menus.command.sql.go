@@ -14,7 +14,7 @@ import (
 const createMenu = `-- name: CreateMenu :one
 INSERT INTO menus (name, price, category_id, vfd_name)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, price, category_id, vfd_name
+RETURNING id, name, price, category_id, vfd_name, active
 `
 
 type CreateMenuParams struct {
@@ -38,6 +38,7 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 		&i.Price,
 		&i.CategoryID,
 		&i.VfdName,
+		&i.Active,
 	)
 	return i, err
 }
@@ -51,10 +52,29 @@ func (q *Queries) DeleteMenu(ctx context.Context, id int32) error {
 	return err
 }
 
+const toggleMenu = `-- name: ToggleMenu :one
+UPDATE menus SET active = NOT active WHERE id = $1
+RETURNING id, name, price, category_id, vfd_name, active
+`
+
+func (q *Queries) ToggleMenu(ctx context.Context, id int32) (Menu, error) {
+	row := q.db.QueryRow(ctx, toggleMenu, id)
+	var i Menu
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Price,
+		&i.CategoryID,
+		&i.VfdName,
+		&i.Active,
+	)
+	return i, err
+}
+
 const updateMenu = `-- name: UpdateMenu :one
 UPDATE menus SET name = $2, price = $3, category_id = $4, vfd_name = $5
 WHERE id = $1
-RETURNING id, name, price, category_id, vfd_name
+RETURNING id, name, price, category_id, vfd_name, active
 `
 
 type UpdateMenuParams struct {
@@ -80,6 +100,7 @@ func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, e
 		&i.Price,
 		&i.CategoryID,
 		&i.VfdName,
+		&i.Active,
 	)
 	return i, err
 }

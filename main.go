@@ -11,10 +11,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/viper"
 
+	"mulan/internal/hub"
 	menuhttp "mulan/internal/menu/http"
 	menuservice "mulan/internal/menu/service"
 	menucategoryhttp "mulan/internal/menucategory/http"
 	menucategoryservice "mulan/internal/menucategory/service"
+	orderhttp "mulan/internal/order/http"
+	orderservice "mulan/internal/order/service"
 	"mulan/internal/web"
 	"mulan/sqlc"
 )
@@ -49,18 +52,30 @@ func main() {
 
 	queries := sqlc.New(pool)
 
+	eventHub := hub.New()
+
 	menuService := menuservice.NewMenuService(queries)
-	menuHandler := menuhttp.NewMenuHandler(menuService)
+	menuHandler := menuhttp.NewMenuHandler(menuService, eventHub)
 
 	categoryService := menucategoryservice.NewCategoryService(queries)
 	categoryHandler := menucategoryhttp.NewCategoryHandler(categoryService)
 
+	orderSvc := orderservice.NewOrderService(queries)
+	orderHandler := orderhttp.NewHandler(orderSvc)
+
 	webHandler := web.NewHandler("templates")
 
 	r.Get("/manager", webHandler.Manager)
+	r.Get("/manager/items", webHandler.Items)
+	r.Get("/events", eventHub.ServeHTTP)
+
+	r.Handle("/elements/*", http.StripPrefix("/elements/", http.FileServer(http.Dir("elements"))))
 
 	r.Route("/api/menus", menuHandler.Routes)
 	r.Route("/api/menu-categories", categoryHandler.Routes)
+	r.Route("/api/orders", orderHandler.Routes)
+	r.Get("/api/dashboard", orderHandler.DashboardSummary)
+	r.Get("/api/dashboard/top-menus", orderHandler.TopMenus)
 	port:= viper.GetString("PORT")
 	log.Println("server starting on :"+port)
 	if err := http.ListenAndServe(":"+port, r); err != nil {

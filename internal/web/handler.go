@@ -18,6 +18,10 @@ func (h *Handler) Manager(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/index.html")
 }
 
+func (h *Handler) Items(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "layouts/manager.html", "manager/items.html")
+}
+
 func (h *Handler) render(w http.ResponseWriter, files ...string) {
 	paths := make([]string, len(files))
 	for i, f := range files {
@@ -31,7 +35,7 @@ func (h *Handler) render(w http.ResponseWriter, files ...string) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, files[0], nil); err != nil {
+	if err := tmpl.ExecuteTemplate(w, filepath.Base(files[0]), nil); err != nil {
 		http.Error(w, "render error", http.StatusInternalServerError)
 	}
 }

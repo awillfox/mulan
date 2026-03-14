@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	db "mulan/sqlc"
 )
 
@@ -16,4 +18,47 @@ func NewMenuService(q *db.Queries) *MenuService {
 
 func (s *MenuService) List(ctx context.Context) ([]db.Menu, error) {
 	return s.q.ListMenus(ctx)
+}
+
+func (s *MenuService) Create(ctx context.Context, name string, priceSatang int64, categoryID *int32, vfdName *string) (db.Menu, error) {
+	catID := pgtype.Int4{}
+	if categoryID != nil {
+		catID = pgtype.Int4{Int32: *categoryID, Valid: true}
+	}
+	vfd := pgtype.Text{}
+	if vfdName != nil && *vfdName != "" {
+		vfd = pgtype.Text{String: *vfdName, Valid: true}
+	}
+	return s.q.CreateMenu(ctx, db.CreateMenuParams{
+		Name:       name,
+		Price:      priceSatang,
+		CategoryID: catID,
+		VfdName:    vfd,
+	})
+}
+
+func (s *MenuService) Update(ctx context.Context, id int32, name string, priceSatang int64, categoryID *int32, vfdName *string) (db.Menu, error) {
+	catID := pgtype.Int4{}
+	if categoryID != nil {
+		catID = pgtype.Int4{Int32: *categoryID, Valid: true}
+	}
+	vfd := pgtype.Text{}
+	if vfdName != nil && *vfdName != "" {
+		vfd = pgtype.Text{String: *vfdName, Valid: true}
+	}
+	return s.q.UpdateMenu(ctx, db.UpdateMenuParams{
+		ID:         id,
+		Name:       name,
+		Price:      priceSatang,
+		CategoryID: catID,
+		VfdName:    vfd,
+	})
+}
+
+func (s *MenuService) Toggle(ctx context.Context, id int32) (db.Menu, error) {
+	return s.q.ToggleMenu(ctx, id)
+}
+
+func (s *MenuService) Delete(ctx context.Context, id int32) error {
+	return s.q.DeleteMenu(ctx, id)
 }

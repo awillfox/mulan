@@ -1,0 +1,258 @@
+{{template "title" .}}
+{{define "title"}}Item Manager{{end}}
+
+{{define "content"}}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+    <!-- ── Categories ── -->
+    <div>
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b flex items-center justify-between">
+                <h2 class="text-lg font-bold">Categories</h2>
+                <button onclick="openCatModal()" class="bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">+ Add</button>
+            </div>
+            <div class="divide-y" id="cat-list"></div>
+        </div>
+    </div>
+
+    <!-- ── Menu Items ── -->
+    <div>
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b flex items-center justify-between">
+                <h2 class="text-lg font-bold">Menu Items</h2>
+                <button onclick="openMenuModal()" class="bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">+ Add</button>
+            </div>
+            <div class="divide-y" id="menu-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Category Modal ── -->
+<div id="cat-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-80 p-6">
+        <h3 class="font-bold text-lg mb-4" id="cat-modal-title">Add Category</h3>
+        <input id="cat-name" type="text" placeholder="Category name"
+               class="w-full border rounded px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <div class="flex justify-end gap-2">
+            <button onclick="closeCatModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
+            <button onclick="saveCat()" class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Menu Modal ── -->
+<div id="menu-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-96 p-6">
+        <h3 class="font-bold text-lg mb-4" id="menu-modal-title">Add Menu Item</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Name</label>
+                <input id="menu-name" type="text" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Price (THB)</label>
+                <input id="menu-price" type="number" min="0" step="0.01" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Category</label>
+                <select id="menu-cat" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— None —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">VFD Name <span class="text-gray-400">(max 20 chars)</span></label>
+                <input id="menu-vfd" type="text" maxlength="20" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+            <button onclick="closeMenuModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
+            <button onclick="saveMenu()" class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let categories = [];
+let menus = [];
+let catEditId = null;
+let menuEditId = null;
+
+// ── Load ──────────────────────────────────────────────
+async function load() {
+    [categories, menus] = await Promise.all([
+        fetch('/api/menu-categories').then(r => r.json()),
+        fetch('/api/menus').then(r => r.json()),
+    ]);
+    renderCategories();
+    renderMenus();
+    populateCatSelect();
+}
+
+// ── Categories ────────────────────────────────────────
+function renderCategories() {
+    const el = document.getElementById('cat-list');
+    if (!categories.length) {
+        el.innerHTML = '<p class="p-6 text-sm text-gray-400">No categories yet.</p>';
+        return;
+    }
+    el.innerHTML = categories.map(c => `
+        <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm font-medium">${esc(c.name)}</span>
+            <div class="flex gap-2">
+                <button onclick="openCatModal(${c.id}, '${esc(c.name)}')"
+                        class="text-xs text-blue-600 hover:underline">Edit</button>
+                <button onclick="deleteCat(${c.id})"
+                        class="text-xs text-red-500 hover:underline">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openCatModal(id, name) {
+    catEditId = id || null;
+    document.getElementById('cat-modal-title').textContent = id ? 'Edit Category' : 'Add Category';
+    document.getElementById('cat-name').value = name || '';
+    document.getElementById('cat-modal').classList.remove('hidden');
+    document.getElementById('cat-name').focus();
+}
+function closeCatModal() {
+    document.getElementById('cat-modal').classList.add('hidden');
+    catEditId = null;
+}
+
+async function saveCat() {
+    const name = document.getElementById('cat-name').value.trim();
+    if (!name) return;
+    if (catEditId) {
+        await fetch(`/api/menu-categories/${catEditId}`, {
+            method: 'PATCH', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name }),
+        });
+    } else {
+        await fetch('/api/menu-categories', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name }),
+        });
+    }
+    closeCatModal();
+    await load();
+}
+
+async function deleteCat(id) {
+    if (!confirm('Delete this category?')) return;
+    await fetch(`/api/menu-categories/${id}`, { method: 'DELETE' });
+    await load();
+}
+
+// ── Menus ─────────────────────────────────────────────
+function renderMenus() {
+    const el = document.getElementById('menu-list');
+    if (!menus.length) {
+        el.innerHTML = '<p class="p-6 text-sm text-gray-400">No menu items yet.</p>';
+        return;
+    }
+    el.innerHTML = menus.map(m => {
+        const cat = categories.find(c => c.id === m.category_id);
+        const toggleLabel = m.active ? 'Disable' : 'Enable';
+        const toggleClass = m.active ? 'text-yellow-600' : 'text-green-600';
+        const rowDim = m.active ? '' : 'opacity-50';
+        return `
+        <div class="flex items-center justify-between px-6 py-3 ${rowDim}">
+            <div>
+                <p class="text-sm font-medium">${esc(m.name)}${m.active ? '' : ' <span class="text-xs bg-gray-200 text-gray-500 rounded px-1">disabled</span>'}</p>
+                <p class="text-xs text-gray-400">${cat ? esc(cat.name) : 'No category'} · ฿${m.price.toFixed(2)}</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="toggleMenu(${m.id})"
+                        class="text-xs ${toggleClass} hover:underline">${toggleLabel}</button>
+                <button onclick="openMenuModal(${m.id})"
+                        class="text-xs text-blue-600 hover:underline">Edit</button>
+                <button onclick="deleteMenu(${m.id})"
+                        class="text-xs text-red-500 hover:underline">Delete</button>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+function populateCatSelect() {
+    const sel = document.getElementById('menu-cat');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— None —</option>' +
+        categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    sel.value = prev;
+}
+
+function openMenuModal(id) {
+    menuEditId = id || null;
+    const m = id ? menus.find(x => x.id === id) : null;
+    document.getElementById('menu-modal-title').textContent = id ? 'Edit Menu Item' : 'Add Menu Item';
+    document.getElementById('menu-name').value  = m ? m.name  : '';
+    document.getElementById('menu-price').value = m ? m.price : '';
+    document.getElementById('menu-cat').value   = m && m.category_id != null ? m.category_id : '';
+    document.getElementById('menu-vfd').value   = m && m.vfd_name ? m.vfd_name : '';
+    populateCatSelect();
+    if (m && m.category_id != null) document.getElementById('menu-cat').value = m.category_id;
+    document.getElementById('menu-modal').classList.remove('hidden');
+    document.getElementById('menu-name').focus();
+}
+function closeMenuModal() {
+    document.getElementById('menu-modal').classList.add('hidden');
+    menuEditId = null;
+}
+
+async function saveMenu() {
+    const name  = document.getElementById('menu-name').value.trim();
+    const price = parseFloat(document.getElementById('menu-price').value);
+    const catVal = document.getElementById('menu-cat').value;
+    const vfd   = document.getElementById('menu-vfd').value.trim() || null;
+    if (!name || isNaN(price)) return;
+
+    const body = {
+        name, price,
+        category_id: catVal ? parseInt(catVal) : null,
+        vfd_name: vfd,
+    };
+
+    if (menuEditId) {
+        await fetch(`/api/menus/${menuEditId}`, {
+            method: 'PATCH', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+        });
+    } else {
+        await fetch('/api/menus', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+        });
+    }
+    closeMenuModal();
+    await load();
+}
+
+async function toggleMenu(id) {
+    await fetch(`/api/menus/${id}/toggle`, { method: 'PATCH' });
+    await load();
+}
+
+async function deleteMenu(id) {
+    if (!confirm('Delete this menu item?')) return;
+    await fetch(`/api/menus/${id}`, { method: 'DELETE' });
+    await load();
+}
+
+// ── Keyboard shortcuts ────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeCatModal(); closeMenuModal(); }
+    if (e.key === 'Enter') {
+        if (!document.getElementById('cat-modal').classList.contains('hidden')) saveCat();
+        if (!document.getElementById('menu-modal').classList.contains('hidden')) saveMenu();
+    }
+});
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+load();
+</script>
+{{end}}
