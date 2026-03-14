@@ -14,10 +14,6 @@ func NewHandler(templateDir string) *Handler {
 	return &Handler{templateDir: templateDir}
 }
 
-func (h *Handler) POS(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/pos.html", "pos/index.html")
-}
-
 func (h *Handler) Manager(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/index.html")
 }

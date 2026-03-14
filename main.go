@@ -48,7 +48,6 @@ func main() {
 
 	webHandler := web.NewHandler("templates")
 
-	r.Get("/pos", webHandler.POS)
 	r.Get("/manager", webHandler.Manager)
 
 	r.Route("/api/menus", menuHandler.Routes)

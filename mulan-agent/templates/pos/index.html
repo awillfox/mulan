@@ -1,0 +1,132 @@
+{{template "title" .}}
+{{define "title"}}POS{{end}}
+
+{{define "content"}}
+<div class="flex h-[768px] w-[1024px]">
+    <!-- Left: Menu Items -->
+    <div class="flex-1 flex flex-col">
+        <!-- Category Tabs -->
+        <div class="flex bg-white border-b px-2 pt-2 gap-1" id="category-tabs">
+            <button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>
+        </div>
+
+        <!-- Menu Grid -->
+        <div class="flex-1 overflow-y-auto p-3">
+            <div class="grid grid-cols-4 gap-2" id="menu-grid"></div>
+        </div>
+    </div>
+
+    <!-- Right: Order Summary -->
+    <div class="w-[320px] bg-white border-l flex flex-col">
+        <div class="p-3 border-b">
+            <h2 class="text-lg font-bold">Order</h2>
+        </div>
+        <div class="flex-1 overflow-y-auto p-3" id="order-items"></div>
+        <div class="border-t p-3">
+            <div class="flex justify-between text-lg font-bold mb-3">
+                <span>Total</span>
+                <span id="order-total">฿0.00</span>
+            </div>
+            <button class="w-full bg-green-500 text-white py-3 rounded text-lg font-bold hover:bg-green-600" onclick="checkout()">Pay</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = "{{.APIBase}}";
+let menus = [];
+let categories = [];
+let order = [];
+let activeCategory = null;
+
+async function init() {
+    const [menuRes, catRes] = await Promise.all([
+        fetch(API_BASE + '/api/menus'),
+        fetch(API_BASE + '/api/menu-categories'),
+    ]);
+    menus = await menuRes.json();
+    categories = await catRes.json();
+    renderCategories();
+    renderMenus();
+}
+
+function renderCategories() {
+    const tabs = document.getElementById('category-tabs');
+    tabs.innerHTML = '<button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>';
+    categories.forEach(c => {
+        tabs.innerHTML += `<button class="px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300" onclick="filterCategory(${c.id})">${c.name}</button>`;
+    });
+}
+
+function filterCategory(id) {
+    activeCategory = id;
+    document.querySelectorAll('#category-tabs button').forEach((btn, i) => {
+        if ((id === null && i === 0) || (id !== null && i > 0 && categories[i-1].id === id)) {
+            btn.className = 'px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t';
+        } else {
+            btn.className = 'px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300';
+        }
+    });
+    renderMenus();
+}
+
+function renderMenus() {
+    const grid = document.getElementById('menu-grid');
+    const filtered = activeCategory === null ? menus : menus.filter(m => m.category_id === activeCategory);
+    grid.innerHTML = filtered.map(m => `
+        <button onclick="addToOrder(${m.id})" class="bg-white border rounded p-3 text-center hover:bg-blue-50 active:bg-blue-100">
+            <div class="font-medium text-sm">${m.name}</div>
+            <div class="text-blue-600 text-sm mt-1">฿${m.price.toFixed(2)}</div>
+        </button>
+    `).join('');
+}
+
+function addToOrder(menuId) {
+    const menu = menus.find(m => m.id === menuId);
+    const existing = order.find(o => o.id === menuId);
+    if (existing) {
+        existing.qty++;
+    } else {
+        order.push({ id: menu.id, name: menu.name, price: menu.price, qty: 1 });
+    }
+    renderOrder();
+}
+
+function removeFromOrder(menuId) {
+    const idx = order.findIndex(o => o.id === menuId);
+    if (idx !== -1) {
+        order[idx].qty--;
+        if (order[idx].qty <= 0) order.splice(idx, 1);
+    }
+    renderOrder();
+}
+
+function renderOrder() {
+    const items = document.getElementById('order-items');
+    items.innerHTML = order.map(o => `
+        <div class="flex justify-between items-center py-2 border-b">
+            <div>
+                <div class="text-sm font-medium">${o.name}</div>
+                <div class="text-xs text-gray-500">฿${o.price.toFixed(2)} x ${o.qty}</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-medium">฿${(o.price * o.qty).toFixed(2)}</span>
+                <button onclick="removeFromOrder(${o.id})" class="text-red-500 text-xs px-1">✕</button>
+            </div>
+        </div>
+    `).join('');
+
+    const total = order.reduce((sum, o) => sum + o.price * o.qty, 0);
+    document.getElementById('order-total').textContent = `฿${total.toFixed(2)}`;
+}
+
+function checkout() {
+    if (order.length === 0) return;
+    alert('Total: ฿' + order.reduce((sum, o) => sum + o.price * o.qty, 0).toFixed(2));
+    order = [];
+    renderOrder();
+}
+
+init();
+</script>
+{{end}}

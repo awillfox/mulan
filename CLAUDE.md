@@ -2,8 +2,10 @@
 
 ## Project Overview
 Go-based Point of Sale (POS) system. Two modules:
-- **mulan** — main POS server (API, web UI)
-- **mulan-agent** — device agent running on POS terminal, controls cash drawer (GS-410B) and VFD display (COM3)
+- **mulan** — main server (API, manager web UI)
+- **mulan-agent** — device agent running on POS terminal, serves POS UI, controls cash drawer (GS-410B) and VFD display (COM3)
+
+Claude will update CLAUDE.md a long the way
 
 ## Target Hardware
 - **POS Terminal:** Flytech POS485, 15" display (1024x768), Windows 11 with VFD display on COM3
@@ -27,8 +29,8 @@ Go-based Point of Sale (POS) system. Two modules:
 - `task sqlcgen` — generate Go code from SQL queries
 
 ## Pages
-- `/pos` — POS interface, fixed 1024x768 for 15" Flytech POS485
-- `/manager` — dashboard, responsive for modern devices
+- `/pos` — POS interface, fixed 1024x768 for 15" Flytech POS485 **(served by mulan-agent)**
+- `/manager` — dashboard, responsive for modern devices **(served by mulan)**
 
 ## API Endpoints
 - `GET /api/menus` — returns list of menus (currently mock data)
@@ -42,12 +44,14 @@ Go-based Point of Sale (POS) system. Two modules:
 - `internal/<feature>/domain/` — domain models/entities
 - `internal/<feature>/service/` — business logic
 - `internal/<feature>/http/` — HTTP handlers
-- `internal/web/` — web page handlers (serves templates)
-- `templates/layouts/` — layout templates (pos.html, manager.html)
-- `templates/pos/` — POS page templates
+- `internal/web/` — web page handlers (serves manager templates)
+- `templates/layouts/` — layout templates (manager.html)
 - `templates/manager/` — manager page templates
+- `mulan-agent/templates/` — POS templates (layouts/pos.html, pos/index.html)
 - `internal/sql/` — SQL query files for sqlc
 - `sqlc/` — generated Go code from sqlc
 - `schema.hcl` — Atlas HCL database schema
 - `sqlc.yml` — sqlc configuration
 - `.env` — environment config (PSQL_URL, etc.)
+- `mulan-agent/main.go` — agent entry point: VFD display, POS web server
+- `mulan-agent/.env` — agent config (API_BASE, PORT)
