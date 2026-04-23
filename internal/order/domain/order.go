@@ -8,9 +8,11 @@ type OrderItem struct {
 }
 
 type CheckoutResult struct {
-	Code      string
-	Subtotal  float64 // THB
-	VAT       float64 // THB
-	Total     float64 // THB
-	Items     []OrderItem
+	Code       string
+	Subtotal   float64 // THB
+	VAT        float64 // THB
+	VATPercent float64
+	ShopName   string
+	Total      float64 // THB
+	Items      []OrderItem
 }

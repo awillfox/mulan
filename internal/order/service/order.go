@@ -9,17 +9,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"mulan/internal/order/domain"
+	settingsservice "mulan/internal/settings/service"
 	"mulan/sqlc"
 )
 
 const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 type OrderService struct {
-	q *sqlc.Queries
+	q        *sqlc.Queries
+	settings *settingsservice.SettingsService
 }
 
-func NewOrderService(q *sqlc.Queries) *OrderService {
-	return &OrderService{q: q}
+func NewOrderService(q *sqlc.Queries, settings *settingsservice.SettingsService) *OrderService {
+	return &OrderService{q: q, settings: settings}
 }
 
 func (s *OrderService) Create(ctx context.Context) (string, error) {
@@ -62,16 +64,19 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []domain
 		return nil, fmt.Errorf("pay order: %w", err)
 	}
 
+	cfg := s.settings.Get()
 	subtotal := float64(subtotalSatang) / 100
-	vat := subtotal * 0.07
+	vat := subtotal * cfg.VatPercent / 100
 	total := subtotal + vat
 
 	return &domain.CheckoutResult{
-		Code:     code,
-		Subtotal: subtotal,
-		VAT:      vat,
-		Total:    total,
-		Items:    items,
+		Code:       code,
+		Subtotal:   subtotal,
+		VAT:        vat,
+		VATPercent: cfg.VatPercent,
+		ShopName:   cfg.ShopName,
+		Total:      total,
+		Items:      items,
 	}, nil
 }
 

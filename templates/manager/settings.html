@@ -1,0 +1,73 @@
+{{template "title" .}}
+{{define "title"}}Settings{{end}}
+
+{{define "content"}}
+<div class="max-w-xl">
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <h2 class="text-lg font-bold">Shop Settings</h2>
+            <p class="text-sm text-gray-500 mt-1">Shop name appears on the receipt header. VAT % is applied at checkout.</p>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Shop Name</label>
+                <input id="shop-name" type="text" maxlength="255"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">VAT Percent <span class="text-gray-400">(0 disables VAT line on receipt)</span></label>
+                <input id="vat-percent" type="number" min="0" max="100" step="0.01"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex items-center justify-between pt-2">
+                <span id="status" class="text-sm text-gray-400"></span>
+                <button onclick="save()"
+                        class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function load() {
+    const r = await fetch('/api/settings');
+    if (!r.ok) { setStatus('Failed to load', true); return; }
+    const s = await r.json();
+    document.getElementById('shop-name').value = s.shop_name || '';
+    document.getElementById('vat-percent').value = s.vat_percent ?? 0;
+}
+
+async function save() {
+    const shop_name = document.getElementById('shop-name').value.trim();
+    const vat_percent = parseFloat(document.getElementById('vat-percent').value);
+    if (!shop_name) { setStatus('Shop name is required', true); return; }
+    if (isNaN(vat_percent) || vat_percent < 0 || vat_percent > 100) {
+        setStatus('VAT must be 0–100', true); return;
+    }
+    setStatus('Saving…');
+    const r = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ shop_name, vat_percent }),
+    });
+    if (!r.ok) { setStatus('Save failed', true); return; }
+    const s = await r.json();
+    document.getElementById('shop-name').value = s.shop_name;
+    document.getElementById('vat-percent').value = s.vat_percent;
+    setStatus('Saved');
+}
+
+function setStatus(msg, err) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'text-sm ' + (err ? 'text-red-500' : 'text-gray-400');
+    if (!err) setTimeout(() => { el.textContent = ''; }, 2000);
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.target.id === 'shop-name' || e.target.id === 'vat-percent')) save();
+});
+
+load();
+</script>
+{{end}}

@@ -31,6 +31,8 @@ Claude will update CLAUDE.md a long the way
 ## Pages
 - `/pos` — POS interface, fixed 1024x768 for 15" Flytech POS485 **(served by mulan-agent)**
 - `/manager` — dashboard, responsive for modern devices **(served by mulan)**
+- `/manager/items` — item/category manager
+- `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
 - `GET /api/menus` — returns list of menus (currently mock data)
@@ -38,6 +40,11 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/menu-categories` — create a menu category `{name}`
 - `PATCH /api/menu-categories/{id}` — update a menu category `{name}`
 - `DELETE /api/menu-categories/{id}` — delete a menu category
+- `GET /api/settings` — returns `{shop_name, vat_percent}`
+- `PATCH /api/settings` — updates `{shop_name, vat_percent}`
+
+## Settings (DB-backed)
+Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name` and `vat_percent` (double precision, 0 disables VAT). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router
@@ -52,6 +59,6 @@ Claude will update CLAUDE.md a long the way
 - `sqlc/` — generated Go code from sqlc
 - `schema.hcl` — Atlas HCL database schema
 - `sqlc.yml` — sqlc configuration
-- `.env` — environment config (PSQL_URL, etc.)
+- `.env` — environment config (PSQL_URL, PSQL_DEV_URL, PSQL_PROD_URL, PORT)
 - `mulan-agent/main.go` — agent entry point: VFD display, POS web server
-- `mulan-agent/.env` — agent config (API_BASE, PORT)
+- `mulan-agent/.env` — agent config (API_BASE, PORT, INPOUTX64_DLL, RECEIPT_PRINTER_ADDR)

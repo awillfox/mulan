@@ -18,6 +18,8 @@ import (
 	menucategoryservice "mulan/internal/menucategory/service"
 	orderhttp "mulan/internal/order/http"
 	orderservice "mulan/internal/order/service"
+	settingshttp "mulan/internal/settings/http"
+	settingsservice "mulan/internal/settings/service"
 	"mulan/internal/web"
 	"mulan/sqlc"
 )
@@ -60,13 +62,20 @@ func main() {
 	categoryService := menucategoryservice.NewCategoryService(queries)
 	categoryHandler := menucategoryhttp.NewCategoryHandler(categoryService)
 
-	orderSvc := orderservice.NewOrderService(queries)
+	settingsSvc, err := settingsservice.NewSettingsService(ctx, queries)
+	if err != nil {
+		log.Fatalf("failed to init settings: %v", err)
+	}
+	settingsHandler := settingshttp.NewHandler(settingsSvc)
+
+	orderSvc := orderservice.NewOrderService(queries, settingsSvc)
 	orderHandler := orderhttp.NewHandler(orderSvc)
 
 	webHandler := web.NewHandler("templates")
 
 	r.Get("/manager", webHandler.Manager)
 	r.Get("/manager/items", webHandler.Items)
+	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
 
 	r.Handle("/elements/*", http.StripPrefix("/elements/", http.FileServer(http.Dir("elements"))))
@@ -74,6 +83,7 @@ func main() {
 	r.Route("/api/menus", menuHandler.Routes)
 	r.Route("/api/menu-categories", categoryHandler.Routes)
 	r.Route("/api/orders", orderHandler.Routes)
+	r.Route("/api/settings", settingsHandler.Routes)
 	r.Get("/api/dashboard", orderHandler.DashboardSummary)
 	r.Get("/api/dashboard/top-menus", orderHandler.TopMenus)
 	port:= viper.GetString("PORT")

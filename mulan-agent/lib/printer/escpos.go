@@ -53,7 +53,7 @@ type OrderItem struct {
 }
 
 // PrintReceipt opens a fresh TCP connection, prints a full receipt, and cuts.
-func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, vat, total float64) error {
+func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, vat, vatPercent, total float64) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -114,11 +114,14 @@ func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, va
 		writeln(runesPadRight(name, printerWidth-16) + fmt.Sprintf("%4d %11.2f", it.Qty, amount))
 	}
 
-	// Subtotal, VAT, Total
+	// Subtotal, VAT, Total — skip Subtotal/VAT lines when VAT is 0.
 	divider()
-	writeln(runesPadRight("Subtotal", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", subtotal))
-	writeln(runesPadRight("VAT 7%", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", vat))
-	divider()
+	if vat > 0 {
+		writeln(runesPadRight("Subtotal", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", subtotal))
+		vatLabel := fmt.Sprintf("VAT %g%%", vatPercent)
+		writeln(runesPadRight(vatLabel, printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", vat))
+		divider()
+	}
 	write(cmdBoldOn)
 	writeln(runesPadRight("TOTAL", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", total))
 	write(cmdBoldOff)

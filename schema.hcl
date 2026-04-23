@@ -1,5 +1,37 @@
 schema "public" {}
 
+table "settings" {
+  schema = schema.public
+
+  column "id" {
+    type    = int
+    null    = false
+    default = 1
+  }
+  column "shop_name" {
+    type    = varchar(255)
+    null    = false
+    default = "My Shop"
+  }
+  column "vat_percent" {
+    type    = double_precision
+    null    = false
+    default = 0
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  check "settings_singleton" {
+    expr = "id = 1"
+  }
+}
+
 table "orders" {
   schema = schema.public
 

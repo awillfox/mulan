@@ -8,6 +8,15 @@ CREATE TABLE "public"."menu_categories" (
   "name" character varying(255) NOT NULL,
   PRIMARY KEY ("id")
 );
+-- Create "settings" table
+CREATE TABLE "public"."settings" (
+  "id" integer NOT NULL DEFAULT 1,
+  "shop_name" character varying(255) NOT NULL DEFAULT 'My Shop',
+  "vat_percent" double precision NOT NULL DEFAULT 0,
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id"),
+  CONSTRAINT "settings_singleton" CHECK (id = 1)
+);
 -- Create "menus" table
 CREATE TABLE "public"."menus" (
   "id" serial NOT NULL,
@@ -25,9 +34,10 @@ CREATE TABLE "public"."orders" (
   "code" character varying(20) NOT NULL,
   "status" character varying(20) NOT NULL DEFAULT 'open',
   "created_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id"),
-  CONSTRAINT "orders_code_key" UNIQUE ("code")
+  PRIMARY KEY ("id")
 );
+-- Create index "orders_code_key" to table: "orders"
+CREATE UNIQUE INDEX "orders_code_key" ON "public"."orders" ("code");
 -- Create "order_items" table
 CREATE TABLE "public"."order_items" (
   "id" serial NOT NULL,
@@ -37,6 +47,6 @@ CREATE TABLE "public"."order_items" (
   "price" bigint NOT NULL,
   "qty" integer NOT NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "order_items_menu_id_fkey" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."orders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+  CONSTRAINT "fk_order_items_menu" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "fk_order_items_order" FOREIGN KEY ("order_id") REFERENCES "public"."orders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );

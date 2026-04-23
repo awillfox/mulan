@@ -114,9 +114,11 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"code":     result.Code,
-		"subtotal": result.Subtotal,
-		"vat":      result.VAT,
-		"total":    result.Total,
+		"code":        result.Code,
+		"subtotal":    result.Subtotal,
+		"vat":         result.VAT,
+		"vat_percent": result.VATPercent,
+		"shop_name":   result.ShopName,
+		"total":       result.Total,
 	})
 }

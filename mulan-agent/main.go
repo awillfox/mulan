@@ -99,14 +99,12 @@ func main() {
 	viper.SetDefault("PORT", "8081")
 	viper.SetDefault("INPOUTX64_DLL", `C:\Tools\inpoutx64.dll`)
 	viper.SetDefault("RECEIPT_PRINTER_ADDR", "")
-	viper.SetDefault("STORE_NAME", "Hua Mulan")
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("no .env file found, using defaults: %v", err)
 	}
 
 	apiBase := viper.GetString("API_BASE")
 	port := viper.GetString("PORT")
-	storeName := viper.GetString("STORE_NAME")
 
 	cashdrawer.Init(viper.GetString("INPOUTX64_DLL"))
 
@@ -146,7 +144,7 @@ func main() {
 	r.Get("/pos", posHandler(apiBase))
 	r.Post("/vfd/item", vfdItemHandler(ctrl))
 	r.Post("/cash-drawer/open", cashDrawerHandler())
-	r.Post("/checkout", checkoutHandler(rcptPrinter, storeName, apiBase))
+	r.Post("/checkout", checkoutHandler(rcptPrinter, apiBase))
 
 	log.Printf("mulan-agent starting on :%s (API_BASE=%s)", port, apiBase)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
@@ -192,13 +190,15 @@ type checkoutRequest struct {
 }
 
 type checkoutResponse struct {
-	Code     string  `json:"code"`
-	Subtotal float64 `json:"subtotal"`
-	VAT      float64 `json:"vat"`
-	Total    float64 `json:"total"`
+	Code       string  `json:"code"`
+	Subtotal   float64 `json:"subtotal"`
+	VAT        float64 `json:"vat"`
+	VATPercent float64 `json:"vat_percent"`
+	ShopName   string  `json:"shop_name"`
+	Total      float64 `json:"total"`
 }
 
-func checkoutHandler(p *printer.Printer, storeName, apiBase string) http.HandlerFunc {
+func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req checkoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -224,7 +224,7 @@ func checkoutHandler(p *printer.Printer, storeName, apiBase string) http.Handler
 			for i, it := range req.Items {
 				items[i] = printer.OrderItem{Name: it.Name, Qty: int(it.Qty), Price: it.Price}
 			}
-			if err := p.PrintReceipt(storeName, items, result.Subtotal, result.VAT, result.Total); err != nil {
+			if err := p.PrintReceipt(result.ShopName, items, result.Subtotal, result.VAT, result.VATPercent, result.Total); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
