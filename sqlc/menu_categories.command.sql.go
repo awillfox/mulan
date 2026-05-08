@@ -36,8 +36,8 @@ RETURNING id, name
 `
 
 type UpdateMenuCategoryParams struct {
-	ID   int32  `json:"id"`
-	Name string `json:"name"`
+	ID   int32  `db:"id" json:"id"`
+	Name string `db:"name" json:"name"`
 }
 
 func (q *Queries) UpdateMenuCategory(ctx context.Context, arg UpdateMenuCategoryParams) (MenuCategory, error) {

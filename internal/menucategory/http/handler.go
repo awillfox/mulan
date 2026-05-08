@@ -2,99 +2,93 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
-
+	"mulan/internal/httpx"
 	"mulan/internal/menucategory/service"
+	"mulan/internal/response"
 )
 
 type CategoryHandler struct {
-	service *service.CategoryService
+	svc *service.CategoryService
 }
 
 func NewCategoryHandler(s *service.CategoryService) *CategoryHandler {
-	return &CategoryHandler{service: s}
+	return &CategoryHandler{svc: s}
 }
 
 func (h *CategoryHandler) List(w http.ResponseWriter, r *http.Request) {
-	categories, err := h.service.List(r.Context())
+	categories, err := h.svc.List(r.Context())
 	if err != nil {
-		http.Error(w, "failed to list categories", http.StatusInternalServerError)
+		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("list categories: %w", err))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(categories)
+	response.OK(w, r, categories)
 }
 
-type createCategoryRequest struct {
+type categoryRequest struct {
 	Name string `json:"name"`
+}
+
+func (req categoryRequest) validate() error {
+	if req.Name == "" {
+		return errors.New("name is required")
+	}
+	return nil
 }
 
 func (h *CategoryHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createCategoryRequest
+	var req categoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
 		return
 	}
-	if req.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if err := req.validate(); err != nil {
+		response.Error(w, r, http.StatusBadRequest, err)
 		return
 	}
-
-	c, err := h.service.Create(r.Context(), req.Name)
+	c, err := h.svc.Create(r.Context(), req.Name)
 	if err != nil {
-		http.Error(w, "failed to create category", http.StatusInternalServerError)
+		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("create category: %w", err))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(c)
-}
-
-type updateCategoryRequest struct {
-	Name string `json:"name"`
+	response.Created(w, r, c)
 }
 
 func (h *CategoryHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	id, err := httpx.URLParamInt32(r, "id")
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		response.Error(w, r, http.StatusBadRequest, err)
 		return
 	}
-
-	var req updateCategoryRequest
+	var req categoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
 		return
 	}
-	if req.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if err := req.validate(); err != nil {
+		response.Error(w, r, http.StatusBadRequest, err)
 		return
 	}
-
-	c, err := h.service.Update(r.Context(), int32(id), req.Name)
+	c, err := h.svc.Update(r.Context(), id, req.Name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		response.Error(w, r, http.StatusNotFound, fmt.Errorf("update category: %w", err))
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	response.OK(w, r, c)
 }
 
 func (h *CategoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	id, err := httpx.URLParamInt32(r, "id")
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		response.Error(w, r, http.StatusBadRequest, err)
 		return
 	}
-
-	if err := h.service.Delete(r.Context(), int32(id)); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		response.Error(w, r, http.StatusNotFound, fmt.Errorf("delete category: %w", err))
 		return
 	}
-
-	w.WriteHeader(http.StatusNoContent)
+	response.NoContent(w, r)
 }

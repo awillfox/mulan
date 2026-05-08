@@ -18,10 +18,10 @@ RETURNING id, name, price, category_id, vfd_name, active
 `
 
 type CreateMenuParams struct {
-	Name       string      `json:"name"`
-	Price      int64       `json:"price"`
-	CategoryID pgtype.Int4 `json:"category_id"`
-	VfdName    pgtype.Text `json:"vfd_name"`
+	Name       string      `db:"name" json:"name"`
+	Price      int64       `db:"price" json:"price"`
+	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
+	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
 }
 
 func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error) {
@@ -78,11 +78,11 @@ RETURNING id, name, price, category_id, vfd_name, active
 `
 
 type UpdateMenuParams struct {
-	ID         int32       `json:"id"`
-	Name       string      `json:"name"`
-	Price      int64       `json:"price"`
-	CategoryID pgtype.Int4 `json:"category_id"`
-	VfdName    pgtype.Text `json:"vfd_name"`
+	ID         int32       `db:"id" json:"id"`
+	Name       string      `db:"name" json:"name"`
+	Price      int64       `db:"price" json:"price"`
+	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
+	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
 }
 
 func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error) {

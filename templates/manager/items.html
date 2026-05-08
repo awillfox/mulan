@@ -63,6 +63,12 @@
                 <label class="block text-sm text-gray-600 mb-1">VFD Name <span class="text-gray-400">(max 20 chars)</span></label>
                 <input id="menu-vfd" type="text" maxlength="20" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Option Groups <span class="text-gray-400">(check to attach)</span></label>
+                <div id="menu-groups" class="border rounded p-2 max-h-40 overflow-y-auto space-y-1 text-sm">
+                    <p class="text-xs text-gray-400">No option groups defined yet.</p>
+                </div>
+            </div>
         </div>
         <div class="flex justify-end gap-2 mt-5">
             <button onclick="closeMenuModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
@@ -72,16 +78,20 @@
 </div>
 
 <script>
+const unwrap = r => r.json().then(d => d.data ?? d);
+
 let categories = [];
 let menus = [];
+let optionGroups = [];
 let catEditId = null;
 let menuEditId = null;
 
 // ── Load ──────────────────────────────────────────────
 async function load() {
-    [categories, menus] = await Promise.all([
-        fetch('/api/menu-categories').then(r => r.json()),
-        fetch('/api/menus').then(r => r.json()),
+    [categories, menus, optionGroups] = await Promise.all([
+        fetch('/api/menu-categories').then(unwrap),
+        fetch('/api/menus').then(unwrap),
+        fetch('/api/option-groups').then(unwrap),
     ]);
     renderCategories();
     renderMenus();
@@ -192,9 +202,25 @@ function openMenuModal(id) {
     document.getElementById('menu-cat').value   = m && m.category_id != null ? m.category_id : '';
     document.getElementById('menu-vfd').value   = m && m.vfd_name ? m.vfd_name : '';
     populateCatSelect();
+    populateGroupCheckboxes(m);
     if (m && m.category_id != null) document.getElementById('menu-cat').value = m.category_id;
     document.getElementById('menu-modal').classList.remove('hidden');
     document.getElementById('menu-name').focus();
+}
+
+function populateGroupCheckboxes(m) {
+    const el = document.getElementById('menu-groups');
+    if (!optionGroups.length) {
+        el.innerHTML = '<p class="text-xs text-gray-400">No option groups defined yet. <a href="/manager/option-groups" class="text-blue-600 underline">Create one</a>.</p>';
+        return;
+    }
+    const attached = new Set((m && m.option_groups || []).map(g => g.id));
+    el.innerHTML = optionGroups.map(g => `
+        <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" value="${g.id}" ${attached.has(g.id) ? 'checked' : ''} class="menu-group-cb">
+            <span>${esc(g.name)} <span class="text-gray-400 text-xs">(${g.selection_mode})</span></span>
+        </label>
+    `).join('');
 }
 function closeMenuModal() {
     document.getElementById('menu-modal').classList.add('hidden');
@@ -214,15 +240,26 @@ async function saveMenu() {
         vfd_name: vfd,
     };
 
+    const groupIds = Array.from(document.querySelectorAll('.menu-group-cb:checked'))
+        .map(cb => parseInt(cb.value));
+
+    let menuId = menuEditId;
     if (menuEditId) {
         await fetch(`/api/menus/${menuEditId}`, {
             method: 'PATCH', headers: {'Content-Type':'application/json'},
             body: JSON.stringify(body),
         });
     } else {
-        await fetch('/api/menus', {
+        const created = await fetch('/api/menus', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify(body),
+        }).then(unwrap);
+        menuId = created.id;
+    }
+    if (menuId) {
+        await fetch(`/api/menus/${menuId}/option-groups`, {
+            method: 'PUT', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ group_ids: groupIds }),
         });
     }
     closeMenuModal();

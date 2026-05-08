@@ -29,10 +29,12 @@
 </div>
 
 <script>
+const unwrap = r => r.json().then(d => d.data ?? d);
+
 async function load() {
     const r = await fetch('/api/settings');
     if (!r.ok) { setStatus('Failed to load', true); return; }
-    const s = await r.json();
+    const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name || '';
     document.getElementById('vat-percent').value = s.vat_percent ?? 0;
 }
@@ -51,7 +53,7 @@ async function save() {
         body: JSON.stringify({ shop_name, vat_percent }),
     });
     if (!r.ok) { setStatus('Save failed', true); return; }
-    const s = await r.json();
+    const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name;
     document.getElementById('vat-percent').value = s.vat_percent;
     setStatus('Saved');

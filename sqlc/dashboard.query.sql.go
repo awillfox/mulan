@@ -11,6 +11,137 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const periodSummary = `-- name: PeriodSummary :one
+SELECT COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
+       COUNT(DISTINCT o.id)::bigint                AS orders,
+       COALESCE(SUM(oi.qty), 0)::bigint            AS items
+FROM orders o
+LEFT JOIN order_items oi ON oi.order_id = o.id
+WHERE o.status = 'paid'
+  AND o.created_at >= $1::timestamptz
+  AND o.created_at <  $2::timestamptz
+`
+
+type PeriodSummaryParams struct {
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+}
+
+type PeriodSummaryRow struct {
+	Revenue int64 `db:"revenue" json:"revenue"`
+	Orders  int64 `db:"orders" json:"orders"`
+	Items   int64 `db:"items" json:"items"`
+}
+
+func (q *Queries) PeriodSummary(ctx context.Context, arg PeriodSummaryParams) (PeriodSummaryRow, error) {
+	row := q.db.QueryRow(ctx, periodSummary, arg.FromAt, arg.ToAt)
+	var i PeriodSummaryRow
+	err := row.Scan(&i.Revenue, &i.Orders, &i.Items)
+	return i, err
+}
+
+const salesByDay = `-- name: SalesByDay :many
+SELECT date_trunc('day', o.created_at)::date AS day,
+       COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
+       COUNT(DISTINCT o.id)::bigint                AS orders,
+       COALESCE(SUM(oi.qty), 0)::bigint            AS items
+FROM orders o
+LEFT JOIN order_items oi ON oi.order_id = o.id
+WHERE o.status = 'paid'
+  AND o.created_at >= $1::timestamptz
+  AND o.created_at <  $2::timestamptz
+GROUP BY day
+ORDER BY day
+`
+
+type SalesByDayParams struct {
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+}
+
+type SalesByDayRow struct {
+	Day     pgtype.Date `db:"day" json:"day"`
+	Revenue int64       `db:"revenue" json:"revenue"`
+	Orders  int64       `db:"orders" json:"orders"`
+	Items   int64       `db:"items" json:"items"`
+}
+
+func (q *Queries) SalesByDay(ctx context.Context, arg SalesByDayParams) ([]SalesByDayRow, error) {
+	rows, err := q.db.Query(ctx, salesByDay, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SalesByDayRow{}
+	for rows.Next() {
+		var i SalesByDayRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.Revenue,
+			&i.Orders,
+			&i.Items,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const salesByHourDOW = `-- name: SalesByHourDOW :many
+SELECT EXTRACT(DOW  FROM o.created_at)::int AS dow,
+       EXTRACT(HOUR FROM o.created_at)::int AS hour,
+       COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
+       COUNT(DISTINCT o.id)::bigint                AS orders
+FROM orders o
+LEFT JOIN order_items oi ON oi.order_id = o.id
+WHERE o.status = 'paid'
+  AND o.created_at >= $1::timestamptz
+  AND o.created_at <  $2::timestamptz
+GROUP BY dow, hour
+ORDER BY dow, hour
+`
+
+type SalesByHourDOWParams struct {
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+}
+
+type SalesByHourDOWRow struct {
+	Dow     int32 `db:"dow" json:"dow"`
+	Hour    int32 `db:"hour" json:"hour"`
+	Revenue int64 `db:"revenue" json:"revenue"`
+	Orders  int64 `db:"orders" json:"orders"`
+}
+
+func (q *Queries) SalesByHourDOW(ctx context.Context, arg SalesByHourDOWParams) ([]SalesByHourDOWRow, error) {
+	rows, err := q.db.Query(ctx, salesByHourDOW, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SalesByHourDOWRow{}
+	for rows.Next() {
+		var i SalesByHourDOWRow
+		if err := rows.Scan(
+			&i.Dow,
+			&i.Hour,
+			&i.Revenue,
+			&i.Orders,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const topMenusBySales = `-- name: TopMenusBySales :many
 SELECT oi.name,
        SUM(oi.qty)::bigint              AS qty_sold,
@@ -26,18 +157,18 @@ LIMIT 10
 `
 
 type TopMenusBySalesParams struct {
-	Column1 pgtype.Timestamptz `json:"column_1"`
-	Column2 pgtype.Timestamptz `json:"column_2"`
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
 }
 
 type TopMenusBySalesRow struct {
-	Name    string `json:"name"`
-	QtySold int64  `json:"qty_sold"`
-	Revenue int64  `json:"revenue"`
+	Name    string `db:"name" json:"name"`
+	QtySold int64  `db:"qty_sold" json:"qty_sold"`
+	Revenue int64  `db:"revenue" json:"revenue"`
 }
 
 func (q *Queries) TopMenusBySales(ctx context.Context, arg TopMenusBySalesParams) ([]TopMenusBySalesRow, error) {
-	rows, err := q.db.Query(ctx, topMenusBySales, arg.Column1, arg.Column2)
+	rows, err := q.db.Query(ctx, topMenusBySales, arg.FromAt, arg.ToAt)
 	if err != nil {
 		return nil, err
 	}

@@ -179,23 +179,44 @@ func cashDrawerHandler() http.HandlerFunc {
 	}
 }
 
+type checkoutRequestItem struct {
+	MenuID    int32   `json:"menu_id"`
+	Name      string  `json:"name"`
+	Price     float64 `json:"price"`
+	Qty       int32   `json:"qty"`
+	OptionIDs []int32 `json:"option_ids"`
+}
+
 type checkoutRequest struct {
-	OrderCode string `json:"order_code"`
-	Items     []struct {
-		MenuID int32   `json:"menu_id"`
-		Name   string  `json:"name"`
-		Price  float64 `json:"price"`
-		Qty    int32   `json:"qty"`
-	} `json:"items"`
+	OrderCode string                `json:"order_code"`
+	Items     []checkoutRequestItem `json:"items"`
+}
+
+type checkoutOption struct {
+	Name       string  `json:"name"`
+	PriceDelta float64 `json:"price_delta"`
+}
+
+type checkoutItem struct {
+	Name    string           `json:"name"`
+	Price   float64          `json:"price"`
+	Qty     int32            `json:"qty"`
+	Options []checkoutOption `json:"options"`
 }
 
 type checkoutResponse struct {
-	Code       string  `json:"code"`
-	Subtotal   float64 `json:"subtotal"`
-	VAT        float64 `json:"vat"`
-	VATPercent float64 `json:"vat_percent"`
-	ShopName   string  `json:"shop_name"`
-	Total      float64 `json:"total"`
+	Code       string         `json:"code"`
+	Subtotal   float64        `json:"subtotal"`
+	VAT        float64        `json:"vat"`
+	VATPercent float64        `json:"vat_percent"`
+	ShopName   string         `json:"shop_name"`
+	Total      float64        `json:"total"`
+	Items      []checkoutItem `json:"items"`
+}
+
+type checkoutEnvelope struct {
+	Data  checkoutResponse `json:"data"`
+	Error string           `json:"error,omitempty"`
 }
 
 func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
@@ -218,11 +239,23 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 			return
 		}
 
-		// Print receipt using backend-computed totals
+		// Print order bill (kitchen ticket) then receipt using backend-computed totals
 		if p != nil {
-			items := make([]printer.OrderItem, len(req.Items))
-			for i, it := range req.Items {
-				items[i] = printer.OrderItem{Name: it.Name, Qty: int(it.Qty), Price: it.Price}
+			items := make([]printer.OrderItem, len(result.Items))
+			for i, it := range result.Items {
+				opts := make([]printer.OrderItemOption, len(it.Options))
+				for j, o := range it.Options {
+					opts[j] = printer.OrderItemOption{Name: o.Name, PriceDelta: o.PriceDelta}
+				}
+				items[i] = printer.OrderItem{
+					Name:    it.Name,
+					Qty:     int(it.Qty),
+					Price:   it.Price,
+					Options: opts,
+				}
+			}
+			if err := p.PrintOrderBill(req.OrderCode, items); err != nil {
+				log.Printf("order bill print error: %v", err)
 			}
 			if err := p.PrintReceipt(result.ShopName, items, result.Subtotal, result.VAT, result.VATPercent, result.Total); err != nil {
 				log.Printf("receipt print error: %v", err)
@@ -248,11 +281,14 @@ func callCheckout(apiBase, code string, items any) (*checkoutResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API returned %d", resp.StatusCode)
 	}
-	var result checkoutResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var env checkoutEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	if env.Error != "" {
+		return nil, fmt.Errorf("API error: %s", env.Error)
+	}
+	return &env.Data, nil
 }
 
 func fetchLogo(url string) []byte {

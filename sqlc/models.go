@@ -9,38 +9,66 @@ import (
 )
 
 type Menu struct {
-	ID         int32       `json:"id"`
-	Name       string      `json:"name"`
-	Price      int64       `json:"price"`
-	CategoryID pgtype.Int4 `json:"category_id"`
-	VfdName    pgtype.Text `json:"vfd_name"`
-	Active     bool        `json:"active"`
+	ID         int32       `db:"id" json:"id"`
+	Name       string      `db:"name" json:"name"`
+	Price      int64       `db:"price" json:"price"`
+	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
+	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
+	Active     bool        `db:"active" json:"active"`
 }
 
 type MenuCategory struct {
-	ID   int32  `json:"id"`
-	Name string `json:"name"`
+	ID   int32  `db:"id" json:"id"`
+	Name string `db:"name" json:"name"`
+}
+
+type MenuOptionGroup struct {
+	MenuID        int32 `db:"menu_id" json:"menu_id"`
+	OptionGroupID int32 `db:"option_group_id" json:"option_group_id"`
+	SortOrder     int32 `db:"sort_order" json:"sort_order"`
+}
+
+type Option struct {
+	ID            int32  `db:"id" json:"id"`
+	OptionGroupID int32  `db:"option_group_id" json:"option_group_id"`
+	Name          string `db:"name" json:"name"`
+	PriceDelta    int64  `db:"price_delta" json:"price_delta"`
+	SortOrder     int32  `db:"sort_order" json:"sort_order"`
+}
+
+type OptionGroup struct {
+	ID            int32  `db:"id" json:"id"`
+	Name          string `db:"name" json:"name"`
+	SelectionMode string `db:"selection_mode" json:"selection_mode"`
 }
 
 type Order struct {
-	ID        int32              `json:"id"`
-	Code      string             `json:"code"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int32              `db:"id" json:"id"`
+	Code      string             `db:"code" json:"code"`
+	Status    string             `db:"status" json:"status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type OrderItem struct {
-	ID      int32       `json:"id"`
-	OrderID int32       `json:"order_id"`
-	MenuID  pgtype.Int4 `json:"menu_id"`
-	Name    string      `json:"name"`
-	Price   int64       `json:"price"`
-	Qty     int32       `json:"qty"`
+	ID      int32       `db:"id" json:"id"`
+	OrderID int32       `db:"order_id" json:"order_id"`
+	MenuID  pgtype.Int4 `db:"menu_id" json:"menu_id"`
+	Name    string      `db:"name" json:"name"`
+	Price   int64       `db:"price" json:"price"`
+	Qty     int32       `db:"qty" json:"qty"`
+}
+
+type OrderItemOption struct {
+	ID          int32       `db:"id" json:"id"`
+	OrderItemID int32       `db:"order_item_id" json:"order_item_id"`
+	OptionID    pgtype.Int4 `db:"option_id" json:"option_id"`
+	Name        string      `db:"name" json:"name"`
+	PriceDelta  int64       `db:"price_delta" json:"price_delta"`
 }
 
 type Setting struct {
-	ID         int32              `json:"id"`
-	ShopName   string             `json:"shop_name"`
-	VatPercent float64            `json:"vat_percent"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	ID         int32              `db:"id" json:"id"`
+	ShopName   string             `db:"shop_name" json:"shop_name"`
+	VatPercent float64            `db:"vat_percent" json:"vat_percent"`
+	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }

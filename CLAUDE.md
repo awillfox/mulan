@@ -8,7 +8,7 @@ Go-based Point of Sale (POS) system. Two modules:
 Claude will update CLAUDE.md a long the way
 
 ## Target Hardware
-- **POS Terminal:** Flytech POS485, 15" display (1024x768), Windows 11 with VFD display on COM3
+- **POS Terminal:** Flytech POS485, 15" display, Windows 11 with VFD display on COM3 (UI is responsive across viewport sizes)
 
 - **Cash Drawer:** GS-410B 
 ## Tech Stack
@@ -29,9 +29,10 @@ Claude will update CLAUDE.md a long the way
 - `task sqlcgen` — generate Go code from SQL queries
 
 ## Pages
-- `/pos` — POS interface, fixed 1024x768 for 15" Flytech POS485 **(served by mulan-agent)**
+- `/pos` — POS interface, responsive layout (target: 15" Flytech POS485, also usable on tablets/desktops) **(served by mulan-agent)**
 - `/manager` — dashboard, responsive for modern devices **(served by mulan)**
-- `/manager/items` — item/category manager
+- `/manager/items` — item/category manager (also attaches option groups to menus)
+- `/manager/option-groups` — manage shared option groups + their options
 - `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
@@ -42,6 +43,17 @@ Claude will update CLAUDE.md a long the way
 - `DELETE /api/menu-categories/{id}` — delete a menu category
 - `GET /api/settings` — returns `{shop_name, vat_percent}`
 - `PATCH /api/settings` — updates `{shop_name, vat_percent}`
+- `GET /api/option-groups` — list groups with their options
+- `POST /api/option-groups` — create group `{name, selection_mode}` (modes: `single_required`/`single_optional`/`multi`)
+- `PATCH /api/option-groups/{id}` — update group
+- `DELETE /api/option-groups/{id}` — delete group
+- `POST /api/option-groups/{id}/options` — create option `{name, price_delta, sort_order}` (price_delta in THB)
+- `PATCH /api/options/{id}` — update option
+- `DELETE /api/options/{id}` — delete option
+- `PUT /api/menus/{id}/option-groups` — set attached groups `{group_ids: [..]}` (replaces all)
+
+## Option Groups
+Shared, reusable option groups attach to menus via `menu_option_groups`. Each group has a selection mode: `single_required` (must pick one), `single_optional` (zero or one), `multi` (any). Options carry a `price_delta` in satang. Order lines snapshot selected options into `order_item_options` (name + price_delta) so receipts stay stable when groups/options edit later. Menu API responses include `option_groups` populated with their options. POS opens a modal whenever a clicked menu has any attached group; selected options print as indented sub-lines on both the order bill (kitchen) and the receipt.
 
 ## Settings (DB-backed)
 Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name` and `vat_percent` (double precision, 0 disables VAT). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).

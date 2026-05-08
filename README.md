@@ -27,7 +27,7 @@ The agent runs on the POS terminal and communicates with the main server over HT
 
 ## Target Hardware
 
-- **POS Terminal:** Flytech POS485, 15" display (1024×768), Windows 11
+- **POS Terminal:** Flytech POS485, 15" display, Windows 11 (POS UI is responsive)
 - **VFD Display:** COM3
 - **Cash Drawer:** GS-410B (controlled via `inpoutx64.dll`)
 
@@ -111,7 +111,7 @@ Layout: `templates/layouts/manager.html`
 
 ### POS UI (`mulan-agent`)
 
-Fixed 1024×768 layout for the Flytech 15" display.
+Responsive layout — primary target is the Flytech 15" display, also usable on tablets/desktops.
 
 | Path | Description | Template |
 |---|---|---|

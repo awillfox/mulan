@@ -2,10 +2,13 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"mulan/internal/response"
 	"mulan/internal/settings/service"
 )
 
@@ -29,8 +32,7 @@ type settingsResponse struct {
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	row := h.svc.Get()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settingsResponse{
+	response.OK(w, r, settingsResponse{
 		ShopName:   row.ShopName,
 		VATPercent: row.VatPercent,
 	})
@@ -41,29 +43,34 @@ type updateRequest struct {
 	VATPercent float64 `json:"vat_percent"`
 }
 
+func (req updateRequest) validate() error {
+	if req.ShopName == "" {
+		return errors.New("shop_name is required")
+	}
+	if req.VATPercent < 0 || req.VATPercent > 100 {
+		return errors.New("vat_percent must be between 0 and 100")
+	}
+	return nil
+}
+
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	var req updateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
 		return
 	}
-	if req.ShopName == "" {
-		http.Error(w, "shop_name is required", http.StatusBadRequest)
-		return
-	}
-	if req.VATPercent < 0 || req.VATPercent > 100 {
-		http.Error(w, "vat_percent must be between 0 and 100", http.StatusBadRequest)
+	if err := req.validate(); err != nil {
+		response.Error(w, r, http.StatusBadRequest, err)
 		return
 	}
 
 	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent)
 	if err != nil {
-		http.Error(w, "failed to update settings", http.StatusInternalServerError)
+		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("update settings: %w", err))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settingsResponse{
+	response.OK(w, r, settingsResponse{
 		ShopName:   row.ShopName,
 		VATPercent: row.VatPercent,
 	})

@@ -2,7 +2,7 @@
 {{define "title"}}POS{{end}}
 
 {{define "content"}}
-<div class="relative flex h-[768px] w-[1024px] overflow-hidden">
+<div class="relative flex flex-col md:flex-row h-screen w-screen overflow-hidden">
     <!-- Left: Menu Items -->
     <div class="flex-1 flex flex-col min-w-0">
         <!-- Category Tabs -->
@@ -12,7 +12,7 @@
 
         <!-- Menu Grid — fills remaining height, no scroll -->
         <div class="flex-1 p-3 min-h-0">
-            <div class="grid grid-cols-4 grid-rows-4 gap-2 h-full" id="menu-grid"></div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 grid-rows-4 gap-2 h-full" id="menu-grid"></div>
         </div>
 
         <!-- Menu Pagination -->
@@ -30,13 +30,28 @@
     </div>
 
     <!-- Right: Order Summary -->
-    <div class="w-[320px] bg-white border-l flex flex-col">
+    <div class="w-full md:w-80 lg:w-96 max-h-[40vh] md:max-h-none bg-white border-t md:border-t-0 md:border-l flex flex-col">
         <div class="p-3 border-b flex-shrink-0 flex items-center justify-between">
             <h2 class="text-lg font-bold">Order</h2>
             <button onclick="openSettings()"
                 class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200 text-xl">
                 ⚙
             </button>
+        </div>
+
+        <!-- Options Modal -->
+        <div id="options-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h3 id="options-title" class="text-lg font-bold"></h3>
+                    <button onclick="closeOptionsModal()" class="text-gray-400 text-2xl leading-none">&times;</button>
+                </div>
+                <div id="options-body" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
+                <div class="p-4 border-t flex gap-2">
+                    <button onclick="closeOptionsModal()" class="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold hover:bg-gray-300 active:bg-gray-400">Cancel</button>
+                    <button id="options-confirm" onclick="confirmOptions()" class="flex-1 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 active:bg-blue-700">Add</button>
+                </div>
+            </div>
         </div>
 
         <!-- Settings Modal -->
@@ -95,13 +110,13 @@ let activeCategory = null;
 let menuPage = 0;
 let orderPage = 0;
 
+const unwrap = r => r.json().then(d => d.data ?? d);
+
 async function init() {
-    const [menuRes, catRes] = await Promise.all([
-        fetch(API_BASE + '/api/menus'),
-        fetch(API_BASE + '/api/menu-categories'),
+    [menus, categories] = await Promise.all([
+        fetch(API_BASE + '/api/menus').then(unwrap),
+        fetch(API_BASE + '/api/menu-categories').then(unwrap),
     ]);
-    menus = await menuRes.json();
-    categories = await catRes.json();
     renderCategories();
     renderMenus();
 }
@@ -160,33 +175,57 @@ function menuNext() {
     if (menuPage < Math.ceil(filteredMenus().length / MENU_PAGE_SIZE) - 1) { menuPage++; renderMenus(); }
 }
 
+function lineKey(menuId, options) {
+    const ids = (options || []).map(o => o.id).sort((a, b) => a - b).join(',');
+    return menuId + '|' + ids;
+}
+
+function unitPrice(line) {
+    return line.price + (line.options || []).reduce((s, o) => s + (o.price_delta || 0), 0);
+}
+
 async function addToOrder(menuId) {
-    // Create order on first item
+    const menu = menus.find(m => m.id === menuId);
+    if (!menu) return;
+    if (menu.option_groups && menu.option_groups.length > 0) {
+        openOptionsModal(menu);
+        return;
+    }
+    await addLine(menu, []);
+}
+
+async function addLine(menu, selectedOptions) {
     if (!orderCode) {
         const res = await fetch(API_BASE + '/api/orders', { method: 'POST' });
         const data = await res.json();
-        orderCode = data.code;
+        orderCode = (data.data && data.data.code) || data.code;
     }
-
-    const menu = menus.find(m => m.id === menuId);
-    const existing = order.find(o => o.id === menuId);
+    const key = lineKey(menu.id, selectedOptions);
+    const existing = order.find(o => o.key === key);
     if (existing) {
         existing.qty++;
     } else {
-        order.push({ id: menu.id, name: menu.name, price: menu.price, qty: 1 });
+        order.push({
+            key,
+            id: menu.id,
+            name: menu.name,
+            price: menu.price,
+            qty: 1,
+            options: selectedOptions,
+        });
     }
     renderOrder();
 
-    const item = order.find(o => o.id === menuId);
+    const line = order.find(o => o.key === key);
     fetch('/vfd/item', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: menu.vfd_name || menu.name, qty: item.qty, total: item.price * item.qty }),
+        body: JSON.stringify({ name: menu.vfd_name || menu.name, qty: line.qty, total: unitPrice(line) * line.qty }),
     });
 }
 
-function removeFromOrder(menuId) {
-    const idx = order.findIndex(o => o.id === menuId);
+function removeFromOrder(key) {
+    const idx = order.findIndex(o => o.key === key);
     if (idx !== -1) {
         order[idx].qty--;
         if (order[idx].qty <= 0) order.splice(idx, 1);
@@ -200,21 +239,29 @@ function renderOrder() {
 
     const page = order.slice(orderPage * ORDER_PAGE_SIZE, (orderPage + 1) * ORDER_PAGE_SIZE);
 
-    document.getElementById('order-items').innerHTML = page.map(o => `
-        <div class="flex items-center py-2 border-b gap-2">
+    document.getElementById('order-items').innerHTML = page.map(o => {
+        const u = unitPrice(o);
+        const optsHTML = (o.options || []).map(op => `
+            <div class="text-xs text-gray-500 pl-2">
+                · ${op.name}${op.price_delta > 0 ? ` <span class="text-gray-400">(+฿${op.price_delta.toFixed(2)})</span>` : ''}
+            </div>
+        `).join('');
+        return `
+        <div class="flex items-start py-2 border-b gap-2">
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium truncate">${o.name}</div>
-                <div class="text-xs text-gray-500">฿${o.price.toFixed(2)} x ${o.qty}</div>
+                ${optsHTML}
+                <div class="text-xs text-gray-500 mt-0.5">฿${u.toFixed(2)} x ${o.qty}</div>
             </div>
-            <span class="text-sm font-semibold flex-shrink-0">฿${(o.price * o.qty).toFixed(2)}</span>
-            <button onclick="removeFromOrder(${o.id})"
+            <span class="text-sm font-semibold flex-shrink-0">฿${(u * o.qty).toFixed(2)}</span>
+            <button onclick="removeFromOrder('${o.key}')"
                 class="w-10 h-10 flex-shrink-0 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-red-200 active:bg-red-300">
                 ✕
             </button>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
-    const total = order.reduce((sum, o) => sum + o.price * o.qty, 0);
+    const total = order.reduce((sum, o) => sum + unitPrice(o) * o.qty, 0);
     document.getElementById('order-total').textContent = `฿${total.toFixed(2)}`;
 
     const pagination = document.getElementById('order-pagination');
@@ -226,6 +273,67 @@ function renderOrder() {
     } else {
         pagination.classList.add('hidden');
     }
+}
+
+// ── Options modal ─────────────────────────────────────────────────────
+let pendingMenu = null;
+
+function openOptionsModal(menu) {
+    pendingMenu = menu;
+    document.getElementById('options-title').textContent = menu.name;
+    const body = document.getElementById('options-body');
+    body.innerHTML = (menu.option_groups || []).map(g => {
+        const isMulti = g.selection_mode === 'multi';
+        const required = g.selection_mode === 'single_required';
+        const inputType = isMulti ? 'checkbox' : 'radio';
+        return `
+            <div data-group-id="${g.id}" data-mode="${g.selection_mode}">
+                <div class="flex items-baseline justify-between mb-2">
+                    <h4 class="font-bold text-base">${g.name}</h4>
+                    <span class="text-xs text-gray-500">${required ? 'Required' : (isMulti ? 'Pick any' : 'Optional')}</span>
+                </div>
+                <div class="space-y-2">
+                    ${(g.options || []).map(o => `
+                        <label class="flex items-center gap-3 px-3 py-3 border rounded-xl cursor-pointer hover:bg-gray-50">
+                            <input type="${inputType}" name="grp-${g.id}" value="${o.id}" data-name="${o.name}" data-delta="${o.price_delta}" class="w-5 h-5">
+                            <span class="flex-1 text-sm font-medium">${o.name}</span>
+                            <span class="text-sm text-gray-500">${o.price_delta > 0 ? '+฿' + o.price_delta.toFixed(2) : (o.price_delta < 0 ? '−฿' + Math.abs(o.price_delta).toFixed(2) : '')}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('options-modal').classList.remove('hidden');
+}
+
+function closeOptionsModal() {
+    document.getElementById('options-modal').classList.add('hidden');
+    pendingMenu = null;
+}
+
+function confirmOptions() {
+    if (!pendingMenu) return;
+    const groupBlocks = document.querySelectorAll('#options-body [data-group-id]');
+    const selected = [];
+    for (const block of groupBlocks) {
+        const mode = block.dataset.mode;
+        const checked = block.querySelectorAll('input:checked');
+        if (mode === 'single_required' && checked.length === 0) {
+            showToast('Please pick an option for ' + block.querySelector('h4').textContent);
+            return;
+        }
+        for (const inp of checked) {
+            selected.push({
+                id: parseInt(inp.value),
+                name: inp.dataset.name,
+                price_delta: parseFloat(inp.dataset.delta) || 0,
+            });
+        }
+    }
+    const menu = pendingMenu;
+    closeOptionsModal();
+    addLine(menu, selected);
 }
 
 function orderPrev() { if (orderPage > 0) { orderPage--; renderOrder(); } }
@@ -249,6 +357,8 @@ async function checkout() {
                     name: o.name,
                     price: o.price,
                     qty: o.qty,
+                    option_ids: (o.options || []).map(op => op.id),
+                    options: o.options || [],
                 })),
             }),
         });

@@ -1,10 +1,24 @@
 package domain
 
+type SelectedOption struct {
+	ID         int32
+	Name       string
+	PriceDelta int64 // satang
+}
+
 type OrderItem struct {
-	MenuID int32
-	Name   string
-	Price  int64 // satang
-	Qty    int32
+	MenuID  int32
+	Name    string
+	Price   int64 // satang
+	Qty     int32
+	Options []SelectedOption
+}
+
+type CheckoutResultItem struct {
+	Name    string
+	Price   int64 // satang, base price per unit
+	Qty     int32
+	Options []SelectedOption
 }
 
 type CheckoutResult struct {
@@ -14,5 +28,5 @@ type CheckoutResult struct {
 	VATPercent float64
 	ShopName   string
 	Total      float64 // THB
-	Items      []OrderItem
+	Items      []CheckoutResultItem
 }

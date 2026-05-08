@@ -45,11 +45,88 @@ func New(addr string, logoBytes []byte) (*Printer, error) {
 	return &Printer{addr: addr, logoBytes: logoBytes}, nil
 }
 
+// OrderItemOption is one selected option for an order line.
+type OrderItemOption struct {
+	Name       string
+	PriceDelta float64 // THB
+}
+
 // OrderItem is one line item on the receipt.
 type OrderItem struct {
-	Name  string
-	Qty   int
-	Price float64 // per unit, THB
+	Name    string
+	Qty     int
+	Price   float64 // per unit base price, THB
+	Options []OrderItemOption
+}
+
+func (it OrderItem) UnitPrice() float64 {
+	p := it.Price
+	for _, o := range it.Options {
+		p += o.PriceDelta
+	}
+	return p
+}
+
+// PrintOrderBill opens a fresh TCP connection, prints a kitchen-style order
+// bill (item list, no prices), and cuts.
+func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
+	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial printer: %w", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	enc := charmap.Windows874.NewEncoder()
+	encode := func(s string) []byte {
+		b, err := enc.String(s)
+		if err != nil {
+			return []byte(s)
+		}
+		return []byte(b)
+	}
+
+	write := func(b []byte) { conn.Write(b) }
+	writeln := func(s string) {
+		conn.Write(encode(s))
+		conn.Write([]byte{0x0A})
+	}
+	divider := func() { writeln(strings.Repeat("-", printerWidth)) }
+
+	write(cmdInit)
+	time.Sleep(50 * time.Millisecond)
+
+	// Header
+	write(cmdAlignCenter)
+	write(cmdBoldOn)
+	writeln(centerText("ORDER BILL", printerWidth))
+	write(cmdBoldOff)
+	divider()
+
+	// Order code + time
+	write(cmdAlignLeft)
+	if orderCode != "" {
+		writeln("Order: " + orderCode)
+	}
+	writeln(time.Now().Format("2006-01-02  15:04:05"))
+	divider()
+
+	// Items — qty x name, no price; options indented as sub-lines
+	for _, it := range items {
+		qty := fmt.Sprintf("%d x ", it.Qty)
+		name := displayTruncate(it.Name, printerWidth-displayWidth(qty))
+		writeln(qty + name)
+		for _, o := range it.Options {
+			writeln("    - " + displayTruncate(o.Name, printerWidth-6))
+		}
+	}
+
+	writeln("")
+	writeln("")
+	write(cmdCut)
+
+	log.Printf("order bill printed: code=%s, %d items", orderCode, len(items))
+	return nil
 }
 
 // PrintReceipt opens a fresh TCP connection, prints a full receipt, and cuts.
@@ -107,11 +184,23 @@ func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, va
 	writeln(runesPadRight("Item", printerWidth-16) + fmt.Sprintf("%4s %11s", "Qty", "Amount"))
 	divider()
 
-	// Items — display-width padding so Thai combining chars align correctly
+	// Items — display-width padding so Thai combining chars align correctly.
+	// Options indented as sub-lines under each item with their price delta.
 	for _, it := range items {
 		name := displayTruncate(it.Name, printerWidth-16)
-		amount := it.Price * float64(it.Qty)
+		amount := it.UnitPrice() * float64(it.Qty)
 		writeln(runesPadRight(name, printerWidth-16) + fmt.Sprintf("%4d %11.2f", it.Qty, amount))
+		for _, o := range it.Options {
+			label := "  + " + o.Name
+			line := displayTruncate(label, printerWidth-16)
+			delta := ""
+			if o.PriceDelta > 0 {
+				delta = fmt.Sprintf("%16.2f", o.PriceDelta)
+			} else {
+				delta = strings.Repeat(" ", 16)
+			}
+			writeln(runesPadRight(line, printerWidth-16) + delta)
+		}
 	}
 
 	// Subtotal, VAT, Total — skip Subtotal/VAT lines when VAT is 0.

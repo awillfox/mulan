@@ -28,8 +28,8 @@ RETURNING id, shop_name, vat_percent, updated_at
 `
 
 type UpdateSettingsParams struct {
-	ShopName   string  `json:"shop_name"`
-	VatPercent float64 `json:"vat_percent"`
+	ShopName   string  `db:"shop_name" json:"shop_name"`
+	VatPercent float64 `db:"vat_percent" json:"vat_percent"`
 }
 
 func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error) {

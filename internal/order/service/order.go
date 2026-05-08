@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"mulan/internal/order/domain"
+	optiongroupservice "mulan/internal/optiongroup/service"
 	settingsservice "mulan/internal/settings/service"
 	"mulan/sqlc"
 )
@@ -16,12 +16,13 @@ import (
 const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 type OrderService struct {
-	q        *sqlc.Queries
-	settings *settingsservice.SettingsService
+	q         *sqlc.Queries
+	settings  *settingsservice.SettingsService
+	optionsvc *optiongroupservice.Service
 }
 
-func NewOrderService(q *sqlc.Queries, settings *settingsservice.SettingsService) *OrderService {
-	return &OrderService{q: q, settings: settings}
+func NewOrderService(q *sqlc.Queries, settings *settingsservice.SettingsService, optionsvc *optiongroupservice.Service) *OrderService {
+	return &OrderService{q: q, settings: settings, optionsvc: optionsvc}
 }
 
 func (s *OrderService) Create(ctx context.Context) (string, error) {
@@ -36,28 +37,82 @@ func (s *OrderService) Create(ctx context.Context) (string, error) {
 	return row.Code, nil
 }
 
-func (s *OrderService) Checkout(ctx context.Context, code string, items []domain.OrderItem) (*domain.CheckoutResult, error) {
+type CheckoutItemInput struct {
+	MenuID    int32
+	Name      string
+	Price     int64 // satang, base unit price
+	Qty       int32
+	OptionIDs []int32
+}
+
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput) (*domain.CheckoutResult, error) {
 	order, err := s.q.GetOrderByCode(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("order not found: %w", err)
 	}
 
+	// Resolve all distinct option IDs once
+	idSet := make(map[int32]struct{})
 	for _, it := range items {
-		menuID := pgtype.Int4{Int32: it.MenuID, Valid: it.MenuID > 0}
-		if err := s.q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
+		for _, oid := range it.OptionIDs {
+			idSet[oid] = struct{}{}
+		}
+	}
+	ids := make([]int32, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	resolved, err := s.optionsvc.ResolveOptions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("resolve options: %w", err)
+	}
+	optByID := make(map[int32]sqlc.Option, len(resolved))
+	for _, o := range resolved {
+		optByID[o.ID] = o
+	}
+
+	resultItems := make([]domain.CheckoutResultItem, 0, len(items))
+	var subtotalSatang int64
+
+	for _, it := range items {
+		opts := make([]domain.SelectedOption, 0, len(it.OptionIDs))
+		var deltaSum int64
+		for _, oid := range it.OptionIDs {
+			o, ok := optByID[oid]
+			if !ok {
+				return nil, fmt.Errorf("option %d not found", oid)
+			}
+			opts = append(opts, domain.SelectedOption{ID: o.ID, Name: o.Name, PriceDelta: o.PriceDelta})
+			deltaSum += o.PriceDelta
+		}
+		unitPrice := it.Price + deltaSum
+		lineTotal := unitPrice * int64(it.Qty)
+		subtotalSatang += lineTotal
+
+		itemID, err := s.q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
 			OrderID: order.ID,
-			MenuID:  menuID,
+			MenuID:  pgtype.Int4{Int32: it.MenuID, Valid: it.MenuID > 0},
 			Name:    it.Name,
 			Price:   it.Price,
 			Qty:     it.Qty,
-		}); err != nil {
+		})
+		if err != nil {
 			return nil, fmt.Errorf("insert order item: %w", err)
 		}
-	}
+		for _, o := range opts {
+			if err := s.q.CreateOrderItemOption(ctx, sqlc.CreateOrderItemOptionParams{
+				OrderItemID: itemID,
+				OptionID:    pgtype.Int4{Int32: o.ID, Valid: true},
+				Name:        o.Name,
+				PriceDelta:  o.PriceDelta,
+			}); err != nil {
+				return nil, fmt.Errorf("insert order item option: %w", err)
+			}
+		}
 
-	subtotalSatang, err := s.q.SumOrderItems(ctx, order.ID)
-	if err != nil {
-		return nil, fmt.Errorf("sum items: %w", err)
+		resultItems = append(resultItems, domain.CheckoutResultItem{
+			Name: it.Name, Price: it.Price, Qty: it.Qty, Options: opts,
+		})
 	}
 
 	if err := s.q.PayOrder(ctx, code); err != nil {
@@ -76,53 +131,8 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []domain
 		VATPercent: cfg.VatPercent,
 		ShopName:   cfg.ShopName,
 		Total:      total,
-		Items:      items,
+		Items:      resultItems,
 	}, nil
-}
-
-type TodaySummary struct {
-	Sales  float64 `json:"sales"`
-	Orders int64   `json:"orders"`
-}
-
-func (s *OrderService) TodaySummary(ctx context.Context) (*TodaySummary, error) {
-	sales, err := s.q.SumTodaySales(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sum today sales: %w", err)
-	}
-	orders, err := s.q.CountTodayOrders(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("count today orders: %w", err)
-	}
-	return &TodaySummary{
-		Sales:  float64(sales) / 100,
-		Orders: orders,
-	}, nil
-}
-
-type TopMenuItem struct {
-	Name    string  `json:"name"`
-	QtySold int64   `json:"qty_sold"`
-	Revenue float64 `json:"revenue"`
-}
-
-func (s *OrderService) TopMenus(ctx context.Context, from, to time.Time) ([]TopMenuItem, error) {
-	rows, err := s.q.TopMenusBySales(ctx, sqlc.TopMenusBySalesParams{
-		Column1: pgtype.Timestamptz{Time: from, Valid: true},
-		Column2: pgtype.Timestamptz{Time: to, Valid: true},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("top menus: %w", err)
-	}
-	result := make([]TopMenuItem, len(rows))
-	for i, r := range rows {
-		result[i] = TopMenuItem{
-			Name:    r.Name,
-			QtySold: r.QtySold,
-			Revenue: float64(r.Revenue) / 100,
-		}
-	}
-	return result, nil
 }
 
 func generateCode() (string, error) {

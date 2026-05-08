@@ -123,6 +123,145 @@ table "menu_categories" {
   }
 }
 
+table "option_groups" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "selection_mode" {
+    type    = varchar(20)
+    null    = false
+    default = "single_required"
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  check "option_groups_selection_mode" {
+    expr = "selection_mode IN ('single_required','single_optional','multi')"
+  }
+}
+
+table "options" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "option_group_id" {
+    type = int
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "price_delta" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
+  column "sort_order" {
+    type    = int
+    null    = false
+    default = 0
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_options_group" {
+    columns     = [column.option_group_id]
+    ref_columns = [table.option_groups.column.id]
+    on_delete   = CASCADE
+  }
+  index "options_group_sort" {
+    columns = [column.option_group_id, column.sort_order]
+  }
+}
+
+table "menu_option_groups" {
+  schema = schema.public
+
+  column "menu_id" {
+    type = int
+    null = false
+  }
+  column "option_group_id" {
+    type = int
+    null = false
+  }
+  column "sort_order" {
+    type    = int
+    null    = false
+    default = 0
+  }
+
+  primary_key {
+    columns = [column.menu_id, column.option_group_id]
+  }
+  foreign_key "fk_mog_menu" {
+    columns     = [column.menu_id]
+    ref_columns = [table.menus.column.id]
+    on_delete   = CASCADE
+  }
+  foreign_key "fk_mog_group" {
+    columns     = [column.option_group_id]
+    ref_columns = [table.option_groups.column.id]
+    on_delete   = CASCADE
+  }
+}
+
+table "order_item_options" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "order_item_id" {
+    type = int
+    null = false
+  }
+  column "option_id" {
+    type = int
+    null = true
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "price_delta" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_oio_order_item" {
+    columns     = [column.order_item_id]
+    ref_columns = [table.order_items.column.id]
+    on_delete   = CASCADE
+  }
+  foreign_key "fk_oio_option" {
+    columns     = [column.option_id]
+    ref_columns = [table.options.column.id]
+    on_delete   = SET_NULL
+  }
+  index "oio_order_item" {
+    columns = [column.order_item_id]
+  }
+}
+
 table "menus" {
   schema = schema.public
 

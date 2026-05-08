@@ -29,26 +29,51 @@ func (q *Queries) CreateOrder(ctx context.Context, code string) (Order, error) {
 	return i, err
 }
 
-const createOrderItem = `-- name: CreateOrderItem :exec
+const createOrderItem = `-- name: CreateOrderItem :one
 INSERT INTO order_items (order_id, menu_id, name, price, qty)
 VALUES ($1, $2, $3, $4, $5)
+RETURNING id
 `
 
 type CreateOrderItemParams struct {
-	OrderID int32       `json:"order_id"`
-	MenuID  pgtype.Int4 `json:"menu_id"`
-	Name    string      `json:"name"`
-	Price   int64       `json:"price"`
-	Qty     int32       `json:"qty"`
+	OrderID int32       `db:"order_id" json:"order_id"`
+	MenuID  pgtype.Int4 `db:"menu_id" json:"menu_id"`
+	Name    string      `db:"name" json:"name"`
+	Price   int64       `db:"price" json:"price"`
+	Qty     int32       `db:"qty" json:"qty"`
 }
 
-func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) error {
-	_, err := q.db.Exec(ctx, createOrderItem,
+func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (int32, error) {
+	row := q.db.QueryRow(ctx, createOrderItem,
 		arg.OrderID,
 		arg.MenuID,
 		arg.Name,
 		arg.Price,
 		arg.Qty,
+	)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createOrderItemOption = `-- name: CreateOrderItemOption :exec
+INSERT INTO order_item_options (order_item_id, option_id, name, price_delta)
+VALUES ($1, $2, $3, $4)
+`
+
+type CreateOrderItemOptionParams struct {
+	OrderItemID int32       `db:"order_item_id" json:"order_item_id"`
+	OptionID    pgtype.Int4 `db:"option_id" json:"option_id"`
+	Name        string      `db:"name" json:"name"`
+	PriceDelta  int64       `db:"price_delta" json:"price_delta"`
+}
+
+func (q *Queries) CreateOrderItemOption(ctx context.Context, arg CreateOrderItemOptionParams) error {
+	_, err := q.db.Exec(ctx, createOrderItemOption,
+		arg.OrderItemID,
+		arg.OptionID,
+		arg.Name,
+		arg.PriceDelta,
 	)
 	return err
 }
