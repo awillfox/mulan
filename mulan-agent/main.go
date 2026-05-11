@@ -95,7 +95,7 @@ func truncate(s string, max int) string {
 func main() {
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
-	viper.SetDefault("API_BASE", "http://localhost:8080")
+	viper.SetDefault("API_BASE", "http://localhost:8085")
 	viper.SetDefault("PORT", "8081")
 	viper.SetDefault("INPOUTX64_DLL", `C:\Tools\inpoutx64.dll`)
 	viper.SetDefault("RECEIPT_PRINTER_ADDR", "")

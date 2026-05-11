@@ -1,7 +1,7 @@
 package http
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"time"
 
@@ -11,6 +11,24 @@ import (
 	"mulan/internal/httpx"
 	"mulan/internal/response"
 )
+
+// maxRangeDays caps how wide a from..to window the dashboard accepts.
+// Wider ranges aggregate over the full order_items table and can produce
+// hundreds of rows; clamp at the handler so a misbehaving client can't
+// pull "all-time" by accident.
+const maxRangeDays = 92
+
+// shopLocation is the IANA zone used for "today" defaults and as the
+// bucket timezone in dashboard SQL. Kept consistent with dashboard.shopTZ.
+var shopLocation = mustLoadLocation("Asia/Bangkok")
+
+func mustLoadLocation(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.Local
+	}
+	return loc
+}
 
 type Handler struct {
 	svc *service.DashboardService
@@ -28,24 +46,30 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/compare", h.Compare)
 }
 
-// rangeFromQuery defaults to today (00:00 → next 00:00) and overrides with
-// `from` / `to` ISO date query params (inclusive day, exclusive end).
+// rangeFromQuery defaults to today (shop-local 00:00 → next 00:00) and
+// overrides with `from` / `to` ISO date query params (inclusive day,
+// exclusive end). Returns 400 if the resulting window exceeds maxRangeDays.
 func rangeFromQuery(r *http.Request) (time.Time, time.Time, error) {
-	loc := time.Local
-	now := time.Now().In(loc)
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	now := time.Now().In(shopLocation)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, shopLocation)
 	from := today
 	to := today.Add(24 * time.Hour)
 
-	if t, ok, err := httpx.DateQuery(r, "from", loc); err != nil {
+	if t, ok, err := httpx.DateQuery(r, "from", shopLocation); err != nil {
 		return time.Time{}, time.Time{}, err
 	} else if ok {
 		from = t
 	}
-	if t, ok, err := httpx.DateQuery(r, "to", loc); err != nil {
+	if t, ok, err := httpx.DateQuery(r, "to", shopLocation); err != nil {
 		return time.Time{}, time.Time{}, err
 	} else if ok {
 		to = t.Add(24 * time.Hour)
+	}
+	if !to.After(from) {
+		return time.Time{}, time.Time{}, errors.New("to must be after from")
+	}
+	if to.Sub(from) > maxRangeDays*24*time.Hour {
+		return time.Time{}, time.Time{}, errors.New("range too large")
 	}
 	return from, to, nil
 }
@@ -53,12 +77,12 @@ func rangeFromQuery(r *http.Request) (time.Time, time.Time, error) {
 func (h *Handler) SalesByDay(w http.ResponseWriter, r *http.Request) {
 	from, to, err := rangeFromQuery(r)
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	out, err := h.svc.SalesByDay(r.Context(), from, to)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("sales by day: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to load sales by day", err)
 		return
 	}
 	response.OK(w, r, out)
@@ -67,12 +91,12 @@ func (h *Handler) SalesByDay(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Heatmap(w http.ResponseWriter, r *http.Request) {
 	from, to, err := rangeFromQuery(r)
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	out, err := h.svc.Heatmap(r.Context(), from, to)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("heatmap: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to load heatmap", err)
 		return
 	}
 	response.OK(w, r, out)
@@ -81,12 +105,12 @@ func (h *Handler) Heatmap(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Compare(w http.ResponseWriter, r *http.Request) {
 	from, to, err := rangeFromQuery(r)
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	out, err := h.svc.Compare(r.Context(), from, to)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("compare: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to compare periods", err)
 		return
 	}
 	response.OK(w, r, out)
@@ -95,7 +119,7 @@ func (h *Handler) Compare(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	out, err := h.svc.TodaySummary(r.Context())
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("summary: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to load summary", err)
 		return
 	}
 	response.OK(w, r, out)
@@ -104,12 +128,12 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) TopMenus(w http.ResponseWriter, r *http.Request) {
 	from, to, err := rangeFromQuery(r)
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	items, err := h.svc.TopMenus(r.Context(), from, to)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("top menus: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to load top menus", err)
 		return
 	}
 	response.OK(w, r, items)

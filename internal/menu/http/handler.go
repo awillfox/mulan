@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/Rhymond/go-money"
@@ -17,9 +18,9 @@ import (
 )
 
 type MenuHandler struct {
-	svc        *service.MenuService
-	optionsvc  *optiongroupservice.Service
-	hub        *hub.Hub
+	svc       *service.MenuService
+	optionsvc *optiongroupservice.Service
+	hub       *hub.Hub
 }
 
 type menuOptionResponse struct {
@@ -90,10 +91,18 @@ func toMenuOptionGroups(groups []optiongroupservice.GroupWithOptions) []menuOpti
 	return out
 }
 
+// satangFromTHB rounds a client-supplied THB amount to integer satang.
+// Direct int64 truncation loses a satang on values like 7.07 because
+// the binary representation of 0.07 sits just below 7×10⁻² — round
+// to the nearest satang instead.
+func satangFromTHB(thb float64) int64 {
+	return int64(math.Round(thb * 100))
+}
+
 func (h *MenuHandler) List(w http.ResponseWriter, r *http.Request) {
 	menus, err := h.svc.List(r.Context())
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("list menus: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to list menus", err)
 		return
 	}
 	ids := make([]int32, len(menus))
@@ -102,7 +111,7 @@ func (h *MenuHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	groupsByMenu, err := h.optionsvc.GroupsForMenus(r.Context(), ids)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("list menu options: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to list menu options", err)
 		return
 	}
 	out := make([]menuResponse, len(menus))
@@ -125,22 +134,25 @@ func (req menuRequest) validate() error {
 	if req.Name == "" {
 		return errors.New("name is required")
 	}
+	if req.Price < 0 {
+		return errors.New("price must be >= 0")
+	}
 	return nil
 }
 
 func (h *MenuHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req menuRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
 	if err := req.validate(); err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	m, err := h.svc.Create(r.Context(), req.Name, int64(req.Price*100), req.CategoryID, req.VfdName)
+	m, err := h.svc.Create(r.Context(), req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("create menu: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to create menu", err)
 		return
 	}
 	response.Created(w, r, toMenuResponse(m))
@@ -149,21 +161,21 @@ func (h *MenuHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *MenuHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := httpx.URLParamInt32(r, "id")
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	var req menuRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
 	if err := req.validate(); err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	m, err := h.svc.Update(r.Context(), id, req.Name, int64(req.Price*100), req.CategoryID, req.VfdName)
+	m, err := h.svc.Update(r.Context(), id, req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("update menu: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to update menu", err)
 		return
 	}
 	response.OK(w, r, toMenuResponse(m))
@@ -172,12 +184,12 @@ func (h *MenuHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *MenuHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	id, err := httpx.URLParamInt32(r, "id")
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	m, err := h.svc.Toggle(r.Context(), id)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("toggle menu: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to toggle menu", err)
 		return
 	}
 	out := toMenuResponse(m)
@@ -188,11 +200,11 @@ func (h *MenuHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 func (h *MenuHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := httpx.URLParamInt32(r, "id")
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("delete menu: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to delete menu", err)
 		return
 	}
 	response.NoContent(w, r)

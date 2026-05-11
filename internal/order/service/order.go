@@ -3,26 +3,39 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mulan/internal/order/domain"
-	optiongroupservice "mulan/internal/optiongroup/service"
 	settingsservice "mulan/internal/settings/service"
 	"mulan/sqlc"
 )
 
 const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
+// Sentinel errors translated to specific HTTP statuses by the handler.
+var (
+	ErrAlreadyPaid    = errors.New("order already paid")
+	ErrNoItems        = errors.New("no items")
+	ErrUnknownMenu    = errors.New("unknown menu")
+	ErrMenuInactive   = errors.New("menu inactive")
+	ErrInvalidOption  = errors.New("option not allowed for menu")
+	ErrUnknownOption  = errors.New("unknown option")
+	ErrMissingRequired = errors.New("missing required option")
+)
+
 type OrderService struct {
-	q         *sqlc.Queries
-	settings  *settingsservice.SettingsService
-	optionsvc *optiongroupservice.Service
+	pool     *pgxpool.Pool
+	q        *sqlc.Queries
+	settings *settingsservice.SettingsService
 }
 
-func NewOrderService(q *sqlc.Queries, settings *settingsservice.SettingsService, optionsvc *optiongroupservice.Service) *OrderService {
-	return &OrderService{q: q, settings: settings, optionsvc: optionsvc}
+func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsservice.SettingsService) *OrderService {
+	return &OrderService{pool: pool, q: q, settings: settings}
 }
 
 func (s *OrderService) Create(ctx context.Context) (string, error) {
@@ -37,70 +50,89 @@ func (s *OrderService) Create(ctx context.Context) (string, error) {
 	return row.Code, nil
 }
 
+// CheckoutItemInput is what the handler accepts from the client. The server
+// only trusts MenuID, Qty, and OptionIDs — Name and Price are looked up
+// server-side from the menus/options tables.
 type CheckoutItemInput struct {
 	MenuID    int32
-	Name      string
-	Price     int64 // satang, base unit price
 	Qty       int32
 	OptionIDs []int32
 }
 
+// Checkout finalises an open order: it validates every line against the
+// authoritative menu/option data, persists order_items + order_item_options,
+// marks the order paid, and returns totals. The whole flow runs in a single
+// transaction so any failure rolls back cleanly. Calling Checkout on an
+// already-paid order returns ErrAlreadyPaid so the caller can map it to 409
+// instead of double-charging.
 func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput) (*domain.CheckoutResult, error) {
-	order, err := s.q.GetOrderByCode(ctx, code)
-	if err != nil {
-		return nil, fmt.Errorf("order not found: %w", err)
+	if len(items) == 0 {
+		return nil, ErrNoItems
+	}
+	if err := validateInputs(items); err != nil {
+		return nil, err
 	}
 
-	// Resolve all distinct option IDs once
-	idSet := make(map[int32]struct{})
-	for _, it := range items {
-		for _, oid := range it.OptionIDs {
-			idSet[oid] = struct{}{}
-		}
-	}
-	ids := make([]int32, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
-	}
-	resolved, err := s.optionsvc.ResolveOptions(ctx, ids)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("resolve options: %w", err)
+		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	optByID := make(map[int32]sqlc.Option, len(resolved))
-	for _, o := range resolved {
-		optByID[o.ID] = o
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	order, err := q.GetOrderByCode(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("get order: %w", err)
+	}
+	if order.Status == "paid" {
+		return nil, ErrAlreadyPaid
+	}
+
+	menuByID, err := loadMenus(ctx, q, items)
+	if err != nil {
+		return nil, err
+	}
+	allowedGroupByMenu, err := loadAllowedGroups(ctx, q, menuByID)
+	if err != nil {
+		return nil, err
+	}
+	optByID, err := loadOptions(ctx, q, items)
+	if err != nil {
+		return nil, err
 	}
 
 	resultItems := make([]domain.CheckoutResultItem, 0, len(items))
 	var subtotalSatang int64
 
-	for _, it := range items {
-		opts := make([]domain.SelectedOption, 0, len(it.OptionIDs))
-		var deltaSum int64
-		for _, oid := range it.OptionIDs {
-			o, ok := optByID[oid]
-			if !ok {
-				return nil, fmt.Errorf("option %d not found", oid)
-			}
-			opts = append(opts, domain.SelectedOption{ID: o.ID, Name: o.Name, PriceDelta: o.PriceDelta})
-			deltaSum += o.PriceDelta
+	for _, in := range items {
+		m, ok := menuByID[in.MenuID]
+		if !ok {
+			return nil, ErrUnknownMenu
 		}
-		unitPrice := it.Price + deltaSum
-		lineTotal := unitPrice * int64(it.Qty)
-		subtotalSatang += lineTotal
+		if !m.Active {
+			return nil, ErrMenuInactive
+		}
 
-		itemID, err := s.q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
+		opts, deltaSum, err := resolveLineOptions(in, optByID, allowedGroupByMenu[m.ID])
+		if err != nil {
+			return nil, err
+		}
+
+		unitPrice := m.Price + deltaSum
+		subtotalSatang += unitPrice * int64(in.Qty)
+
+		itemID, err := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
 			OrderID: order.ID,
-			MenuID:  pgtype.Int4{Int32: it.MenuID, Valid: it.MenuID > 0},
-			Name:    it.Name,
-			Price:   it.Price,
-			Qty:     it.Qty,
+			MenuID:  pgtype.Int4{Int32: m.ID, Valid: true},
+			Name:    m.Name,
+			Price:   m.Price,
+			Qty:     in.Qty,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("insert order item: %w", err)
 		}
 		for _, o := range opts {
-			if err := s.q.CreateOrderItemOption(ctx, sqlc.CreateOrderItemOptionParams{
+			if err := q.CreateOrderItemOption(ctx, sqlc.CreateOrderItemOptionParams{
 				OrderItemID: itemID,
 				OptionID:    pgtype.Int4{Int32: o.ID, Valid: true},
 				Name:        o.Name,
@@ -111,28 +143,155 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		}
 
 		resultItems = append(resultItems, domain.CheckoutResultItem{
-			Name: it.Name, Price: it.Price, Qty: it.Qty, Options: opts,
+			Name:    m.Name,
+			Price:   m.Price,
+			Qty:     in.Qty,
+			Options: opts,
 		})
 	}
 
-	if err := s.q.PayOrder(ctx, code); err != nil {
+	if err := q.PayOrder(ctx, code); err != nil {
 		return nil, fmt.Errorf("pay order: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
 	}
 
 	cfg := s.settings.Get()
-	subtotal := float64(subtotalSatang) / 100
-	vat := subtotal * cfg.VatPercent / 100
-	total := subtotal + vat
+	vatSatang := subtotalSatang * int64(cfg.VatPercent*100) / 10000
+	totalSatang := subtotalSatang + vatSatang
 
 	return &domain.CheckoutResult{
 		Code:       code,
-		Subtotal:   subtotal,
-		VAT:        vat,
+		Subtotal:   float64(subtotalSatang) / 100,
+		VAT:        float64(vatSatang) / 100,
 		VATPercent: cfg.VatPercent,
 		ShopName:   cfg.ShopName,
-		Total:      total,
+		Total:      float64(totalSatang) / 100,
 		Items:      resultItems,
 	}, nil
+}
+
+func validateInputs(items []CheckoutItemInput) error {
+	for _, in := range items {
+		if in.MenuID <= 0 {
+			return ErrUnknownMenu
+		}
+		if in.Qty <= 0 {
+			return fmt.Errorf("qty must be > 0 for menu %d", in.MenuID)
+		}
+	}
+	return nil
+}
+
+func loadMenus(ctx context.Context, q *sqlc.Queries, items []CheckoutItemInput) (map[int32]sqlc.Menu, error) {
+	ids := uniqueMenuIDs(items)
+	rows, err := q.GetMenusByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load menus: %w", err)
+	}
+	out := make(map[int32]sqlc.Menu, len(rows))
+	for _, m := range rows {
+		out[m.ID] = m
+	}
+	for _, id := range ids {
+		if _, ok := out[id]; !ok {
+			return nil, fmt.Errorf("%w: %d", ErrUnknownMenu, id)
+		}
+	}
+	return out, nil
+}
+
+func loadAllowedGroups(ctx context.Context, q *sqlc.Queries, menus map[int32]sqlc.Menu) (map[int32]map[int32]struct{}, error) {
+	menuIDs := make([]int32, 0, len(menus))
+	for id := range menus {
+		menuIDs = append(menuIDs, id)
+	}
+	links, err := q.ListMenuOptionGroupLinks(ctx, menuIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list menu option group links: %w", err)
+	}
+	out := make(map[int32]map[int32]struct{}, len(menus))
+	for _, l := range links {
+		set, ok := out[l.MenuID]
+		if !ok {
+			set = make(map[int32]struct{})
+			out[l.MenuID] = set
+		}
+		set[l.OptionGroupID] = struct{}{}
+	}
+	return out, nil
+}
+
+func loadOptions(ctx context.Context, q *sqlc.Queries, items []CheckoutItemInput) (map[int32]sqlc.Option, error) {
+	ids := uniqueOptionIDs(items)
+	if len(ids) == 0 {
+		return map[int32]sqlc.Option{}, nil
+	}
+	rows, err := q.GetOptionsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load options: %w", err)
+	}
+	out := make(map[int32]sqlc.Option, len(rows))
+	for _, o := range rows {
+		out[o.ID] = o
+	}
+	for _, id := range ids {
+		if _, ok := out[id]; !ok {
+			return nil, fmt.Errorf("%w: %d", ErrUnknownOption, id)
+		}
+	}
+	return out, nil
+}
+
+// resolveLineOptions returns the (server-trusted) options for one line and
+// their summed price delta. Each option must belong to an option group that
+// is attached to the menu being ordered, otherwise we reject the line —
+// otherwise a malicious client could pick a cheap menu and attach the
+// "extra-large" option from a totally unrelated menu.
+func resolveLineOptions(in CheckoutItemInput, optByID map[int32]sqlc.Option, allowedGroups map[int32]struct{}) ([]domain.SelectedOption, int64, error) {
+	opts := make([]domain.SelectedOption, 0, len(in.OptionIDs))
+	var delta int64
+	for _, oid := range in.OptionIDs {
+		o, ok := optByID[oid]
+		if !ok {
+			return nil, 0, fmt.Errorf("%w: %d", ErrUnknownOption, oid)
+		}
+		if _, allowed := allowedGroups[o.OptionGroupID]; !allowed {
+			return nil, 0, fmt.Errorf("%w: option %d (group %d) not attached to menu %d", ErrInvalidOption, oid, o.OptionGroupID, in.MenuID)
+		}
+		opts = append(opts, domain.SelectedOption{ID: o.ID, Name: o.Name, PriceDelta: o.PriceDelta})
+		delta += o.PriceDelta
+	}
+	return opts, delta, nil
+}
+
+func uniqueMenuIDs(items []CheckoutItemInput) []int32 {
+	seen := make(map[int32]struct{}, len(items))
+	out := make([]int32, 0, len(items))
+	for _, it := range items {
+		if _, ok := seen[it.MenuID]; ok {
+			continue
+		}
+		seen[it.MenuID] = struct{}{}
+		out = append(out, it.MenuID)
+	}
+	return out
+}
+
+func uniqueOptionIDs(items []CheckoutItemInput) []int32 {
+	seen := make(map[int32]struct{})
+	out := make([]int32, 0)
+	for _, it := range items {
+		for _, oid := range it.OptionIDs {
+			if _, ok := seen[oid]; ok {
+				continue
+			}
+			seen[oid] = struct{}{}
+			out = append(out, oid)
+		}
+	}
+	return out
 }
 
 func generateCode() (string, error) {

@@ -41,20 +41,21 @@ func (q *Queries) PeriodSummary(ctx context.Context, arg PeriodSummaryParams) (P
 }
 
 const salesByDay = `-- name: SalesByDay :many
-SELECT date_trunc('day', o.created_at)::date AS day,
+SELECT date_trunc('day', o.created_at AT TIME ZONE $1::text)::date AS day,
        COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
        COUNT(DISTINCT o.id)::bigint                AS orders,
        COALESCE(SUM(oi.qty), 0)::bigint            AS items
 FROM orders o
 LEFT JOIN order_items oi ON oi.order_id = o.id
 WHERE o.status = 'paid'
-  AND o.created_at >= $1::timestamptz
-  AND o.created_at <  $2::timestamptz
+  AND o.created_at >= $2::timestamptz
+  AND o.created_at <  $3::timestamptz
 GROUP BY day
 ORDER BY day
 `
 
 type SalesByDayParams struct {
+	Tz     string             `db:"tz" json:"tz"`
 	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
 	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
 }
@@ -67,7 +68,7 @@ type SalesByDayRow struct {
 }
 
 func (q *Queries) SalesByDay(ctx context.Context, arg SalesByDayParams) ([]SalesByDayRow, error) {
-	rows, err := q.db.Query(ctx, salesByDay, arg.FromAt, arg.ToAt)
+	rows, err := q.db.Query(ctx, salesByDay, arg.Tz, arg.FromAt, arg.ToAt)
 	if err != nil {
 		return nil, err
 	}
@@ -92,20 +93,21 @@ func (q *Queries) SalesByDay(ctx context.Context, arg SalesByDayParams) ([]Sales
 }
 
 const salesByHourDOW = `-- name: SalesByHourDOW :many
-SELECT EXTRACT(DOW  FROM o.created_at)::int AS dow,
-       EXTRACT(HOUR FROM o.created_at)::int AS hour,
+SELECT EXTRACT(DOW  FROM o.created_at AT TIME ZONE $1::text)::int AS dow,
+       EXTRACT(HOUR FROM o.created_at AT TIME ZONE $1::text)::int AS hour,
        COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
        COUNT(DISTINCT o.id)::bigint                AS orders
 FROM orders o
 LEFT JOIN order_items oi ON oi.order_id = o.id
 WHERE o.status = 'paid'
-  AND o.created_at >= $1::timestamptz
-  AND o.created_at <  $2::timestamptz
+  AND o.created_at >= $2::timestamptz
+  AND o.created_at <  $3::timestamptz
 GROUP BY dow, hour
 ORDER BY dow, hour
 `
 
 type SalesByHourDOWParams struct {
+	Tz     string             `db:"tz" json:"tz"`
 	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
 	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
 }
@@ -118,7 +120,7 @@ type SalesByHourDOWRow struct {
 }
 
 func (q *Queries) SalesByHourDOW(ctx context.Context, arg SalesByHourDOWParams) ([]SalesByHourDOWRow, error) {
-	rows, err := q.db.Query(ctx, salesByHourDOW, arg.FromAt, arg.ToAt)
+	rows, err := q.db.Query(ctx, salesByHourDOW, arg.Tz, arg.FromAt, arg.ToAt)
 	if err != nil {
 		return nil, err
 	}

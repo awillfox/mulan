@@ -4,6 +4,12 @@ SELECT id, name, selection_mode FROM option_groups ORDER BY id;
 -- name: GetOptionGroup :one
 SELECT id, name, selection_mode FROM option_groups WHERE id = $1;
 
+-- name: GetOptionGroupsByIDs :many
+SELECT id, name, selection_mode
+FROM option_groups
+WHERE id = ANY(@ids::int[])
+ORDER BY id;
+
 -- name: ListOptionsByGroups :many
 SELECT id, option_group_id, name, price_delta, sort_order
 FROM options

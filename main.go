@@ -49,7 +49,7 @@ func main() {
 	queries := sqlc.New(pool)
 	eventHub := hub.New()
 
-	optionGroupSvc := optiongroupservice.NewService(queries)
+	optionGroupSvc := optiongroupservice.NewService(pool, queries)
 	optionGroupHandler := optiongrouphttp.NewHandler(optionGroupSvc)
 
 	menuSvc := menuservice.NewMenuService(queries)
@@ -64,7 +64,7 @@ func main() {
 	}
 	settingsHandler := settingshttp.NewHandler(settingsSvc)
 
-	orderSvc := orderservice.NewOrderService(queries, settingsSvc, optionGroupSvc)
+	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc)
 	orderHandler := orderhttp.NewHandler(orderSvc)
 
 	dashboardSvc := dashboardservice.NewDashboardService(queries)

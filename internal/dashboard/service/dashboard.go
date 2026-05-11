@@ -10,6 +10,11 @@ import (
 	"mulan/sqlc"
 )
 
+// shopTZ is the IANA timezone used for day/hour bucketing in reports.
+// Receipts and analytics are presented in this timezone regardless of where
+// the DB session timezone is.
+const shopTZ = "Asia/Bangkok"
+
 type DashboardService struct {
 	q *sqlc.Queries
 }
@@ -53,6 +58,7 @@ type DayPoint struct {
 
 func (s *DashboardService) SalesByDay(ctx context.Context, from, to time.Time) ([]DayPoint, error) {
 	rows, err := s.q.SalesByDay(ctx, sqlc.SalesByDayParams{
+		Tz:     shopTZ,
 		FromAt: pgtype.Timestamptz{Time: from, Valid: true},
 		ToAt:   pgtype.Timestamptz{Time: to, Valid: true},
 	})
@@ -73,13 +79,14 @@ func (s *DashboardService) SalesByDay(ctx context.Context, from, to time.Time) (
 
 type HeatmapCell struct {
 	DOW     int32   `json:"dow"`  // 0=Sunday … 6=Saturday (Postgres EXTRACT DOW)
-	Hour    int32   `json:"hour"` // 0–23
+	Hour    int32   `json:"hour"` // 0–23, shop-local
 	Revenue float64 `json:"revenue"`
 	Orders  int64   `json:"orders"`
 }
 
 func (s *DashboardService) Heatmap(ctx context.Context, from, to time.Time) ([]HeatmapCell, error) {
 	rows, err := s.q.SalesByHourDOW(ctx, sqlc.SalesByHourDOWParams{
+		Tz:     shopTZ,
 		FromAt: pgtype.Timestamptz{Time: from, Valid: true},
 		ToAt:   pgtype.Timestamptz{Time: to, Valid: true},
 	})

@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -56,17 +55,17 @@ func (req updateRequest) validate() error {
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	var req updateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
 	if err := req.validate(); err != nil {
-		response.Error(w, r, http.StatusBadRequest, err)
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 
 	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("update settings: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to update settings", err)
 		return
 	}
 

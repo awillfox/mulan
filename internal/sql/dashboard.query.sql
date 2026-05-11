@@ -12,7 +12,7 @@ ORDER BY qty_sold DESC
 LIMIT 10;
 
 -- name: SalesByDay :many
-SELECT date_trunc('day', o.created_at)::date AS day,
+SELECT date_trunc('day', o.created_at AT TIME ZONE sqlc.arg('tz')::text)::date AS day,
        COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
        COUNT(DISTINCT o.id)::bigint                AS orders,
        COALESCE(SUM(oi.qty), 0)::bigint            AS items
@@ -25,8 +25,8 @@ GROUP BY day
 ORDER BY day;
 
 -- name: SalesByHourDOW :many
-SELECT EXTRACT(DOW  FROM o.created_at)::int AS dow,
-       EXTRACT(HOUR FROM o.created_at)::int AS hour,
+SELECT EXTRACT(DOW  FROM o.created_at AT TIME ZONE sqlc.arg('tz')::text)::int AS dow,
+       EXTRACT(HOUR FROM o.created_at AT TIME ZONE sqlc.arg('tz')::text)::int AS hour,
        COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
        COUNT(DISTINCT o.id)::bigint                AS orders
 FROM orders o

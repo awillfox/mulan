@@ -27,6 +27,39 @@ func (q *Queries) GetMenu(ctx context.Context, id int32) (Menu, error) {
 	return i, err
 }
 
+const getMenusByIDs = `-- name: GetMenusByIDs :many
+SELECT id, name, price, category_id, vfd_name, active
+FROM menus
+WHERE id = ANY($1::int[])
+`
+
+func (q *Queries) GetMenusByIDs(ctx context.Context, ids []int32) ([]Menu, error) {
+	rows, err := q.db.Query(ctx, getMenusByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Menu{}
+	for rows.Next() {
+		var i Menu
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Price,
+			&i.CategoryID,
+			&i.VfdName,
+			&i.Active,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMenus = `-- name: ListMenus :many
 SELECT id, name, price, category_id, vfd_name, active FROM menus ORDER BY id
 `

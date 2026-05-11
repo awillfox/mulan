@@ -20,13 +20,13 @@ func TestHTTPResponseMarshalJSON(t *testing.T) {
 			want: `{"data":{"x":1}}`,
 		},
 		{
-			name: "error only",
-			in:   HTTPResponse{Error: errors.New("boom")},
+			name: "message only",
+			in:   HTTPResponse{Message: "boom"},
 			want: `{"data":null,"error":"boom"}`,
 		},
 		{
-			name: "data and error",
-			in:   HTTPResponse{Data: 42, Error: errors.New("oops")},
+			name: "data and message",
+			in:   HTTPResponse{Data: 42, Message: "oops"},
 			want: `{"data":42,"error":"oops"}`,
 		},
 		{
@@ -48,16 +48,28 @@ func TestHTTPResponseMarshalJSON(t *testing.T) {
 	}
 }
 
-func TestErrorWritesEnvelope(t *testing.T) {
+func TestErrorReturnsClientMessageAndHidesInternal(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
-	Error(w, r, 400, errors.New("bad"))
+	Error(w, r, 400, "bad input", errors.New("internal: pgx: foreign key violation on table xyz"))
 	if w.Code != 400 {
 		t.Fatalf("status: got %d want 400", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `"error":"bad"`) {
-		t.Fatalf("body missing error: %s", body)
+	if !strings.Contains(body, `"error":"bad input"`) {
+		t.Fatalf("body missing client message: %s", body)
+	}
+	if strings.Contains(body, "pgx") || strings.Contains(body, "foreign key") {
+		t.Fatalf("internal error leaked to client: %s", body)
+	}
+}
+
+func TestErrorDefaultsToStatusText(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	Error(w, r, 500, "", errors.New("boom"))
+	if !strings.Contains(w.Body.String(), `"error":"Internal Server Error"`) {
+		t.Fatalf("body: %s", w.Body.String())
 	}
 }
 

@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/Rhymond/go-money"
@@ -29,7 +28,7 @@ func (h *Handler) Routes(r chi.Router) {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	code, err := h.svc.Create(r.Context())
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("create order: %w", err))
+		response.Error(w, r, http.StatusInternalServerError, "failed to create order", err)
 		return
 	}
 	response.Created(w, r, map[string]string{"code": code})
@@ -37,8 +36,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 type checkoutItemRequest struct {
 	MenuID    int32   `json:"menu_id"`
-	Name      string  `json:"name"`
-	Price     float64 `json:"price"`
 	Qty       int32   `json:"qty"`
 	OptionIDs []int32 `json:"option_ids"`
 }
@@ -74,11 +71,11 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 
 	var req checkoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, r, http.StatusBadRequest, errors.New("invalid body"))
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
 	if len(req.Items) == 0 {
-		response.Error(w, r, http.StatusBadRequest, errors.New("no items"))
+		response.Error(w, r, http.StatusBadRequest, "no items", nil)
 		return
 	}
 
@@ -86,8 +83,6 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	for i, it := range req.Items {
 		items[i] = service.CheckoutItemInput{
 			MenuID:    it.MenuID,
-			Name:      it.Name,
-			Price:     int64(it.Price * 100),
 			Qty:       it.Qty,
 			OptionIDs: it.OptionIDs,
 		}
@@ -95,7 +90,8 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Checkout(r.Context(), code, items)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, fmt.Errorf("checkout: %w", err))
+		status, msg := classifyCheckoutError(err)
+		response.Error(w, r, status, msg, err)
 		return
 	}
 
@@ -125,4 +121,25 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		Total:      result.Total,
 		Items:      respItems,
 	})
+}
+
+// classifyCheckoutError maps service-level sentinel errors to client-facing
+// HTTP status codes and messages. Unknown errors fall through to 500.
+func classifyCheckoutError(err error) (int, string) {
+	switch {
+	case errors.Is(err, service.ErrAlreadyPaid):
+		return http.StatusConflict, "order already paid"
+	case errors.Is(err, service.ErrNoItems):
+		return http.StatusBadRequest, "no items"
+	case errors.Is(err, service.ErrUnknownMenu):
+		return http.StatusBadRequest, "unknown menu"
+	case errors.Is(err, service.ErrMenuInactive):
+		return http.StatusBadRequest, "menu is not available"
+	case errors.Is(err, service.ErrUnknownOption):
+		return http.StatusBadRequest, "unknown option"
+	case errors.Is(err, service.ErrInvalidOption):
+		return http.StatusBadRequest, "option not valid for menu"
+	default:
+		return http.StatusInternalServerError, "checkout failed"
+	}
 }

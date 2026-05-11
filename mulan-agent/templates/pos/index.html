@@ -112,6 +112,18 @@ let orderPage = 0;
 
 const unwrap = r => r.json().then(d => d.data ?? d);
 
+// esc() HTML-escapes user-controlled strings before they're interpolated
+// into innerHTML. Menu/option names are typed in the manager UI, so a name
+// like `<img onerror=...>` would otherwise execute inside the POS.
+function esc(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function init() {
     [menus, categories] = await Promise.all([
         fetch(API_BASE + '/api/menus').then(unwrap),
@@ -125,7 +137,7 @@ function renderCategories() {
     const tabs = document.getElementById('category-tabs');
     tabs.innerHTML = '<button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>';
     categories.forEach(c => {
-        tabs.innerHTML += `<button class="px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300" onclick="filterCategory(${c.id})">${c.name}</button>`;
+        tabs.innerHTML += `<button class="px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300" onclick="filterCategory(${c.id})">${esc(c.name)}</button>`;
     });
 }
 
@@ -155,12 +167,12 @@ function renderMenus() {
     document.getElementById('menu-grid').innerHTML = page.map(m => m.active
         ? `<button data-menu-id="${m.id}" onclick="addToOrder(${m.id})"
             class="w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100">
-            <div class="font-bold text-base px-1 text-center leading-tight">${m.name}</div>
+            <div class="font-bold text-base px-1 text-center leading-tight">${esc(m.name)}</div>
             <div class="text-blue-600 font-medium text-sm mt-1">฿${m.price.toFixed(2)}</div>
         </button>`
         : `<button data-menu-id="${m.id}" disabled
             class="w-full h-full bg-gray-100 border-2 border-gray-200 rounded-xl flex flex-col items-center justify-center opacity-50 cursor-not-allowed">
-            <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${m.name}</div>
+            <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${esc(m.name)}</div>
             <div class="text-gray-400 font-medium text-sm mt-1">Unavailable</div>
         </button>`
     ).join('');
@@ -243,18 +255,18 @@ function renderOrder() {
         const u = unitPrice(o);
         const optsHTML = (o.options || []).map(op => `
             <div class="text-xs text-gray-500 pl-2">
-                · ${op.name}${op.price_delta > 0 ? ` <span class="text-gray-400">(+฿${op.price_delta.toFixed(2)})</span>` : ''}
+                · ${esc(op.name)}${op.price_delta > 0 ? ` <span class="text-gray-400">(+฿${op.price_delta.toFixed(2)})</span>` : ''}
             </div>
         `).join('');
         return `
         <div class="flex items-start py-2 border-b gap-2">
             <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium truncate">${o.name}</div>
+                <div class="text-sm font-medium truncate">${esc(o.name)}</div>
                 ${optsHTML}
                 <div class="text-xs text-gray-500 mt-0.5">฿${u.toFixed(2)} x ${o.qty}</div>
             </div>
             <span class="text-sm font-semibold flex-shrink-0">฿${(u * o.qty).toFixed(2)}</span>
-            <button onclick="removeFromOrder('${o.key}')"
+            <button onclick="removeFromOrder('${esc(o.key)}')"
                 class="w-10 h-10 flex-shrink-0 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-red-200 active:bg-red-300">
                 ✕
             </button>
@@ -287,16 +299,16 @@ function openOptionsModal(menu) {
         const required = g.selection_mode === 'single_required';
         const inputType = isMulti ? 'checkbox' : 'radio';
         return `
-            <div data-group-id="${g.id}" data-mode="${g.selection_mode}">
+            <div data-group-id="${g.id}" data-mode="${esc(g.selection_mode)}">
                 <div class="flex items-baseline justify-between mb-2">
-                    <h4 class="font-bold text-base">${g.name}</h4>
+                    <h4 class="font-bold text-base">${esc(g.name)}</h4>
                     <span class="text-xs text-gray-500">${required ? 'Required' : (isMulti ? 'Pick any' : 'Optional')}</span>
                 </div>
                 <div class="space-y-2">
                     ${(g.options || []).map(o => `
                         <label class="flex items-center gap-3 px-3 py-3 border rounded-xl cursor-pointer hover:bg-gray-50">
-                            <input type="${inputType}" name="grp-${g.id}" value="${o.id}" data-name="${o.name}" data-delta="${o.price_delta}" class="w-5 h-5">
-                            <span class="flex-1 text-sm font-medium">${o.name}</span>
+                            <input type="${inputType}" name="grp-${g.id}" value="${o.id}" data-name="${esc(o.name)}" data-delta="${o.price_delta}" class="w-5 h-5">
+                            <span class="flex-1 text-sm font-medium">${esc(o.name)}</span>
                             <span class="text-sm text-gray-500">${o.price_delta > 0 ? '+฿' + o.price_delta.toFixed(2) : (o.price_delta < 0 ? '−฿' + Math.abs(o.price_delta).toFixed(2) : '')}</span>
                         </label>
                     `).join('')}

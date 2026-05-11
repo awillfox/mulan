@@ -2,24 +2,22 @@ package response
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/render"
 )
 
 type HTTPResponse struct {
-	Data  any   `json:"data"`
-	Error error `json:"-"`
+	Data    any    `json:"data"`
+	Message string `json:"-"`
 }
 
 func (h HTTPResponse) MarshalJSON() ([]byte, error) {
 	out := struct {
 		Data  any    `json:"data"`
 		Error string `json:"error,omitempty"`
-	}{Data: h.Data}
-	if h.Error != nil {
-		out.Error = h.Error.Error()
-	}
+	}{Data: h.Data, Error: h.Message}
 	return json.Marshal(out)
 }
 
@@ -33,11 +31,19 @@ func Created(w http.ResponseWriter, r *http.Request, data any) {
 }
 
 func NoContent(w http.ResponseWriter, r *http.Request) {
-	render.Status(r, http.StatusNoContent)
 	render.NoContent(w, r)
 }
 
-func Error(w http.ResponseWriter, r *http.Request, status int, err error) {
+// Error responds with a sanitized client message and logs the underlying error
+// server-side so internal details (SQL errors, wrapped strings) do not leak.
+// `clientMsg` is what the user sees; `err` is logged with method+path context.
+func Error(w http.ResponseWriter, r *http.Request, status int, clientMsg string, err error) {
+	if err != nil {
+		log.Printf("http %d %s %s: %v", status, r.Method, r.URL.Path, err)
+	}
+	if clientMsg == "" {
+		clientMsg = http.StatusText(status)
+	}
 	render.Status(r, status)
-	render.JSON(w, r, HTTPResponse{Error: err})
+	render.JSON(w, r, HTTPResponse{Message: clientMsg})
 }

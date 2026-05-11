@@ -20,6 +20,33 @@ func (q *Queries) GetOptionGroup(ctx context.Context, id int32) (OptionGroup, er
 	return i, err
 }
 
+const getOptionGroupsByIDs = `-- name: GetOptionGroupsByIDs :many
+SELECT id, name, selection_mode
+FROM option_groups
+WHERE id = ANY($1::int[])
+ORDER BY id
+`
+
+func (q *Queries) GetOptionGroupsByIDs(ctx context.Context, ids []int32) ([]OptionGroup, error) {
+	rows, err := q.db.Query(ctx, getOptionGroupsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OptionGroup{}
+	for rows.Next() {
+		var i OptionGroup
+		if err := rows.Scan(&i.ID, &i.Name, &i.SelectionMode); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMenuOptionGroupLinks = `-- name: ListMenuOptionGroupLinks :many
 SELECT menu_id, option_group_id, sort_order
 FROM menu_option_groups
