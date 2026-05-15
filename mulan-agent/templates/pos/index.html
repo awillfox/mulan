@@ -2,198 +2,1104 @@
 {{define "title"}}POS{{end}}
 
 {{define "content"}}
-<div class="relative flex flex-col md:flex-row h-screen w-screen overflow-hidden">
-    <!-- Left: Menu Items -->
-    <div class="flex-1 flex flex-col min-w-0">
-        <!-- Category Tabs -->
-        <div class="flex bg-white border-b px-2 pt-2 gap-1 flex-shrink-0" id="category-tabs">
-            <button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>
-        </div>
+<style>
+  /* ── Tokens ───────────────────────────────────────────────────── */
+  :root {
+    --p: #0b57d0;          /* primary */
+    --p-fg: #ffffff;
+    --p-ctr: #d3e3fd;
+    --p-on-ctr: #001d35;
+    --pay: #1e8e3e;        /* checkout green */
+    --pay-fg: #ffffff;
+    --pay-hover: #137333;
+    --danger: #d93025;
+    --danger-ctr: #fce8e6;
+    --danger-on-ctr: #c5221f;
+    --warn: #f29900;
 
-        <!-- Menu Grid — fills remaining height, no scroll -->
-        <div class="flex-1 p-3 min-h-0">
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 grid-rows-4 gap-2 h-full" id="menu-grid"></div>
-        </div>
+    --bg: #eef1f6;
+    --surf: #ffffff;
+    --surf-2: #f5f7fb;
+    --surf-3: #e9ecf2;
+    --on-surf: #1a1c1e;
+    --on-surf-var: #43474e;
+    --outline: #c3c6cf;
+    --outline-soft: #dde1e8;
 
-        <!-- Menu Pagination -->
-        <div class="flex items-center justify-between px-4 py-2 border-t bg-white flex-shrink-0">
-            <button id="menu-prev" onclick="menuPrev()"
-                class="px-8 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold text-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
-                ◀ Prev
-            </button>
-            <span id="menu-page-info" class="text-sm text-gray-500 font-medium"></span>
-            <button id="menu-next" onclick="menuNext()"
-                class="px-8 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold text-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
-                Next ▶
-            </button>
+    --shape-sm: 8px;
+    --shape-md: 12px;
+    --shape-lg: 16px;
+    --shape-xl: 24px;
+
+    --elev-1: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px 1px rgba(15,23,42,.04);
+    --elev-2: 0 4px 8px 2px rgba(15,23,42,.07), 0 1px 3px rgba(15,23,42,.05);
+    --elev-3: 0 10px 24px 4px rgba(15,23,42,.12), 0 4px 8px rgba(15,23,42,.08);
+  }
+
+  .display { font-family: 'Google Sans Display','Google Sans',sans-serif; letter-spacing: -.01em; }
+  .mono    { font-family: 'Roboto Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  /* ── Shell layout ─────────────────────────────────────────────── */
+  .shell {
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Top app bar */
+  .topbar {
+    background: var(--surf);
+    border-bottom: 1px solid var(--outline-soft);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--on-surf); }
+  .brand .logo {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--p) 0%, #4285f4 100%);
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: 'Google Sans Display'; font-weight: 700; font-size: 16px;
+  }
+  .topbar .order-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 12px;
+    background: var(--surf-2);
+    border: 1px solid var(--outline-soft);
+    border-radius: 999px;
+    font-size: 12px; color: var(--on-surf-var); font-weight: 500;
+  }
+  .topbar .order-pill .mono { color: var(--on-surf); font-weight: 600; }
+  .topbar .order-pill.is-empty { opacity: .55; }
+
+  .icon-btn {
+    width: 40px; height: 40px;
+    border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--on-surf-var);
+    transition: background .15s, color .15s;
+  }
+  .icon-btn:hover { background: var(--surf-3); color: var(--on-surf); }
+  .icon-btn .material-symbols-rounded { font-size: 22px; }
+  .icon-btn.has-badge { position: relative; }
+  .icon-btn .badge {
+    position: absolute; top: 4px; right: 4px;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 999px;
+    background: var(--p); color: #fff;
+    font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 2px solid var(--surf);
+  }
+
+  /* ── Main split ───────────────────────────────────────────────── */
+  .main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 420px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  @media (max-width: 1100px) { .main { grid-template-columns: minmax(0,1fr) 380px; } }
+  @media (max-width: 900px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 45vh); } }
+
+  /* ── Left pane ────────────────────────────────────────────────── */
+  .menu-pane { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; padding: 12px 12px 12px 16px; gap: 10px; }
+
+  /* search */
+  .search-bar {
+    background: var(--surf);
+    border-radius: 999px;
+    padding: 0 8px 0 16px;
+    height: 52px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: var(--elev-1);
+  }
+  .search-bar .material-symbols-rounded { color: var(--on-surf-var); }
+  .search-bar input {
+    flex: 1; border: 0; outline: 0; background: transparent;
+    font-size: 16px; font-family: inherit; color: var(--on-surf);
+    height: 100%;
+  }
+  .search-bar input::placeholder { color: var(--on-surf-var); }
+  .search-bar .clear-btn {
+    width: 40px; height: 40px; border-radius: 999px;
+    display: none; align-items: center; justify-content: center;
+    color: var(--on-surf-var);
+  }
+  .search-bar.has-text .clear-btn { display: inline-flex; }
+  .search-bar .clear-btn:hover { background: var(--surf-3); }
+
+  /* category chips */
+  .cat-strip {
+    display: flex; gap: 8px; overflow-x: auto;
+    padding: 2px 2px 6px;
+    scrollbar-width: thin;
+  }
+  .cat-strip::-webkit-scrollbar { height: 6px; }
+  .cat-strip::-webkit-scrollbar-thumb { background: var(--outline-soft); border-radius: 999px; }
+  .cat-chip {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 40px; padding: 0 18px;
+    border-radius: 999px;
+    background: var(--surf);
+    border: 1px solid var(--outline-soft);
+    color: var(--on-surf-var);
+    font-size: 14px; font-weight: 500;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .cat-chip:hover { background: var(--surf-2); }
+  .cat-chip.is-active {
+    background: var(--p);
+    border-color: var(--p);
+    color: var(--p-fg);
+    box-shadow: var(--elev-1);
+  }
+  .cat-chip .count {
+    background: rgba(0,0,0,.08); border-radius: 999px; padding: 1px 8px;
+    font-size: 11px; color: inherit;
+  }
+  .cat-chip.is-active .count { background: rgba(255,255,255,.22); }
+
+  /* menu grid */
+  .menu-grid-wrap {
+    background: var(--surf);
+    border-radius: var(--shape-lg);
+    box-shadow: var(--elev-1);
+    overflow: hidden;
+    min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  .menu-grid {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    align-content: start;
+  }
+  .menu-grid::-webkit-scrollbar { width: 8px; }
+  .menu-grid::-webkit-scrollbar-thumb { background: var(--outline-soft); border-radius: 999px; }
+
+  .menu-card {
+    aspect-ratio: 1 / 1;
+    background: var(--surf-2);
+    border: 1px solid transparent;
+    border-radius: var(--shape-md);
+    padding: 12px 10px;
+    display: flex; flex-direction: column; align-items: stretch;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform .12s ease, background .15s, border-color .15s, box-shadow .15s;
+    position: relative;
+  }
+  .menu-card:hover { background: #eaf0fc; border-color: var(--p-ctr); }
+  .menu-card:active { transform: scale(.97); background: var(--p-ctr); }
+  .menu-card .name {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    font-weight: 600; font-size: 15px; color: var(--on-surf);
+    line-height: 1.2;
+    overflow: hidden;
+    /* line clamp for very long names */
+    -webkit-line-clamp: 3;
+    word-break: break-word;
+  }
+  .menu-card .price {
+    font-family: 'Roboto Mono',monospace; font-weight: 600;
+    color: var(--p); font-size: 14px;
+    align-self: center;
+    text-align: center;
+  }
+  .menu-card .opt-flag {
+    position: absolute; top: 8px; right: 8px;
+    width: 22px; height: 22px;
+    border-radius: 999px;
+    background: var(--p-ctr); color: var(--p-on-ctr);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .menu-card .opt-flag .material-symbols-rounded { font-size: 14px; }
+  .menu-card.disabled {
+    cursor: not-allowed; background: var(--surf-3); opacity: .55;
+    border-style: dashed; border-color: var(--outline-soft);
+  }
+  .menu-card.disabled:hover, .menu-card.disabled:active { transform: none; background: var(--surf-3); }
+  .menu-card .unavail {
+    font-size: 11px; font-weight: 500; color: var(--danger);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+
+  /* empty grid */
+  .grid-empty {
+    grid-column: 1 / -1;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--on-surf-var);
+  }
+  .grid-empty .material-symbols-rounded { font-size: 56px; opacity: .35; }
+  .grid-empty h3 { font-family: 'Google Sans Display'; font-size: 18px; margin-top: 8px; color: var(--on-surf); font-weight: 500; }
+
+  /* ── Right pane: order ────────────────────────────────────────── */
+  .order-pane {
+    background: var(--surf);
+    box-shadow: var(--elev-1);
+    border-left: 1px solid var(--outline-soft);
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    min-height: 0;
+  }
+
+  .order-head {
+    padding: 14px 16px 6px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .order-head h2 { font-family: 'Google Sans Display'; font-size: 22px; font-weight: 500; color: var(--on-surf); }
+  .order-head .order-meta { font-size: 12px; color: var(--on-surf-var); }
+  .order-head .void-btn { font-size: 12px; color: var(--danger); font-weight: 500; padding: 4px 8px; border-radius: 999px; }
+  .order-head .void-btn:hover { background: var(--danger-ctr); }
+  .order-head .void-btn:disabled { opacity: .3; pointer-events: none; }
+
+  .order-list {
+    overflow-y: auto;
+    padding: 4px 12px 8px;
+    overscroll-behavior: contain;
+  }
+  .order-list::-webkit-scrollbar { width: 8px; }
+  .order-list::-webkit-scrollbar-thumb { background: var(--outline-soft); border-radius: 999px; }
+
+  .line {
+    background: var(--surf-2);
+    border-radius: var(--shape-md);
+    padding: 10px 10px 10px 12px;
+    margin-bottom: 6px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 8px;
+    transition: background .2s;
+  }
+  .line.flash { background: #fff3d6; }
+  .line .l-name { font-size: 14px; font-weight: 600; color: var(--on-surf); line-height: 1.25; }
+  .line .l-opts { font-size: 11px; color: var(--on-surf-var); margin-top: 2px; line-height: 1.3; }
+  .line .l-opts > div { display: flex; align-items: center; gap: 4px; }
+  .line .l-opts > div::before { content: '·'; color: var(--outline); }
+  .line .l-unit { font-family: 'Roboto Mono',monospace; font-size: 11px; color: var(--on-surf-var); margin-top: 4px; }
+  .line .l-total {
+    font-family: 'Roboto Mono',monospace; font-weight: 600; font-size: 15px; color: var(--on-surf);
+    align-self: start; text-align: right;
+  }
+  .line .l-controls {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 6px;
+  }
+  .qty-stepper {
+    display: inline-flex; align-items: center;
+    background: var(--surf);
+    border: 1px solid var(--outline-soft);
+    border-radius: 999px;
+    overflow: hidden;
+    height: 36px;
+  }
+  .qty-stepper button {
+    width: 38px; height: 100%;
+    color: var(--on-surf);
+    transition: background .12s;
+  }
+  .qty-stepper button:hover { background: var(--surf-2); }
+  .qty-stepper button:active { background: var(--p-ctr); }
+  .qty-stepper .qty {
+    min-width: 32px; text-align: center;
+    font-family: 'Roboto Mono',monospace; font-weight: 600;
+    font-size: 15px; color: var(--on-surf);
+  }
+  .l-actions { display: inline-flex; gap: 2px; }
+  .l-actions button {
+    width: 36px; height: 36px; border-radius: 999px;
+    color: var(--on-surf-var);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .l-actions button:hover { background: var(--surf-3); }
+  .l-actions .l-del { color: var(--danger); }
+  .l-actions .l-del:hover { background: var(--danger-ctr); }
+  .l-actions .material-symbols-rounded { font-size: 18px; }
+
+  /* empty order */
+  .order-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--on-surf-var);
+  }
+  .order-empty .material-symbols-rounded { font-size: 56px; opacity: .25; }
+  .order-empty h3 { font-family: 'Google Sans Display'; font-weight: 500; font-size: 16px; color: var(--on-surf); margin-top: 4px; }
+  .order-empty p { font-size: 12px; margin-top: 2px; }
+
+  /* totals & actions */
+  .totals {
+    padding: 12px 16px;
+    border-top: 1px solid var(--outline-soft);
+    background: var(--surf-2);
+  }
+  .total-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--on-surf-var); padding: 2px 0; }
+  .total-row .v { font-family: 'Roboto Mono',monospace; color: var(--on-surf); }
+  .total-row.grand { padding-top: 6px; margin-top: 4px; border-top: 1px dashed var(--outline-soft); font-size: 18px; font-weight: 600; color: var(--on-surf); }
+  .total-row.grand .v { font-size: 22px; color: var(--p); }
+
+  .util-bar {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--surf);
+    border-top: 1px solid var(--outline-soft);
+  }
+  .util-btn {
+    height: 56px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    border-radius: var(--shape-md);
+    color: var(--on-surf-var);
+    transition: background .15s, color .15s;
+  }
+  .util-btn:hover { background: var(--surf-2); color: var(--on-surf); }
+  .util-btn:active { background: var(--surf-3); }
+  .util-btn .material-symbols-rounded { font-size: 22px; }
+  .util-btn span:last-child { font-size: 11px; font-weight: 500; letter-spacing: .02em; }
+  .util-btn:disabled { opacity: .35; pointer-events: none; }
+
+  .pay-bar { padding: 12px 16px 16px; background: var(--surf); }
+  .pay-btn {
+    width: 100%; height: 64px;
+    background: var(--pay); color: var(--pay-fg);
+    border-radius: var(--shape-lg);
+    font-family: 'Google Sans Display'; font-weight: 500; font-size: 19px;
+    letter-spacing: .01em;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px;
+    box-shadow: var(--elev-2);
+    transition: background .15s, transform .12s;
+  }
+  .pay-btn:hover { background: var(--pay-hover); }
+  .pay-btn:active { transform: scale(.985); }
+  .pay-btn:disabled { background: var(--surf-3); color: var(--on-surf-var); box-shadow: none; cursor: not-allowed; }
+  .pay-btn .material-symbols-rounded { font-size: 22px; }
+  .pay-btn .pay-amt { font-family: 'Roboto Mono', monospace; font-weight: 600; font-size: 22px; }
+
+  /* ── Scrim + dialog ───────────────────────────────────────────── */
+  .scrim {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,.5);
+    backdrop-filter: blur(3px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 12px;
+  }
+  .scrim.is-open { display: flex; animation: scrim-in .15s ease; }
+  @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  .dialog {
+    background: var(--surf);
+    border-radius: var(--shape-xl);
+    width: 100%; max-width: 480px;
+    box-shadow: var(--elev-3);
+    overflow: hidden;
+    animation: dialog-pop .2s cubic-bezier(.2,.7,.2,1);
+    max-height: 92vh; display: flex; flex-direction: column;
+  }
+  .dialog.wide { max-width: 560px; }
+  @keyframes dialog-pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+  .d-head { padding: 18px 22px 4px; display: flex; align-items: center; justify-content: space-between; }
+  .d-head h3 { font-family: 'Google Sans Display'; font-size: 20px; font-weight: 500; color: var(--on-surf); }
+  .d-body { padding: 8px 22px 16px; overflow-y: auto; }
+  .d-foot { padding: 12px 16px 16px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--outline-soft); }
+  .d-foot.split { justify-content: space-between; }
+  .btn-text {
+    height: 44px; padding: 0 16px;
+    border-radius: 999px;
+    color: var(--p); font-weight: 500; font-size: 15px;
+  }
+  .btn-text:hover { background: rgba(11,87,208,.08); }
+  .btn-text.danger { color: var(--danger); }
+  .btn-text.danger:hover { background: var(--danger-ctr); }
+  .btn-filled {
+    height: 48px; padding: 0 24px;
+    background: var(--p); color: var(--p-fg);
+    border-radius: 999px;
+    font-weight: 500; font-size: 15px;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: filter .15s;
+  }
+  .btn-filled:hover { filter: brightness(1.05); }
+  .btn-filled:disabled { background: var(--surf-3); color: var(--on-surf-var); }
+
+  /* Options modal — touch-friendly */
+  .opt-group { padding: 14px 0; border-top: 1px solid var(--outline-soft); }
+  .opt-group:first-child { border-top: 0; padding-top: 4px; }
+  .opt-group h4 { font-weight: 600; font-size: 16px; color: var(--on-surf); }
+  .opt-group .req-tag {
+    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px;
+    background: var(--surf-3); color: var(--on-surf-var);
+  }
+  .opt-group .req-tag.required { background: var(--danger-ctr); color: var(--danger-on-ctr); }
+  .opt-list { display: grid; gap: 6px; margin-top: 8px; }
+  .opt-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px;
+    border: 1.5px solid var(--outline-soft);
+    border-radius: var(--shape-md);
+    background: var(--surf);
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .opt-row:hover { background: var(--surf-2); }
+  .opt-row input { width: 22px; height: 22px; accent-color: var(--p); }
+  .opt-row .o-name { flex: 1; font-size: 15px; font-weight: 500; color: var(--on-surf); }
+  .opt-row .o-price { font-family: 'Roboto Mono',monospace; color: var(--on-surf-var); font-size: 14px; font-weight: 500; }
+  .opt-row.is-selected { background: var(--p-ctr); border-color: var(--p); }
+  .opt-row.is-selected .o-price { color: var(--p-on-ctr); }
+
+  /* ── Tender dialog ────────────────────────────────────────────── */
+  .tender { padding: 4px 22px 18px; }
+  .pay-tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--surf-2);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 14px;
+  }
+  .pay-tab {
+    height: 44px;
+    border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-weight: 500; font-size: 14px; color: var(--on-surf-var);
+    transition: background .15s, color .15s, box-shadow .15s;
+  }
+  .pay-tab.is-active { background: var(--surf); color: var(--p); box-shadow: var(--elev-1); }
+  .pay-tab .material-symbols-rounded { font-size: 18px; }
+
+  .pay-figs { background: var(--surf-2); border-radius: var(--shape-md); padding: 14px 16px; margin-bottom: 12px; }
+  .pay-figs .row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; color: var(--on-surf-var); }
+  .pay-figs .row .v { font-family: 'Roboto Mono',monospace; color: var(--on-surf); font-weight: 500; }
+  .pay-figs .row.change { padding-top: 8px; margin-top: 6px; border-top: 1px dashed var(--outline-soft); font-size: 17px; font-weight: 600; color: var(--on-surf); }
+  .pay-figs .row.change .v { font-size: 22px; color: var(--pay); }
+  .pay-figs .row.change.short .v { color: var(--danger); }
+
+  .quick-cash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+  .quick-cash button {
+    height: 44px; border-radius: 999px;
+    background: var(--surf-2);
+    color: var(--on-surf); font-weight: 500; font-size: 14px;
+    border: 1px solid transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .quick-cash button:hover { background: var(--p-ctr); border-color: var(--p-ctr); }
+  .quick-cash button.exact { background: var(--p-ctr); color: var(--p-on-ctr); font-weight: 600; }
+
+  .deno-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .deno-pad button {
+    height: 60px; border-radius: var(--shape-md);
+    background: var(--surf-2);
+    color: var(--on-surf);
+    font-family: 'Roboto Mono', monospace; font-weight: 600; font-size: 20px;
+    border: 1px solid var(--outline-soft);
+    transition: background .12s, transform .08s, border-color .12s, box-shadow .12s;
+  }
+  .deno-pad button:hover { background: var(--p-ctr); border-color: var(--p-ctr); }
+  .deno-pad button:active { transform: scale(.96); background: var(--p); color: var(--p-fg); }
+  .deno-pad button.clear {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--outline-soft);
+    font-family: inherit; font-size: 15px; font-weight: 500;
+  }
+  .deno-pad button.clear:hover { background: var(--danger-ctr); border-color: var(--danger-ctr); }
+  .deno-pad button.clear:active { background: var(--danger); color: #fff; }
+  .deno-pad button.span-3 { grid-column: span 3; height: 48px; }
+
+  /* ── Snackbar ─────────────────────────────────────────────────── */
+  #toast-container {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    z-index: 200; pointer-events: none;
+  }
+  .toast {
+    background: var(--on-surf); color: #fff;
+    padding: 12px 18px; border-radius: var(--shape-md);
+    box-shadow: var(--elev-3);
+    font-size: 14px; font-weight: 500;
+    opacity: 0; transform: translateY(20px);
+    transition: opacity .25s, transform .25s cubic-bezier(.2,.7,.2,1);
+    max-width: 92vw;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { background: var(--pay); }
+  .toast.warn { background: var(--warn); color: #1a1c1e; }
+  .toast.danger { background: var(--danger); }
+
+  /* settings: toggle row */
+  .pref-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px;
+    background: var(--surf-2);
+    border-radius: var(--shape-md);
+    cursor: pointer;
+    user-select: none;
+  }
+  .pref-row:hover { background: var(--surf-3); }
+  .pref-row .pref-text { flex: 1; }
+  .pref-row .pref-title { font-size: 14px; font-weight: 500; color: var(--on-surf); }
+  .pref-row .pref-sub { font-size: 11px; color: var(--on-surf-var); margin-top: 1px; }
+  .switch {
+    position: relative; width: 44px; height: 24px; flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--surf-3); border: 2px solid var(--outline);
+    transition: background .2s, border-color .2s;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 50%; left: 4px;
+    width: 14px; height: 14px; background: var(--outline);
+    border-radius: 50%; transform: translateY(-50%);
+    transition: left .2s cubic-bezier(.2,.7,.2,1), background .2s, width .2s, height .2s;
+  }
+  .pref-row.is-on .switch { background: var(--p); border-color: var(--p); }
+  .pref-row.is-on .switch::after { background: #fff; width: 20px; height: 20px; left: 22px; }
+
+  /* held orders sheet (right-side) */
+  .sheet {
+    background: var(--surf);
+    width: 380px; max-width: 92vw;
+    height: 100vh;
+    box-shadow: var(--elev-3);
+    display: flex; flex-direction: column;
+    animation: sheet-in .22s cubic-bezier(.2,.7,.2,1);
+  }
+  @keyframes sheet-in { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet-head { padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--outline-soft); }
+  .sheet-head h3 { font-family: 'Google Sans Display'; font-size: 18px; font-weight: 500; }
+  .sheet-body { flex: 1; overflow-y: auto; padding: 12px; }
+  .held-row {
+    background: var(--surf-2);
+    border-radius: var(--shape-md);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: grid; grid-template-columns: 1fr auto; gap: 10px;
+  }
+  .held-row .h-meta { font-size: 12px; color: var(--on-surf-var); }
+  .held-row .h-total { font-family: 'Roboto Mono',monospace; font-weight: 600; color: var(--p); }
+  .held-row .h-actions { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
+  .held-row .h-actions button {
+    flex: 1; height: 40px; border-radius: 999px;
+    font-size: 13px; font-weight: 500;
+  }
+  .held-row .h-recall { background: var(--p); color: var(--p-fg); }
+  .held-row .h-recall:hover { filter: brightness(1.05); }
+  .held-row .h-trash { background: transparent; color: var(--danger); border: 1px solid var(--outline-soft); }
+  .held-row .h-trash:hover { background: var(--danger-ctr); border-color: var(--danger-ctr); }
+
+  /* fullscreen helper */
+  .scrim.right { justify-content: flex-end; padding: 0; }
+</style>
+
+<!-- ── Shell ─────────────────────────────────────────────────────── -->
+<div class="shell">
+
+    <!-- Top bar -->
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo display">M</span>
+            <span class="display" style="font-size:17px;letter-spacing:-.01em">Mulan POS</span>
         </div>
+        <span class="order-pill is-empty" id="order-pill">
+            <span class="material-symbols-rounded" style="font-size:16px">receipt_long</span>
+            <span>Order</span>
+            <span class="mono" id="order-code">—</span>
+        </span>
+        <div style="flex:1"></div>
+        <button class="icon-btn has-badge" onclick="openHeldSheet()" title="Held orders">
+            <span class="material-symbols-rounded">bookmark</span>
+            <span class="badge" id="held-badge" style="display:none">0</span>
+        </button>
+        <button class="icon-btn" onclick="toggleFullscreen()" title="Full screen" id="fs-btn">
+            <span class="material-symbols-rounded" id="fs-icon">fullscreen</span>
+        </button>
+        <button class="icon-btn" onclick="openSettings()" title="Settings">
+            <span class="material-symbols-rounded">settings</span>
+        </button>
+    </header>
+
+    <!-- Main split -->
+    <div class="main">
+        <!-- Left: menu picker -->
+        <section class="menu-pane">
+            <div class="search-bar" id="search-bar">
+                <span class="material-symbols-rounded">search</span>
+                <input id="search" type="text" placeholder="Search menu or scan barcode…" autocomplete="off" inputmode="search">
+                <button class="clear-btn" onclick="clearSearch()" title="Clear">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+
+            <div class="cat-strip" id="cat-strip"></div>
+
+            <div class="menu-grid-wrap">
+                <div class="menu-grid" id="menu-grid"></div>
+            </div>
+        </section>
+
+        <!-- Right: order -->
+        <aside class="order-pane">
+            <div class="order-head">
+                <div>
+                    <h2>Current order</h2>
+                    <div class="order-meta" id="order-meta">No items yet</div>
+                </div>
+                <button class="void-btn" id="void-btn" onclick="voidOrder()" disabled>
+                    <span class="material-symbols-rounded" style="font-size:16px;vertical-align:-3px">delete_sweep</span> Void
+                </button>
+            </div>
+
+            <div class="order-list" id="order-list"></div>
+
+            <div class="totals" id="totals" style="display:none">
+                <div class="total-row"><span>Subtotal</span><span class="v mono" id="t-sub">฿0.00</span></div>
+                <div class="total-row" id="vat-row" style="display:none"><span id="vat-label">VAT</span><span class="v mono" id="t-vat">฿0.00</span></div>
+                <div class="total-row grand"><span>Total</span><span class="v mono" id="t-grand">฿0.00</span></div>
+            </div>
+
+            <div class="util-bar">
+                <button class="util-btn" id="hold-btn" onclick="holdOrder()" disabled>
+                    <span class="material-symbols-rounded">bookmark_add</span>
+                    <span>Hold</span>
+                </button>
+                <button class="util-btn" onclick="openHeldSheet()">
+                    <span class="material-symbols-rounded">history</span>
+                    <span>Recall</span>
+                </button>
+                <button class="util-btn" onclick="kickDrawer()">
+                    <span class="material-symbols-rounded">point_of_sale</span>
+                    <span>Drawer</span>
+                </button>
+                <button class="util-btn" id="discount-btn" onclick="snack('Discounts coming soon','warn')">
+                    <span class="material-symbols-rounded">sell</span>
+                    <span>Discount</span>
+                </button>
+            </div>
+
+            <div class="pay-bar">
+                <button class="pay-btn" id="pay-btn" onclick="openTender()" disabled>
+                    <span style="display:inline-flex;align-items:center;gap:8px">
+                        <span class="material-symbols-rounded">credit_card</span>
+                        Pay
+                    </span>
+                    <span class="pay-amt" id="pay-amt">฿0.00</span>
+                </button>
+            </div>
+        </aside>
     </div>
+</div>
 
-    <!-- Right: Order Summary -->
-    <div class="w-full md:w-80 lg:w-96 max-h-[40vh] md:max-h-none bg-white border-t md:border-t-0 md:border-l flex flex-col">
-        <div class="p-3 border-b flex-shrink-0 flex items-center justify-between">
-            <h2 class="text-lg font-bold">Order</h2>
-            <button onclick="openSettings()"
-                class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200 text-xl">
-                ⚙
+<!-- ── Options dialog ────────────────────────────────────────────── -->
+<div id="options-modal" class="scrim">
+    <div class="dialog wide">
+        <div class="d-head">
+            <h3 id="options-title">Customise</h3>
+            <button class="icon-btn" onclick="closeOptionsModal()">
+                <span class="material-symbols-rounded">close</span>
             </button>
         </div>
-
-        <!-- Options Modal -->
-        <div id="options-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
-                <div class="p-4 border-b flex items-center justify-between">
-                    <h3 id="options-title" class="text-lg font-bold"></h3>
-                    <button onclick="closeOptionsModal()" class="text-gray-400 text-2xl leading-none">&times;</button>
-                </div>
-                <div id="options-body" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
-                <div class="p-4 border-t flex gap-2">
-                    <button onclick="closeOptionsModal()" class="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold hover:bg-gray-300 active:bg-gray-400">Cancel</button>
-                    <button id="options-confirm" onclick="confirmOptions()" class="flex-1 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 active:bg-blue-700">Add</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Settings Modal -->
-        <div id="settings-modal" class="hidden absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-2xl shadow-xl p-6 w-64 flex flex-col gap-4">
-                <h3 class="text-lg font-bold text-center">Settings</h3>
-                <button onclick="toggleFullscreen()"
-                    id="fullscreen-btn"
-                    class="w-full py-4 bg-blue-500 text-white rounded-xl font-bold text-base hover:bg-blue-600 active:bg-blue-700">
-                    Enter Full Screen
-                </button>
-                <button onclick="closeSettings()"
-                    class="w-full py-3 bg-gray-200 text-gray-800 rounded-xl font-bold text-base hover:bg-gray-300 active:bg-gray-400">
-                    Close
-                </button>
-            </div>
-        </div>
-
-        <!-- Order Items — no scroll -->
-        <div class="flex-1 px-3 pt-2 min-h-0" id="order-items"></div>
-
-        <!-- Order Pagination (shown only when order exceeds one page) -->
-        <div id="order-pagination" class="hidden flex-shrink-0 flex items-center justify-between px-3 py-2 border-t">
-            <button id="order-prev" onclick="orderPrev()"
-                class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
-                ◀
+        <div class="d-body" id="options-body"></div>
+        <div class="d-foot">
+            <button class="btn-text" onclick="closeOptionsModal()">Cancel</button>
+            <button class="btn-filled" id="options-confirm" onclick="confirmOptions()">
+                <span class="material-symbols-rounded" style="font-size:18px">add_shopping_cart</span>
+                Add to order
             </button>
-            <span id="order-page-info" class="text-xs text-gray-500"></span>
-            <button id="order-next" onclick="orderNext()"
-                class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300 active:bg-gray-400 disabled:opacity-30 disabled:pointer-events-none">
-                ▶
-            </button>
-        </div>
-
-        <!-- Total + Pay -->
-        <div class="border-t p-3 flex-shrink-0">
-            <div class="flex justify-between text-lg font-bold mb-3">
-                <span>Total</span>
-                <span id="order-total">฿0.00</span>
-            </div>
-            <button class="w-full bg-green-500 text-white py-3 rounded text-lg font-bold hover:bg-green-600 active:bg-green-700" onclick="checkout()">Pay</button>
         </div>
     </div>
 </div>
 
+<!-- ── Tender dialog ─────────────────────────────────────────────── -->
+<div id="tender-modal" class="scrim">
+    <div class="dialog">
+        <div class="d-head">
+            <h3>Take payment</h3>
+            <button class="icon-btn" onclick="closeTender()"><span class="material-symbols-rounded">close</span></button>
+        </div>
+        <div class="tender">
+            <div class="pay-tabs" id="pay-tabs">
+                <button class="pay-tab is-active" data-method="cash"><span class="material-symbols-rounded">payments</span>Cash</button>
+                <button class="pay-tab" data-method="card"><span class="material-symbols-rounded">credit_card</span>Card</button>
+                <button class="pay-tab" data-method="qr"><span class="material-symbols-rounded">qr_code_2</span>QR / PromptPay</button>
+            </div>
+
+            <div class="pay-figs">
+                <div class="row"><span>Total due</span><span class="v" id="tender-total">฿0.00</span></div>
+                <div class="row" id="tender-cash-row"><span>Cash tendered</span><span class="v" id="tender-cash">฿0.00</span></div>
+                <div class="row change" id="tender-change-row"><span id="tender-change-label">Change</span><span class="v" id="tender-change">฿0.00</span></div>
+            </div>
+
+            <div id="cash-pane">
+                <div class="quick-cash" id="quick-cash"></div>
+                <div class="deno-pad">
+                    <button onclick="addCash(1)">฿1</button>
+                    <button onclick="addCash(2)">฿2</button>
+                    <button onclick="addCash(5)">฿5</button>
+                    <button onclick="addCash(10)">฿10</button>
+                    <button onclick="addCash(20)">฿20</button>
+                    <button onclick="addCash(50)">฿50</button>
+                    <button onclick="addCash(100)">฿100</button>
+                    <button onclick="addCash(500)">฿500</button>
+                    <button onclick="addCash(1000)">฿1000</button>
+                    <button class="clear span-3" onclick="kpClear()">
+                        <span class="material-symbols-rounded" style="font-size:20px;vertical-align:-4px">backspace</span>
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <div id="card-pane" style="display:none;text-align:center;padding:18px 0">
+                <span class="material-symbols-rounded" style="font-size:64px;color:var(--p)">credit_card</span>
+                <p style="margin-top:8px;font-size:14px;color:var(--on-surf-var)">Tap or insert card on terminal, then confirm.</p>
+            </div>
+            <div id="qr-pane" style="display:none;text-align:center;padding:18px 0">
+                <span class="material-symbols-rounded" style="font-size:64px;color:var(--p)">qr_code_2</span>
+                <p style="margin-top:8px;font-size:14px;color:var(--on-surf-var)">Customer scans PromptPay QR. Confirm once received.</p>
+            </div>
+        </div>
+        <div class="d-foot split">
+            <button class="btn-text" onclick="closeTender()">Cancel</button>
+            <button class="btn-filled" id="tender-confirm" onclick="confirmTender()" style="background:var(--pay)">
+                <span class="material-symbols-rounded" style="font-size:20px">check_circle</span>
+                <span id="tender-confirm-label">Confirm payment</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Held orders sheet ─────────────────────────────────────────── -->
+<div id="held-scrim" class="scrim right">
+    <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-head">
+            <h3>Held orders</h3>
+            <button class="icon-btn" onclick="closeHeldSheet()"><span class="material-symbols-rounded">close</span></button>
+        </div>
+        <div class="sheet-body" id="held-body"></div>
+    </div>
+</div>
+
+<!-- ── Settings dialog ───────────────────────────────────────────── -->
+<div id="settings-modal" class="scrim">
+    <div class="dialog" style="max-width:420px">
+        <div class="d-head">
+            <h3>Settings</h3>
+            <button class="icon-btn" onclick="closeSettings()"><span class="material-symbols-rounded">close</span></button>
+        </div>
+        <div class="d-body" style="display:flex;flex-direction:column;gap:14px">
+
+            <!-- Cash drawer float -->
+            <section style="background:var(--surf-2);border-radius:var(--shape-md);padding:14px 16px">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span class="material-symbols-rounded" style="color:var(--p)">savings</span>
+                    <div style="flex:1">
+                        <div style="font-weight:600;font-size:14px;color:var(--on-surf)">Cash drawer float</div>
+                        <div id="float-meta" style="font-size:11px;color:var(--on-surf-var);margin-top:1px">Opening cash kept in the drawer for change.</div>
+                    </div>
+                    <div style="font-family:'Roboto Mono',monospace;font-weight:600;color:var(--p);font-size:18px" id="float-display">฿0.00</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                    <span style="font-family:'Roboto Mono',monospace;color:var(--on-surf-var);font-size:15px;padding-left:4px">฿</span>
+                    <input id="float-input" type="number" min="0" step="0.01" placeholder="0.00"
+                           style="flex:1;height:44px;border:1px solid var(--outline);border-radius:var(--shape-sm);padding:0 12px;font-size:15px;font-family:'Roboto Mono',monospace;background:var(--surf);outline:none">
+                    <button class="btn-filled" onclick="setFloat()" style="height:44px;padding:0 18px">Set</button>
+                </div>
+                <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
+                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(500)">฿500</button>
+                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(1000)">฿1,000</button>
+                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(2000)">฿2,000</button>
+                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(5000)">฿5,000</button>
+                    <div style="flex:1"></div>
+                    <button class="btn-text danger" style="height:30px;padding:0 10px;font-size:12px" onclick="clearFloat()">Clear</button>
+                </div>
+            </section>
+
+            <!-- Display preferences -->
+            <section>
+                <div style="font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--on-surf-var);padding:0 4px 6px">Display</div>
+                <div id="pref-hide-search" class="pref-row" onclick="toggleHideSearch()">
+                    <span class="material-symbols-rounded" style="color:var(--on-surf-var)">search_off</span>
+                    <div class="pref-text">
+                        <div class="pref-title">Hide search bar</div>
+                        <div class="pref-sub">Frees space when using touch only.</div>
+                    </div>
+                    <div class="switch"></div>
+                </div>
+            </section>
+
+            <!-- Quick actions -->
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="toggleFullscreen()">
+                    <span class="material-symbols-rounded" id="fs-icon-2">fullscreen</span>
+                    <span style="font-size:14px;font-weight:500" id="fs-label">Enter full screen</span>
+                </button>
+                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="kickDrawer(); closeSettings()">
+                    <span class="material-symbols-rounded">point_of_sale</span>
+                    <span style="font-size:14px;font-weight:500">Open cash drawer</span>
+                </button>
+                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="reloadMenus()">
+                    <span class="material-symbols-rounded">refresh</span>
+                    <span style="font-size:14px;font-weight:500">Reload menus</span>
+                </button>
+                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="restartAgent()">
+                    <span class="material-symbols-rounded" style="color:var(--warn)">restart_alt</span>
+                    <span style="font-size:14px;font-weight:500">Restart agent</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Change-due modal (post-cash-checkout) ─────────────────────── -->
+<div id="change-modal" class="scrim">
+    <div class="dialog" style="max-width:440px">
+        <div class="d-body" style="padding:32px 22px 22px;text-align:center">
+            <div style="width:72px;height:72px;border-radius:50%;background:#e6f4ea;color:#137333;margin:0 auto 12px;display:flex;align-items:center;justify-content:center">
+                <span class="material-symbols-rounded" style="font-size:42px">paid</span>
+            </div>
+            <div style="font-size:13px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--on-surf-var)">Give customer change</div>
+            <div id="change-amount" class="display" style="font-size:64px;font-weight:500;letter-spacing:-.02em;color:var(--pay);margin-top:6px;line-height:1.05">฿0.00</div>
+
+            <div style="background:var(--surf-2);border-radius:var(--shape-md);padding:14px 18px;margin-top:18px;text-align:left">
+                <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--on-surf-var);padding:3px 0">
+                    <span>Total paid</span>
+                    <span class="mono" id="change-total" style="color:var(--on-surf);font-weight:500">฿0.00</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--on-surf-var);padding:3px 0">
+                    <span>Cash received</span>
+                    <span class="mono" id="change-tendered" style="color:var(--on-surf);font-weight:500">฿0.00</span>
+                </div>
+            </div>
+        </div>
+        <div class="d-foot" style="justify-content:center">
+            <button class="btn-filled" id="change-close-btn" onclick="closeChangeModal()" style="height:56px;min-width:220px;background:var(--pay);font-size:16px">
+                <span class="material-symbols-rounded">check</span>
+                <span id="change-close-label">Close (auto 30s)</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Confirm dialog ────────────────────────────────────────────── -->
+<div id="confirm-modal" class="scrim">
+    <div class="dialog" style="max-width:360px">
+        <div class="d-head"><h3 id="confirm-title">Confirm?</h3></div>
+        <div class="d-body"><p id="confirm-body" style="font-size:14px;color:var(--on-surf-var)"></p></div>
+        <div class="d-foot">
+            <button class="btn-text" onclick="closeConfirm()">Cancel</button>
+            <button class="btn-text danger" id="confirm-ok">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toasts -->
+<div id="toast-container"></div>
+
 <script>
+// ── Config / state ─────────────────────────────────────────────────
 const API_BASE = "{{.APIBase}}";
-const MENU_PAGE_SIZE = 16;
-const ORDER_PAGE_SIZE = 8;
 
 let menus = [];
 let categories = [];
 let order = [];
 let orderCode = null;
 let activeCategory = null;
-let menuPage = 0;
-let orderPage = 0;
+let searchText = '';
+let shopName = 'Mulan POS';
+let vatPercent = 0;
 
 const unwrap = r => r.json().then(d => d.data ?? d);
 
-// esc() HTML-escapes user-controlled strings before they're interpolated
-// into innerHTML. Menu/option names are typed in the manager UI, so a name
-// like `<img onerror=...>` would otherwise execute inside the POS.
 function esc(s) {
     return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function fmt(n) { return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtPlain(n) { return (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+// ── Init ──────────────────────────────────────────────────────────
+async function init() {
+    try {
+        const [m, c] = await Promise.all([
+            fetch(API_BASE + '/api/menus').then(unwrap),
+            fetch(API_BASE + '/api/menu-categories').then(unwrap),
+        ]);
+        menus = m || [];
+        categories = c || [];
+        // optional: try to load shop settings
+        try {
+            const s = await fetch(API_BASE + '/api/settings').then(unwrap);
+            if (s) {
+                if (s.shop_name) shopName = s.shop_name;
+                if (typeof s.vat_percent === 'number') vatPercent = s.vat_percent;
+            }
+        } catch (_) {}
+        renderCategories();
+        renderMenus();
+        renderOrder();
+        fetchHeld(); // populate badge from server
+        applySearchVisibility(); // apply persisted display prefs
+    } catch (e) {
+        snack('Failed to load menus. Check connection.', 'danger');
+    }
 }
 
-async function init() {
-    [menus, categories] = await Promise.all([
-        fetch(API_BASE + '/api/menus').then(unwrap),
-        fetch(API_BASE + '/api/menu-categories').then(unwrap),
-    ]);
+// Restart the agent process. NSSM (Windows) or systemd (Linux) respawns it
+// within ~2s. We poll /pos until it returns 200, then reload the page so the
+// cashier lands on a fresh session with the latest binary/templates.
+async function restartAgent() {
+    confirmDialog('Restart agent?', 'POS reconnects in a few seconds. Held orders are safe in DB.', async () => {
+        closeSettings();
+        snack('Restarting agent…', 'warn');
+        try {
+            await fetch('/restart', { method: 'POST' });
+        } catch { /* connection drops as agent exits — expected */ }
+
+        // Poll /pos until back up (up to ~20s).
+        const deadline = Date.now() + 20000;
+        const probe = async () => {
+            try {
+                const r = await fetch('/pos', { method: 'GET', cache: 'no-store' });
+                if (r.ok) return true;
+            } catch {}
+            return false;
+        };
+        while (Date.now() < deadline) {
+            await new Promise(res => setTimeout(res, 800));
+            if (await probe()) {
+                snack('Agent back online · reloading…', 'success');
+                setTimeout(() => location.reload(), 600);
+                return;
+            }
+        }
+        snack('Agent did not come back within 20s — check the box.', 'danger');
+    });
+}
+
+async function reloadMenus() {
+    try {
+        menus = await fetch(API_BASE + '/api/menus').then(unwrap) || [];
+        categories = await fetch(API_BASE + '/api/menu-categories').then(unwrap) || [];
+        renderCategories();
+        renderMenus();
+        snack('Menus reloaded.', 'success');
+    } catch { snack('Reload failed.', 'danger'); }
+}
+
+// ── Categories ────────────────────────────────────────────────────
+function renderCategories() {
+    const strip = document.getElementById('cat-strip');
+    const countAll = menus.length;
+    const countByCat = id => menus.filter(m => m.category_id === id).length;
+    const countUncat = menus.filter(m => m.category_id == null).length;
+    let html = `<button class="cat-chip ${activeCategory===null?'is-active':''}" onclick="filterCategory(null)">
+        <span class="material-symbols-rounded" style="font-size:18px">apps</span>
+        All <span class="count">${countAll}</span>
+    </button>`;
+    for (const c of categories) {
+        const n = countByCat(c.id);
+        html += `<button class="cat-chip ${activeCategory===c.id?'is-active':''}" onclick="filterCategory(${c.id})">
+            ${esc(c.name)} <span class="count">${n}</span>
+        </button>`;
+    }
+    if (countUncat) {
+        html += `<button class="cat-chip ${activeCategory==='uncat'?'is-active':''}" onclick="filterCategory('uncat')">
+            Uncategorised <span class="count">${countUncat}</span>
+        </button>`;
+    }
+    strip.innerHTML = html;
+}
+function filterCategory(id) {
+    activeCategory = id;
     renderCategories();
     renderMenus();
 }
 
-function renderCategories() {
-    const tabs = document.getElementById('category-tabs');
-    tabs.innerHTML = '<button class="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t" onclick="filterCategory(null)">All</button>';
-    categories.forEach(c => {
-        tabs.innerHTML += `<button class="px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300" onclick="filterCategory(${c.id})">${esc(c.name)}</button>`;
-    });
-}
-
-function filterCategory(id) {
-    activeCategory = id;
-    menuPage = 0;
-    document.querySelectorAll('#category-tabs button').forEach((btn, i) => {
-        const active = (id === null && i === 0) || (id !== null && i > 0 && categories[i - 1].id === id);
-        btn.className = active
-            ? 'px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-t'
-            : 'px-4 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-t hover:bg-gray-300';
-    });
-    renderMenus();
-}
-
+// ── Menu grid ─────────────────────────────────────────────────────
 function filteredMenus() {
-    return activeCategory === null ? menus : menus.filter(m => m.category_id === activeCategory);
+    const q = searchText.trim().toLowerCase();
+    return menus.filter(m => {
+        if (activeCategory === 'uncat') { if (m.category_id != null) return false; }
+        else if (activeCategory !== null && m.category_id !== activeCategory) return false;
+        if (q) {
+            const hay = (m.name + ' ' + (m.vfd_name || '')).toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
 }
-
 function renderMenus() {
-    const all = filteredMenus();
-    const totalPages = Math.max(1, Math.ceil(all.length / MENU_PAGE_SIZE));
-    if (menuPage >= totalPages) menuPage = totalPages - 1;
-
-    const page = all.slice(menuPage * MENU_PAGE_SIZE, (menuPage + 1) * MENU_PAGE_SIZE);
-
-    document.getElementById('menu-grid').innerHTML = page.map(m => m.active
-        ? `<button data-menu-id="${m.id}" onclick="addToOrder(${m.id})"
-            class="w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100">
-            <div class="font-bold text-base px-1 text-center leading-tight">${esc(m.name)}</div>
-            <div class="text-blue-600 font-medium text-sm mt-1">฿${m.price.toFixed(2)}</div>
-        </button>`
-        : `<button data-menu-id="${m.id}" disabled
-            class="w-full h-full bg-gray-100 border-2 border-gray-200 rounded-xl flex flex-col items-center justify-center opacity-50 cursor-not-allowed">
-            <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${esc(m.name)}</div>
-            <div class="text-gray-400 font-medium text-sm mt-1">Unavailable</div>
-        </button>`
-    ).join('');
-
-    document.getElementById('menu-page-info').textContent = `${menuPage + 1} / ${totalPages}`;
-    document.getElementById('menu-prev').disabled = menuPage === 0;
-    document.getElementById('menu-next').disabled = menuPage >= totalPages - 1;
+    const grid = document.getElementById('menu-grid');
+    const list = filteredMenus();
+    if (!list.length) {
+        grid.innerHTML = `<div class="grid-empty">
+            <span class="material-symbols-rounded">search_off</span>
+            <h3>No items found</h3>
+            <p style="font-size:13px">Try clearing search or changing category.</p>
+        </div>`;
+        return;
+    }
+    grid.innerHTML = list.map(m => {
+        if (!m.active) {
+            return `<button class="menu-card disabled" data-menu-id="${m.id}" disabled>
+                <div class="name">${esc(m.name)}</div>
+                <div class="unavail">Unavailable</div>
+            </button>`;
+        }
+        const hasOpts = (m.option_groups || []).length > 0;
+        return `<button class="menu-card" data-menu-id="${m.id}" onclick="addToOrder(${m.id})">
+            ${hasOpts ? '<span class="opt-flag"><span class="material-symbols-rounded">tune</span></span>' : ''}
+            <div class="name">${esc(m.name)}</div>
+            <div class="price">${fmt(m.price)}</div>
+        </button>`;
+    }).join('');
 }
 
-function menuPrev() { if (menuPage > 0) { menuPage--; renderMenus(); } }
-function menuNext() {
-    if (menuPage < Math.ceil(filteredMenus().length / MENU_PAGE_SIZE) - 1) { menuPage++; renderMenus(); }
-}
-
+// ── Order list ────────────────────────────────────────────────────
 function lineKey(menuId, options) {
-    const ids = (options || []).map(o => o.id).sort((a, b) => a - b).join(',');
+    const ids = (options || []).map(o => o.id).sort((a,b)=>a-b).join(',');
     return menuId + '|' + ids;
 }
-
 function unitPrice(line) {
     return line.price + (line.options || []).reduce((s, o) => s + (o.price_delta || 0), 0);
+}
+function orderSubtotal() {
+    return order.reduce((s, l) => s + unitPrice(l) * l.qty, 0);
+}
+function orderTotals() {
+    const sub = orderSubtotal();
+    let vat = 0;
+    if (vatPercent > 0) {
+        // assume tax-inclusive pricing (common in TH POS):
+        // subtotal already includes VAT, derive VAT portion for display
+        vat = sub - (sub / (1 + vatPercent / 100));
+    }
+    return { sub, vat, grand: sub };
+}
+
+async function ensureOrderCode() {
+    if (orderCode) return orderCode;
+    const res = await fetch(API_BASE + '/api/orders', { method: 'POST' });
+    const data = await res.json();
+    orderCode = (data.data && data.data.code) || data.code;
+    return orderCode;
 }
 
 async function addToOrder(menuId) {
@@ -207,89 +1113,138 @@ async function addToOrder(menuId) {
 }
 
 async function addLine(menu, selectedOptions) {
-    if (!orderCode) {
-        const res = await fetch(API_BASE + '/api/orders', { method: 'POST' });
-        const data = await res.json();
-        orderCode = (data.data && data.data.code) || data.code;
-    }
+    await ensureOrderCode();
     const key = lineKey(menu.id, selectedOptions);
     const existing = order.find(o => o.key === key);
-    if (existing) {
-        existing.qty++;
-    } else {
-        order.push({
-            key,
-            id: menu.id,
-            name: menu.name,
-            price: menu.price,
-            qty: 1,
-            options: selectedOptions,
-        });
-    }
-    renderOrder();
+    if (existing) existing.qty++;
+    else order.push({
+        key, id: menu.id, name: menu.name,
+        price: menu.price, qty: 1,
+        options: selectedOptions,
+        vfd_name: menu.vfd_name || menu.name,
+    });
+    renderOrder({ flashKey: key });
 
     const line = order.find(o => o.key === key);
     fetch('/vfd/item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: menu.vfd_name || menu.name, qty: line.qty, total: unitPrice(line) * line.qty }),
-    });
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: line.vfd_name, qty: line.qty, total: unitPrice(line) * line.qty }),
+    }).catch(() => {});
 }
 
-function removeFromOrder(key) {
+function incQty(key) {
+    const l = order.find(o => o.key === key);
+    if (!l) return;
+    l.qty++;
+    renderOrder({ flashKey: key });
+    fetch('/vfd/item', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: l.vfd_name, qty: l.qty, total: unitPrice(l) * l.qty }),
+    }).catch(() => {});
+}
+function decQty(key) {
     const idx = order.findIndex(o => o.key === key);
-    if (idx !== -1) {
-        order[idx].qty--;
-        if (order[idx].qty <= 0) order.splice(idx, 1);
-    }
+    if (idx === -1) return;
+    order[idx].qty--;
+    if (order[idx].qty <= 0) order.splice(idx, 1);
+    renderOrder();
+}
+function removeLine(key) {
+    const idx = order.findIndex(o => o.key === key);
+    if (idx !== -1) order.splice(idx, 1);
     renderOrder();
 }
 
-function renderOrder() {
-    const totalPages = Math.max(1, Math.ceil(order.length / ORDER_PAGE_SIZE));
-    if (orderPage >= totalPages) orderPage = totalPages - 1;
+function renderOrder(opts = {}) {
+    const list = document.getElementById('order-list');
+    const totals = document.getElementById('totals');
+    const meta = document.getElementById('order-meta');
+    const payBtn = document.getElementById('pay-btn');
+    const voidBtn = document.getElementById('void-btn');
+    const holdBtn = document.getElementById('hold-btn');
+    const orderPill = document.getElementById('order-pill');
+    const orderCodeEl = document.getElementById('order-code');
 
-    const page = order.slice(orderPage * ORDER_PAGE_SIZE, (orderPage + 1) * ORDER_PAGE_SIZE);
+    if (!order.length) {
+        list.innerHTML = `<div class="order-empty">
+            <span class="material-symbols-rounded">shopping_cart</span>
+            <h3>Empty order</h3>
+            <p>Tap a menu item or scan a barcode.</p>
+        </div>`;
+        totals.style.display = 'none';
+        meta.textContent = 'No items yet';
+        payBtn.disabled = true; voidBtn.disabled = true; holdBtn.disabled = true;
+        document.getElementById('pay-amt').textContent = '฿0.00';
+        orderPill.classList.add('is-empty');
+        orderCodeEl.textContent = '—';
+        return;
+    }
 
-    document.getElementById('order-items').innerHTML = page.map(o => {
+    const totalsObj = orderTotals();
+    const totalQty = order.reduce((s,o)=>s+o.qty, 0);
+
+    list.innerHTML = order.map(o => {
         const u = unitPrice(o);
-        const optsHTML = (o.options || []).map(op => `
-            <div class="text-xs text-gray-500 pl-2">
-                · ${esc(op.name)}${op.price_delta > 0 ? ` <span class="text-gray-400">(+฿${op.price_delta.toFixed(2)})</span>` : ''}
+        const total = u * o.qty;
+        const optsHtml = (o.options || []).length
+            ? `<div class="l-opts">${o.options.map(op => `<div>${esc(op.name)}${op.price_delta > 0 ? ` <span class="mono">+${fmtPlain(op.price_delta)}</span>` : (op.price_delta < 0 ? ` <span class="mono">−${fmtPlain(Math.abs(op.price_delta))}</span>` : '')}</div>`).join('')}</div>`
+            : '';
+        const flash = opts.flashKey === o.key ? 'flash' : '';
+        return `<div class="line ${flash}" data-key="${esc(o.key)}">
+            <div>
+                <div class="l-name">${esc(o.name)}</div>
+                ${optsHtml}
+                <div class="l-unit">${fmt(u)} each</div>
             </div>
-        `).join('');
-        return `
-        <div class="flex items-start py-2 border-b gap-2">
-            <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium truncate">${esc(o.name)}</div>
-                ${optsHTML}
-                <div class="text-xs text-gray-500 mt-0.5">฿${u.toFixed(2)} x ${o.qty}</div>
+            <div class="l-total">${fmt(total)}</div>
+            <div class="l-controls">
+                <div class="qty-stepper">
+                    <button onclick="decQty('${esc(o.key)}')" aria-label="Decrease">
+                        <span class="material-symbols-rounded" style="font-size:20px">${o.qty <= 1 ? 'delete' : 'remove'}</span>
+                    </button>
+                    <span class="qty">${o.qty}</span>
+                    <button onclick="incQty('${esc(o.key)}')" aria-label="Increase">
+                        <span class="material-symbols-rounded" style="font-size:20px">add</span>
+                    </button>
+                </div>
+                <div class="l-actions">
+                    <button class="l-del" onclick="removeLine('${esc(o.key)}')" aria-label="Remove">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
             </div>
-            <span class="text-sm font-semibold flex-shrink-0">฿${(u * o.qty).toFixed(2)}</span>
-            <button onclick="removeFromOrder('${esc(o.key)}')"
-                class="w-10 h-10 flex-shrink-0 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-red-200 active:bg-red-300">
-                ✕
-            </button>
         </div>`;
     }).join('');
 
-    const total = order.reduce((sum, o) => sum + unitPrice(o) * o.qty, 0);
-    document.getElementById('order-total').textContent = `฿${total.toFixed(2)}`;
-
-    const pagination = document.getElementById('order-pagination');
-    if (order.length > ORDER_PAGE_SIZE) {
-        pagination.classList.remove('hidden');
-        document.getElementById('order-page-info').textContent = `${orderPage + 1} / ${totalPages}`;
-        document.getElementById('order-prev').disabled = orderPage === 0;
-        document.getElementById('order-next').disabled = orderPage >= totalPages - 1;
-    } else {
-        pagination.classList.add('hidden');
+    if (opts.flashKey) {
+        setTimeout(() => {
+            const el = list.querySelector(`.line[data-key="${CSS.escape(opts.flashKey)}"]`);
+            if (el) el.classList.remove('flash');
+            // scroll into view
+            if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }, 350);
     }
+
+    totals.style.display = '';
+    document.getElementById('t-sub').textContent = fmt(totalsObj.sub);
+    if (vatPercent > 0) {
+        document.getElementById('vat-row').style.display = '';
+        document.getElementById('vat-label').textContent = `VAT (${vatPercent}% incl.)`;
+        document.getElementById('t-vat').textContent = fmt(totalsObj.vat);
+    } else {
+        document.getElementById('vat-row').style.display = 'none';
+    }
+    document.getElementById('t-grand').textContent = fmt(totalsObj.grand);
+    document.getElementById('pay-amt').textContent = fmt(totalsObj.grand);
+
+    meta.textContent = `${order.length} line${order.length>1?'s':''} · ${totalQty} item${totalQty>1?'s':''}`;
+    payBtn.disabled = false; voidBtn.disabled = false; holdBtn.disabled = false;
+    orderPill.classList.remove('is-empty');
+    orderCodeEl.textContent = orderCode || '—';
 }
 
-// ── Options modal ─────────────────────────────────────────────────────
+// ── Options modal ─────────────────────────────────────────────────
 let pendingMenu = null;
-
 function openOptionsModal(menu) {
     pendingMenu = menu;
     document.getElementById('options-title').textContent = menu.name;
@@ -299,31 +1254,36 @@ function openOptionsModal(menu) {
         const required = g.selection_mode === 'single_required';
         const inputType = isMulti ? 'checkbox' : 'radio';
         return `
-            <div data-group-id="${g.id}" data-mode="${esc(g.selection_mode)}">
-                <div class="flex items-baseline justify-between mb-2">
-                    <h4 class="font-bold text-base">${esc(g.name)}</h4>
-                    <span class="text-xs text-gray-500">${required ? 'Required' : (isMulti ? 'Pick any' : 'Optional')}</span>
+            <div class="opt-group" data-group-id="${g.id}" data-mode="${esc(g.selection_mode)}">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <h4>${esc(g.name)}</h4>
+                    <span class="req-tag ${required ? 'required' : ''}">${required ? 'Required' : (isMulti ? 'Pick any' : 'Optional')}</span>
                 </div>
-                <div class="space-y-2">
+                <div class="opt-list">
                     ${(g.options || []).map(o => `
-                        <label class="flex items-center gap-3 px-3 py-3 border rounded-xl cursor-pointer hover:bg-gray-50">
-                            <input type="${inputType}" name="grp-${g.id}" value="${o.id}" data-name="${esc(o.name)}" data-delta="${o.price_delta}" class="w-5 h-5">
-                            <span class="flex-1 text-sm font-medium">${esc(o.name)}</span>
-                            <span class="text-sm text-gray-500">${o.price_delta > 0 ? '+฿' + o.price_delta.toFixed(2) : (o.price_delta < 0 ? '−฿' + Math.abs(o.price_delta).toFixed(2) : '')}</span>
+                        <label class="opt-row">
+                            <input type="${inputType}" name="grp-${g.id}" value="${o.id}" data-name="${esc(o.name)}" data-delta="${o.price_delta}" onchange="optRowSync(this)">
+                            <span class="o-name">${esc(o.name)}</span>
+                            <span class="o-price">${o.price_delta > 0 ? '+'+fmt(o.price_delta) : (o.price_delta < 0 ? '−'+fmt(Math.abs(o.price_delta)) : '')}</span>
                         </label>
                     `).join('')}
                 </div>
-            </div>
-        `;
+            </div>`;
     }).join('');
-    document.getElementById('options-modal').classList.remove('hidden');
+    document.getElementById('options-modal').classList.add('is-open');
 }
-
+function optRowSync(input) {
+    // visual selected state, also clear siblings for radios
+    if (input.type === 'radio') {
+        const sibs = input.closest('.opt-list').querySelectorAll('.opt-row');
+        sibs.forEach(s => s.classList.remove('is-selected'));
+    }
+    input.closest('.opt-row').classList.toggle('is-selected', input.checked);
+}
 function closeOptionsModal() {
-    document.getElementById('options-modal').classList.add('hidden');
+    document.getElementById('options-modal').classList.remove('is-open');
     pendingMenu = null;
 }
-
 function confirmOptions() {
     if (!pendingMenu) return;
     const groupBlocks = document.querySelectorAll('#options-body [data-group-id]');
@@ -332,7 +1292,7 @@ function confirmOptions() {
         const mode = block.dataset.mode;
         const checked = block.querySelectorAll('input:checked');
         if (mode === 'single_required' && checked.length === 0) {
-            showToast('Please pick an option for ' + block.querySelector('h4').textContent);
+            snack('Pick an option for ' + block.querySelector('h4').textContent, 'warn');
             return;
         }
         for (const inp of checked) {
@@ -343,142 +1303,602 @@ function confirmOptions() {
             });
         }
     }
-    const menu = pendingMenu;
+    const m = pendingMenu;
     closeOptionsModal();
-    addLine(menu, selected);
+    addLine(m, selected);
 }
 
-function orderPrev() { if (orderPage > 0) { orderPage--; renderOrder(); } }
-function orderNext() {
-    if (orderPage < Math.ceil(order.length / ORDER_PAGE_SIZE) - 1) { orderPage++; renderOrder(); }
+// ── Tender (payment) ──────────────────────────────────────────────
+let payMethod = 'cash';
+let cashTendered = 0; // in THB
+
+function openTender() {
+    if (!order.length) return;
+    payMethod = 'cash';
+    cashTendered = 0;
+    renderTender();
+    buildQuickCash();
+    setMethod('cash');
+    document.getElementById('tender-modal').classList.add('is-open');
+}
+function closeTender() {
+    document.getElementById('tender-modal').classList.remove('is-open');
+}
+function setMethod(method) {
+    payMethod = method;
+    document.querySelectorAll('.pay-tab').forEach(t => t.classList.toggle('is-active', t.dataset.method === method));
+    document.getElementById('cash-pane').style.display = method === 'cash' ? '' : 'none';
+    document.getElementById('card-pane').style.display = method === 'card' ? '' : 'none';
+    document.getElementById('qr-pane').style.display   = method === 'qr'   ? '' : 'none';
+    // change row shows different label for non-cash
+    const label = document.getElementById('tender-change-label');
+    const row = document.getElementById('tender-change-row');
+    const cashRow = document.getElementById('tender-cash-row');
+    if (method === 'cash') {
+        cashRow.style.display = '';
+        label.textContent = 'Change';
+    } else {
+        cashRow.style.display = 'none';
+        label.textContent = 'Amount charged';
+        document.getElementById('tender-change').textContent = fmt(orderTotals().grand);
+        row.classList.remove('short');
+    }
+    document.getElementById('tender-confirm-label').textContent =
+        method === 'cash' ? 'Confirm cash' :
+        method === 'card' ? 'Confirm card' : 'Confirm QR paid';
+    renderTender();
+}
+document.querySelectorAll('.pay-tab').forEach(t => t.addEventListener('click', () => setMethod(t.dataset.method)));
+
+function buildQuickCash() {
+    const total = orderTotals().grand;
+    const exact = Math.ceil(total);
+    const presets = [exact];
+    [50, 100, 500, 1000].forEach(v => { if (v >= exact && !presets.includes(v)) presets.push(v); });
+    while (presets.length < 5) {
+        const last = presets[presets.length-1];
+        presets.push(last + 100);
+    }
+    const wrap = document.getElementById('quick-cash');
+    wrap.innerHTML = presets.slice(0, 4).map((v, i) => `
+        <button class="${i === 0 ? 'exact' : ''}" onclick="setCash(${v})">
+            ${i === 0 ? 'Exact' : ''} ฿${v.toLocaleString('th-TH')}
+        </button>
+    `).join('');
+}
+function setCash(v) { cashTendered = v; renderTender(); }
+function addCash(amount) {
+    cashTendered = Math.round((cashTendered + amount) * 100) / 100;
+    renderTender();
+}
+function kpClear() { cashTendered = 0; renderTender(); }
+function renderTender() {
+    const total = orderTotals().grand;
+    document.getElementById('tender-total').textContent = fmt(total);
+    if (payMethod === 'cash') {
+        document.getElementById('tender-cash').textContent = fmt(cashTendered);
+        const change = cashTendered - total;
+        const row = document.getElementById('tender-change-row');
+        const v = document.getElementById('tender-change');
+        if (change >= 0) {
+            row.classList.remove('short');
+            v.textContent = fmt(change);
+        } else {
+            row.classList.add('short');
+            v.textContent = '−' + fmt(Math.abs(change));
+        }
+        document.getElementById('tender-confirm').disabled = cashTendered < total;
+    } else {
+        document.getElementById('tender-confirm').disabled = false;
+    }
+    pushVfdPayment();
 }
 
-async function checkout() {
-    if (order.length === 0 || !orderCode) return;
-    const btn = document.querySelector('button[onclick="checkout()"]');
-    btn.disabled = true;
-    btn.textContent = 'Processing...';
+// pushVfdPayment mirrors the tender state onto the customer-facing VFD.
+// Fire-and-forget — display errors must never block the cashier.
+function pushVfdPayment() {
+    const total = orderTotals().grand;
+    const change = payMethod === 'cash' ? Math.max(0, cashTendered - total) : 0;
+    fetch('/vfd/payment', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            method: payMethod,
+            total: total,
+            tendered: payMethod === 'cash' ? cashTendered : 0,
+            change: change,
+        }),
+    }).catch(() => {});
+}
+async function confirmTender() {
+    const change = payMethod === 'cash' ? Math.max(0, cashTendered - orderTotals().grand) : 0;
+    closeTender();
+    await doCheckout(payMethod, cashTendered, change);
+}
+
+// ── Change-due modal ──────────────────────────────────────────────
+// Shown on cash checkout when change > 0. Cashier can dismiss any time;
+// otherwise modal auto-closes after CHANGE_AUTO_CLOSE_SECS so the screen
+// is ready for the next customer if the cashier walked away.
+const CHANGE_AUTO_CLOSE_SECS = 30;
+let changeCountdownTimer = null;
+function openChangeModal(changeAmt, total, tendered) {
+    document.getElementById('change-amount').textContent = fmt(changeAmt);
+    document.getElementById('change-total').textContent = fmt(total);
+    document.getElementById('change-tendered').textContent = fmt(tendered);
+
+    const label = document.getElementById('change-close-label');
+    let remaining = CHANGE_AUTO_CLOSE_SECS;
+    label.textContent = `Close (auto ${remaining}s)`;
+
+    clearInterval(changeCountdownTimer);
+    changeCountdownTimer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            label.textContent = `Close (auto ${remaining}s)`;
+        } else {
+            closeChangeModal();
+        }
+    }, 1000);
+
+    document.getElementById('change-modal').classList.add('is-open');
+}
+function closeChangeModal() {
+    clearInterval(changeCountdownTimer);
+    changeCountdownTimer = null;
+    document.getElementById('change-modal').classList.remove('is-open');
+}
+
+// ── Checkout ──────────────────────────────────────────────────────
+async function doCheckout(method, tendered, change) {
+    if (!order.length || !orderCode) return;
+    const totalAtPay = orderTotals().grand; // capture before order array resets
+    const payBtn = document.getElementById('pay-btn');
+    payBtn.disabled = true;
     try {
         await fetch('/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({
                 order_code: orderCode,
+                payment_method: method,
+                cash_tendered: method === 'cash' ? tendered : 0,
+                cash_change:   method === 'cash' ? change   : 0,
                 items: order.map(o => ({
-                    menu_id: o.id,
-                    name: o.name,
-                    price: o.price,
-                    qty: o.qty,
+                    menu_id: o.id, name: o.name, price: o.price, qty: o.qty,
                     option_ids: (o.options || []).map(op => op.id),
                     options: o.options || [],
                 })),
             }),
         });
+        // Drawer audit only — physical kick is handled by the agent's
+        // /checkout endpoint when payment_method='cash'. Avoid double-kick.
+        if (method === 'cash') {
+            auditDrawerKick('change', 'auto-open on cash checkout');
+        }
+        const msg = method === 'cash'
+            ? `Paid · change ${fmt(change)}`
+            : (method === 'card' ? 'Card payment confirmed.' : 'QR payment confirmed.');
+        snack(msg, 'success');
     } catch (e) {
         console.error('checkout error:', e);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Pay';
+        snack('Checkout failed. Try again.', 'danger');
+        payBtn.disabled = false;
+        return;
     }
     order = [];
     orderCode = null;
-    orderPage = 0;
     renderOrder();
-}
-
-function openSettings() {
-    document.getElementById('settings-modal').classList.remove('hidden');
-    updateFullscreenBtn();
-}
-
-function closeSettings() {
-    document.getElementById('settings-modal').classList.add('hidden');
-}
-
-function updateFullscreenBtn() {
-    const btn = document.getElementById('fullscreen-btn');
-    btn.textContent = document.fullscreenElement ? 'Exit Full Screen' : 'Enter Full Screen';
-}
-
-function toggleFullscreen() {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
-    } else {
-        document.exitFullscreen();
+    // Surface change due as a modal that the cashier cannot dismiss for 30s.
+    // Only relevant for cash with actual change (not exact tender).
+    if (method === 'cash' && change > 0) {
+        openChangeModal(change, totalAtPay, tendered);
     }
 }
 
-document.addEventListener('fullscreenchange', () => {
-    updateFullscreenBtn();
-});
+// ── Hold / Recall (Postgres-backed via API) ───────────────────────
+// Held orders persist in `orders` table with status='held' + held_payload jsonb.
+// Visible across all terminals — every open/close of the sheet refetches.
+let heldCache = []; // last fetched list (for badge count between fetches)
 
-// ── Toast ──────────────────────────────────────────────────────────────
-function showToast(msg) {
-    const el = document.createElement('div');
-    el.className = 'bg-gray-900 text-white text-sm px-5 py-3 rounded-xl shadow-lg opacity-0 transition-opacity duration-300';
-    el.textContent = msg;
-    document.getElementById('toast-container').appendChild(el);
-    requestAnimationFrame(() => { el.style.opacity = '1'; });
-    setTimeout(() => {
-        el.style.opacity = '0';
-        el.addEventListener('transitionend', () => el.remove());
-    }, 5000);
+async function fetchHeld() {
+    try {
+        heldCache = await fetch(API_BASE + '/api/orders/held').then(unwrap) || [];
+    } catch {
+        heldCache = [];
+    }
+    renderHeldBadge();
+    return heldCache;
+}
+function renderHeldBadge() {
+    const b = document.getElementById('held-badge');
+    if (heldCache.length) { b.textContent = heldCache.length; b.style.display = ''; }
+    else b.style.display = 'none';
+}
+async function holdOrder() {
+    if (!order.length) return;
+    if (!orderCode) { snack('No order code to hold.', 'warn'); return; }
+    const payload = {
+        items: order,           // line list incl. options
+        order_code: orderCode,  // self-reference for safety
+        saved_at: Date.now(),
+    };
+    try {
+        const res = await fetch(API_BASE + '/api/orders/' + orderCode + '/hold', {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ payload }),
+        });
+        if (!res.ok) {
+            if (res.status === 409) { snack('Order already paid.', 'danger'); return; }
+            throw new Error('hold failed');
+        }
+    } catch (e) {
+        snack('Failed to hold order.', 'danger');
+        return;
+    }
+    order = []; orderCode = null;
+    renderOrder();
+    await fetchHeld();
+    snack('Order held.', 'success');
+}
+function openHeldSheet() {
+    document.getElementById('held-scrim').classList.add('is-open');
+    document.getElementById('held-body').innerHTML = `<div class="order-empty" style="padding:50px 20px">
+        <span class="material-symbols-rounded">hourglass_empty</span>
+        <h3>Loading…</h3>
+    </div>`;
+    fetchHeld().then(renderHeldSheet);
+}
+function closeHeldSheet() {
+    document.getElementById('held-scrim').classList.remove('is-open');
+}
+function renderHeldSheet() {
+    const body = document.getElementById('held-body');
+    if (!heldCache.length) {
+        body.innerHTML = `<div class="order-empty" style="padding:50px 20px">
+            <span class="material-symbols-rounded">bookmark</span>
+            <h3>No held orders</h3>
+            <p>Press <strong>Hold</strong> to park the current order.</p>
+        </div>`;
+        return;
+    }
+    body.innerHTML = heldCache.map(h => {
+        const items = (h.payload && h.payload.items) || [];
+        const total = items.reduce((s,l) => s + (l.price + (l.options||[]).reduce((q,o)=>q+(o.price_delta||0),0)) * l.qty, 0);
+        const qty = items.reduce((s,l) => s + l.qty, 0);
+        const heldAt = h.held_at ? new Date(h.held_at) : null;
+        const ago = heldAt ? timeAgo(heldAt) : '—';
+        return `<div class="held-row">
+            <div>
+                <div style="font-weight:600">#${esc(h.code)}</div>
+                <div class="h-meta">${qty} item${qty>1?'s':''} · held ${ago}${h.held_label ? ' · ' + esc(h.held_label) : ''}</div>
+            </div>
+            <div class="h-total">${fmt(total)}</div>
+            <div class="h-actions">
+                <button class="h-recall" onclick="recallHeld('${esc(h.code)}')">
+                    <span class="material-symbols-rounded" style="font-size:18px;vertical-align:-4px">replay</span>
+                    Recall
+                </button>
+                <button class="h-trash" onclick="trashHeld('${esc(h.code)}')">
+                    <span class="material-symbols-rounded" style="font-size:18px;vertical-align:-4px">delete</span>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+function timeAgo(t) {
+    const sec = Math.floor((Date.now() - t.getTime()) / 1000);
+    if (sec < 60)   return `${sec}s ago`;
+    if (sec < 3600) return `${Math.floor(sec/60)}m ago`;
+    return `${Math.floor(sec/3600)}h ago`;
+}
+async function recallHeld(code) {
+    if (order.length) {
+        confirmDialog('Replace current order?', 'Hold current order first, then recall this one?', async () => {
+            await holdOrder();
+            await doRecall(code);
+        });
+        return;
+    }
+    await doRecall(code);
+}
+async function doRecall(code) {
+    try {
+        const res = await fetch(API_BASE + '/api/orders/' + code + '/resume', { method: 'POST' });
+        if (!res.ok) { snack('Failed to recall.', 'danger'); return; }
+        const body = await res.json().then(d => d.data ?? d);
+        const payload = body.payload || {};
+        order = payload.items || [];
+        orderCode = code;
+        await fetchHeld();
+        closeHeldSheet();
+        renderOrder();
+        snack('Order recalled.', 'success');
+    } catch {
+        snack('Failed to recall.', 'danger');
+    }
+}
+function trashHeld(code) {
+    confirmDialog('Discard held order?', 'This cannot be undone.', async () => {
+        try {
+            await fetch(API_BASE + '/api/orders/' + code + '/hold', { method: 'DELETE' });
+        } catch { /* ignore */ }
+        await fetchHeld();
+        renderHeldSheet();
+    });
 }
 
-// ── SSE — menu status updates ──────────────────────────────────────────
-function connectEvents() {
-    const url = API_BASE.replace(/^http/, 'http') + '/events';
-    const es = new EventSource(url);
+// ── Void order ────────────────────────────────────────────────────
+function voidOrder() {
+    if (!order.length) return;
+    confirmDialog('Void this order?', `${order.length} line${order.length>1?'s':''} will be discarded. The order code stays open.`, () => {
+        order = [];
+        renderOrder();
+        snack('Order voided.', 'warn');
+    });
+}
 
+// ── Drawer ────────────────────────────────────────────────────────
+function kickDrawer() {
+    fetch('/cash-drawer/open', { method: 'POST' })
+        .then(() => {
+            auditDrawerKick('manual', 'cashier opened drawer');
+            snack('Drawer opened.', 'success');
+        })
+        .catch(() => snack('Drawer kick failed.', 'danger'));
+}
+
+// ── Settings ──────────────────────────────────────────────────────
+function openSettings()  {
+    document.getElementById('settings-modal').classList.add('is-open');
+    syncFullscreenLabels();
+    syncFloatUI();
+    syncPrefsUI();
+}
+
+// ── Display prefs (terminal-local) ─────────────────────────────────
+const PREF_HIDE_SEARCH = 'mulan_pos_hide_search';
+function isSearchHidden() { return localStorage.getItem(PREF_HIDE_SEARCH) === '1'; }
+function applySearchVisibility() {
+    const bar = document.getElementById('search-bar');
+    if (!bar) return;
+    bar.style.display = isSearchHidden() ? 'none' : '';
+}
+function syncPrefsUI() {
+    document.getElementById('pref-hide-search').classList.toggle('is-on', isSearchHidden());
+}
+function toggleHideSearch() {
+    const next = !isSearchHidden();
+    if (next) localStorage.setItem(PREF_HIDE_SEARCH, '1');
+    else      localStorage.removeItem(PREF_HIDE_SEARCH);
+    applySearchVisibility();
+    syncPrefsUI();
+    snack(next ? 'Search bar hidden.' : 'Search bar shown.', 'success');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('is-open'); }
+
+// ── Cash drawer float (persisted in Postgres + audited) ───────────
+// Source of truth: GET /api/cash-drawer. Every mutation appends a row to
+// cash_drawer_audit for shift reconciliation. Drawer kicks (manual + auto)
+// are logged too so we can correlate cash-on-hand with physical opens.
+let terminalId = null;
+function getTerminalId() {
+    if (terminalId) return terminalId;
+    let id = localStorage.getItem('mulan_terminal_id');
+    if (!id) {
+        id = 't_' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('mulan_terminal_id', id);
+    }
+    terminalId = id;
+    return id;
+}
+
+async function fetchCurrentFloat() {
+    try {
+        return await fetch(API_BASE + '/api/cash-drawer').then(unwrap);
+    } catch {
+        return null;
+    }
+}
+
+async function syncFloatUI() {
+    const disp = document.getElementById('float-display');
+    const meta = document.getElementById('float-meta');
+    const input = document.getElementById('float-input');
+    const cur = await fetchCurrentFloat();
+    if (cur && cur.amount_valid) {
+        disp.textContent = fmt(cur.amount);
+        const when = cur.set_at ? new Date(cur.set_at) : null;
+        const stamp = when ? when.toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+        const verb = cur.event_type === 'clear' ? 'Cleared' : 'Set';
+        meta.textContent = stamp ? `${verb} ${stamp}` : 'Opening cash for change.';
+        input.value = Number(cur.amount || 0).toFixed(2);
+    } else {
+        disp.textContent = '฿0.00';
+        meta.textContent = 'Opening cash kept in the drawer for change.';
+        input.value = '';
+    }
+}
+
+async function setFloat() {
+    const v = parseFloat(document.getElementById('float-input').value);
+    if (isNaN(v) || v < 0) { snack('Enter a valid amount.', 'warn'); return; }
+    try {
+        const res = await fetch(API_BASE + '/api/cash-drawer/float', {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ amount: v, terminal: getTerminalId() }),
+        });
+        if (!res.ok) throw new Error('set failed');
+    } catch {
+        snack('Failed to save float.', 'danger');
+        return;
+    }
+    await syncFloatUI();
+    snack('Float set to ' + fmt(v) + '.', 'success');
+}
+
+function floatPreset(v) {
+    document.getElementById('float-input').value = v.toFixed(2);
+}
+
+async function clearFloat() {
+    try {
+        const res = await fetch(API_BASE + '/api/cash-drawer/float', {
+            method: 'DELETE',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ terminal: getTerminalId() }),
+        });
+        if (!res.ok) throw new Error('clear failed');
+    } catch {
+        snack('Failed to clear float.', 'danger');
+        return;
+    }
+    await syncFloatUI();
+    snack('Float cleared.', 'warn');
+}
+
+// Fire-and-forget audit log for a physical drawer open.
+// reason: 'manual' = cashier pressed Drawer button; 'change' = auto-opened
+// during cash checkout.
+function auditDrawerKick(reason, note) {
+    fetch(API_BASE + '/api/cash-drawer/kick', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            reason: reason || 'manual',
+            note: note || null,
+            terminal: getTerminalId(),
+        }),
+    }).catch(() => { /* audit failure must never block the cashier */ });
+}
+function toggleFullscreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+}
+function syncFullscreenLabels() {
+    const inFs = !!document.fullscreenElement;
+    document.getElementById('fs-icon').textContent  = inFs ? 'fullscreen_exit' : 'fullscreen';
+    document.getElementById('fs-icon-2').textContent = inFs ? 'fullscreen_exit' : 'fullscreen';
+    document.getElementById('fs-label').textContent  = inFs ? 'Exit full screen' : 'Enter full screen';
+}
+document.addEventListener('fullscreenchange', syncFullscreenLabels);
+
+// ── Confirm helper ────────────────────────────────────────────────
+let pendingConfirm = null;
+function confirmDialog(title, body, onOk) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-body').textContent = body;
+    pendingConfirm = onOk;
+    document.getElementById('confirm-modal').classList.add('is-open');
+}
+function closeConfirm() {
+    document.getElementById('confirm-modal').classList.remove('is-open');
+    pendingConfirm = null;
+}
+document.getElementById('confirm-ok').addEventListener('click', () => {
+    const fn = pendingConfirm; closeConfirm(); if (fn) fn();
+});
+
+// ── Snackbar ──────────────────────────────────────────────────────
+function snack(msg, level = 'default') {
+    const el = document.createElement('div');
+    el.className = 'toast' + (level !== 'default' ? ' ' + level : '');
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => {
+        el.classList.remove('show');
+        el.addEventListener('transitionend', () => el.remove(), { once: true });
+    }, 3000);
+}
+
+// ── Search ────────────────────────────────────────────────────────
+const searchEl = document.getElementById('search');
+const searchBar = document.getElementById('search-bar');
+let searchTimer = null;
+searchEl.addEventListener('input', () => {
+    searchBar.classList.toggle('has-text', searchEl.value.length > 0);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        searchText = searchEl.value;
+        renderMenus();
+    }, 80);
+});
+searchEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        // barcode scanner / Enter — auto-add if exactly one match
+        const list = filteredMenus();
+        if (list.length === 1 && list[0].active) {
+            addToOrder(list[0].id);
+            clearSearch();
+        }
+    } else if (e.key === 'Escape') { clearSearch(); }
+});
+function clearSearch() {
+    searchEl.value = '';
+    searchText = '';
+    searchBar.classList.remove('has-text');
+    renderMenus();
+}
+
+// type-anywhere → focus search (barcode scanners + power-cashier)
+document.addEventListener('keydown', e => {
+    // skip when typing in inputs already
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    // skip when a modal is open (let dialog handle it)
+    if (document.querySelector('.scrim.is-open')) return;
+    // only printable chars trigger
+    if (e.key.length === 1 && /[A-Za-z0-9ก-๙]/u.test(e.key)) {
+        searchEl.focus();
+    } else if (e.key === '/') {
+        e.preventDefault();
+        searchEl.focus();
+    } else if (e.key === 'Escape') {
+        if (document.fullscreenElement) document.exitFullscreen();
+    }
+});
+
+// Esc to close modals
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('change-modal').classList.contains('is-open')) return closeChangeModal();
+    if (document.getElementById('confirm-modal').classList.contains('is-open')) return closeConfirm();
+    if (document.getElementById('tender-modal').classList.contains('is-open')) return closeTender();
+    if (document.getElementById('options-modal').classList.contains('is-open')) return closeOptionsModal();
+    if (document.getElementById('held-scrim').classList.contains('is-open'))    return closeHeldSheet();
+    if (document.getElementById('settings-modal').classList.contains('is-open'))return closeSettings();
+});
+
+// click-outside to close held sheet
+document.getElementById('held-scrim').addEventListener('click', e => {
+    if (e.target.id === 'held-scrim') closeHeldSheet();
+});
+
+// ── SSE — menu status updates ─────────────────────────────────────
+function connectEvents() {
+    const url = API_BASE + '/events';
+    const es = new EventSource(url);
     es.addEventListener('menu_status', e => {
         const { id, active, name } = JSON.parse(e.data);
-
-        // 1. Update in-memory menu list
         const menu = menus.find(m => m.id === id);
         if (menu) menu.active = active;
-
-        // 2. Patch the visible button in-place if it's on the current page
-        const btn = document.querySelector(`[data-menu-id="${id}"]`);
-        if (btn) {
-            if (active) {
-                btn.disabled = false;
-                btn.className = 'w-full h-full bg-white border-2 rounded-xl flex flex-col items-center justify-center hover:bg-blue-50 active:bg-blue-100';
-                btn.innerHTML = `
-                    <div class="font-bold text-base px-1 text-center leading-tight">${menu.name}</div>
-                    <div class="text-blue-600 font-medium text-sm mt-1">฿${menu.price.toFixed(2)}</div>`;
-            } else {
-                btn.disabled = true;
-                btn.className = 'w-full h-full bg-gray-100 border-2 border-gray-200 rounded-xl flex flex-col items-center justify-center opacity-50 cursor-not-allowed';
-                btn.innerHTML = `
-                    <div class="font-bold text-base px-1 text-center leading-tight text-gray-400">${menu.name}</div>
-                    <div class="text-gray-400 font-medium text-sm mt-1">Unavailable</div>`;
-            }
-        }
-
-        // 3. Remove disabled item from current order
+        renderMenus();
         if (!active) {
             const idx = order.findIndex(o => o.id === id);
             if (idx !== -1) {
                 order.splice(idx, 1);
                 renderOrder();
-                showToast(`"${name}" was disabled and removed from your order.`);
+                snack(`"${name}" was disabled and removed from order.`, 'warn');
                 return;
             }
         }
-
-        // 4. Toast for status change (no order impact)
-        showToast(active ? `"${name}" is now available.` : `"${name}" is now unavailable.`);
+        snack(active ? `"${name}" is now available.` : `"${name}" is unavailable.`, active ? 'success' : 'warn');
     });
-
-    es.onerror = () => {
-        // browser will auto-reconnect; silence the console noise
-    };
+    es.onerror = () => { /* browser auto-reconnects */ };
 }
 
 init();
 connectEvents();
 </script>
-
-<!-- Toast container -->
-<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none"></div>
 {{end}}

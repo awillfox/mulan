@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,14 +33,16 @@ type vfdItem struct {
 }
 
 type vfdController struct {
-	engine *vfd.Engine
-	itemCh chan vfdItem
+	engine  *vfd.Engine
+	itemCh  chan vfdItem
+	linesCh chan [2]string
 }
 
 func newVFDController(engine *vfd.Engine) *vfdController {
 	return &vfdController{
-		engine: engine,
-		itemCh: make(chan vfdItem, 1),
+		engine:  engine,
+		itemCh:  make(chan vfdItem, 1),
+		linesCh: make(chan [2]string, 1),
 	}
 }
 
@@ -52,6 +56,21 @@ func (c *vfdController) send(item vfdItem) {
 		default:
 		}
 		c.itemCh <- item
+	}
+}
+
+// sendLines pushes a pre-formatted 2-line message (used for the payment
+// display). Same latest-wins coalescing as send.
+func (c *vfdController) sendLines(line1, line2 string) {
+	msg := [2]string{line1, line2}
+	select {
+	case c.linesCh <- msg:
+	default:
+		select {
+		case <-c.linesCh:
+		default:
+		}
+		c.linesCh <- msg
 	}
 }
 
@@ -73,6 +92,17 @@ func (c *vfdController) run() {
 			line2 := fmt.Sprintf("%-8s%12.2f", "Total", item.Total)
 			c.engine.WriteLines(line1, line2)
 			log.Printf("VFD item: %s | %s", line1, line2)
+			cleared = false
+			timer.Reset(clearAfter)
+		case msg := <-c.linesCh:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			c.engine.WriteLines(msg[0], msg[1])
+			log.Printf("VFD lines: %s | %s", msg[0], msg[1])
 			cleared = false
 			timer.Reset(clearAfter)
 		case <-timer.C:
@@ -99,6 +129,10 @@ func main() {
 	viper.SetDefault("PORT", "8081")
 	viper.SetDefault("INPOUTX64_DLL", `C:\Tools\inpoutx64.dll`)
 	viper.SetDefault("RECEIPT_PRINTER_ADDR", "")
+	// ESC/POS code-page index sent on every print so Thai (and other non-ASCII)
+	// glyphs compose correctly. 26 = TIS-620 / Thai Character Code 18 (common
+	// Epson TM-T default). Override for other printer families.
+	viper.SetDefault("RECEIPT_PRINTER_CODEPAGE", 26)
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("no .env file found, using defaults: %v", err)
 	}
@@ -111,7 +145,8 @@ func main() {
 	var rcptPrinter *printer.Printer
 	if addr := viper.GetString("RECEIPT_PRINTER_ADDR"); addr != "" {
 		logoBytes := fetchLogo(apiBase + "/elements/logo.png")
-		p, err := printer.New(addr, logoBytes)
+		codepage := byte(viper.GetInt("RECEIPT_PRINTER_CODEPAGE"))
+		p, err := printer.New(addr, logoBytes, codepage)
 		if err != nil {
 			log.Printf("receipt printer unavailable (%s): %v", addr, err)
 		} else {
@@ -143,12 +178,33 @@ func main() {
 
 	r.Get("/pos", posHandler(apiBase))
 	r.Post("/vfd/item", vfdItemHandler(ctrl))
+	r.Post("/vfd/payment", vfdPaymentHandler(ctrl))
 	r.Post("/cash-drawer/open", cashDrawerHandler())
 	r.Post("/checkout", checkoutHandler(rcptPrinter, apiBase))
+	r.Post("/restart", restartHandler())
 
 	log.Printf("mulan-agent starting on :%s (API_BASE=%s)", port, apiBase)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("server failed: %v", err)
+	}
+}
+
+// restartHandler exits the agent process so NSSM (Windows) or systemd
+// (Linux) respawns it. The agent runs under a supervisor in production —
+// in dev the process just exits.
+//
+// We respond 202 before exiting so the cashier's browser sees the ack;
+// the actual exit fires from a goroutine after a 200ms beat to flush the
+// TCP buffer.
+func restartHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"ok":true,"restarting":true}`))
+		log.Println("restart requested via /restart — exiting in 200ms")
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			os.Exit(0)
+		}()
 	}
 }
 
@@ -164,6 +220,63 @@ func vfdItemHandler(ctrl *vfdController) http.HandlerFunc {
 			return
 		}
 		ctrl.send(item)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// vfdPayment is the customer-display payload sent while the cashier is in
+// the tender modal. The agent formats it into two 20-char VFD lines.
+type vfdPayment struct {
+	Method   string  `json:"method"` // "cash" | "card" | "qr"
+	Total    float64 `json:"total"`
+	Tendered float64 `json:"tendered"`
+	Change   float64 `json:"change"`
+}
+
+// vfdCenter centres s within a 20-char VFD line.
+func vfdCenter(s string) string {
+	const w = 20
+	if len(s) >= w {
+		return s[:w]
+	}
+	pad := (w - len(s)) / 2
+	return strings.Repeat(" ", pad) + s
+}
+
+func vfdPaymentHandler(ctrl *vfdController) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if ctrl == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		var p vfdPayment
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+
+		// Line 1 always shows the amount due.
+		line1 := fmt.Sprintf("%-8s%12.2f", "TOTAL", p.Total)
+
+		// Line 2 depends on payment method.
+		var line2 string
+		switch p.Method {
+		case "card":
+			line2 = vfdCenter("CARD PAYMENT")
+		case "qr":
+			line2 = vfdCenter("QR PROMPTPAY")
+		default: // cash
+			switch {
+			case p.Tendered >= p.Total && p.Tendered > 0:
+				line2 = fmt.Sprintf("%-8s%12.2f", "CHANGE", p.Change)
+			case p.Tendered > 0:
+				line2 = fmt.Sprintf("%-8s%12.2f", "CASH", p.Tendered)
+			default:
+				line2 = vfdCenter("CASH PAYMENT")
+			}
+		}
+
+		ctrl.sendLines(line1, line2)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -188,8 +301,11 @@ type checkoutRequestItem struct {
 }
 
 type checkoutRequest struct {
-	OrderCode string                `json:"order_code"`
-	Items     []checkoutRequestItem `json:"items"`
+	OrderCode     string                `json:"order_code"`
+	Items         []checkoutRequestItem `json:"items"`
+	PaymentMethod string                `json:"payment_method,omitempty"` // "cash" | "card" | "qr"
+	CashTendered  float64               `json:"cash_tendered,omitempty"`  // THB, cash payments only
+	CashChange    float64               `json:"cash_change,omitempty"`    // THB, cash payments only
 }
 
 type checkoutOption struct {
@@ -205,13 +321,14 @@ type checkoutItem struct {
 }
 
 type checkoutResponse struct {
-	Code       string         `json:"code"`
-	Subtotal   float64        `json:"subtotal"`
-	VAT        float64        `json:"vat"`
-	VATPercent float64        `json:"vat_percent"`
-	ShopName   string         `json:"shop_name"`
-	Total      float64        `json:"total"`
-	Items      []checkoutItem `json:"items"`
+	Code          string         `json:"code"`
+	Subtotal      float64        `json:"subtotal"`
+	VAT           float64        `json:"vat"`
+	VATPercent    float64        `json:"vat_percent"`
+	ShopName      string         `json:"shop_name"`
+	ReceiptFooter string         `json:"receipt_footer"`
+	Total         float64        `json:"total"`
+	Items         []checkoutItem `json:"items"`
 }
 
 type checkoutEnvelope struct {
@@ -257,13 +374,23 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 			if err := p.PrintOrderBill(req.OrderCode, items); err != nil {
 				log.Printf("order bill print error: %v", err)
 			}
-			if err := p.PrintReceipt(result.ShopName, items, result.Subtotal, result.VAT, result.VATPercent, result.Total); err != nil {
+			pay := printer.Payment{
+				Method:   req.PaymentMethod,
+				Tendered: req.CashTendered,
+				Change:   req.CashChange,
+			}
+			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.VAT, result.VATPercent, result.Total, pay); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
 
-		if err := cashdrawer.Open(); err != nil {
-			log.Printf("cash drawer error: %v", err)
+		// Only kick the till open when the order is paid in cash. Card/QR
+		// payments don't touch the drawer. Empty payment_method is treated
+		// as cash for backwards compat with older clients.
+		if req.PaymentMethod == "" || req.PaymentMethod == "cash" {
+			if err := cashdrawer.Open(); err != nil {
+				log.Printf("cash drawer error: %v", err)
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

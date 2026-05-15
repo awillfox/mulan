@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countTodayOrders = `-- name: CountTodayOrders :one
@@ -24,13 +26,41 @@ func (q *Queries) CountTodayOrders(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getHeldOrder = `-- name: GetHeldOrder :one
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE code = $1 AND status = 'held'
+`
+
+func (q *Queries) GetHeldOrder(ctx context.Context, code string) (Order, error) {
+	row := q.db.QueryRow(ctx, getHeldOrder, code)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+		&i.HeldAt,
+		&i.HeldLabel,
+		&i.HeldPayload,
+	)
+	return i, err
+}
+
 const getOrderByCode = `-- name: GetOrderByCode :one
 SELECT id, code, status, created_at FROM orders WHERE code = $1
 `
 
-func (q *Queries) GetOrderByCode(ctx context.Context, code string) (Order, error) {
+type GetOrderByCodeRow struct {
+	ID        int32              `db:"id" json:"id"`
+	Code      string             `db:"code" json:"code"`
+	Status    string             `db:"status" json:"status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) GetOrderByCode(ctx context.Context, code string) (GetOrderByCodeRow, error) {
 	row := q.db.QueryRow(ctx, getOrderByCode, code)
-	var i Order
+	var i GetOrderByCodeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Code,
@@ -38,6 +68,41 @@ func (q *Queries) GetOrderByCode(ctx context.Context, code string) (Order, error
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listHeldOrders = `-- name: ListHeldOrders :many
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE status = 'held'
+ORDER BY held_at DESC NULLS LAST
+`
+
+func (q *Queries) ListHeldOrders(ctx context.Context) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listHeldOrders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Order{}
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Status,
+			&i.CreatedAt,
+			&i.HeldAt,
+			&i.HeldLabel,
+			&i.HeldPayload,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const sumOrderItems = `-- name: SumOrderItems :one

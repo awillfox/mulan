@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CashDrawerAudit struct {
+	ID        int64              `db:"id" json:"id"`
+	EventType string             `db:"event_type" json:"event_type"`
+	Amount    pgtype.Int8        `db:"amount" json:"amount"`
+	Delta     pgtype.Int8        `db:"delta" json:"delta"`
+	Note      pgtype.Text        `db:"note" json:"note"`
+	Actor     pgtype.Text        `db:"actor" json:"actor"`
+	Terminal  pgtype.Text        `db:"terminal" json:"terminal"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Menu struct {
 	ID         int32       `db:"id" json:"id"`
 	Name       string      `db:"name" json:"name"`
@@ -43,10 +54,13 @@ type OptionGroup struct {
 }
 
 type Order struct {
-	ID        int32              `db:"id" json:"id"`
-	Code      string             `db:"code" json:"code"`
-	Status    string             `db:"status" json:"status"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
 }
 
 type OrderItem struct {
@@ -67,8 +81,11 @@ type OrderItemOption struct {
 }
 
 type Setting struct {
-	ID         int32              `db:"id" json:"id"`
-	ShopName   string             `db:"shop_name" json:"shop_name"`
-	VatPercent float64            `db:"vat_percent" json:"vat_percent"`
-	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	ID            int32              `db:"id" json:"id"`
+	ShopName      string             `db:"shop_name" json:"shop_name"`
+	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	Logo          []byte             `db:"logo" json:"logo"`
+	LogoMime      pgtype.Text        `db:"logo_mime" json:"logo_mime"`
+	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
 }

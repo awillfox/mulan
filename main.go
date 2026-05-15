@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	cashdrawerhttp "mulan/internal/cashdrawer/http"
+	cashdrawerservice "mulan/internal/cashdrawer/service"
 	"mulan/internal/config"
 	dashboardhttp "mulan/internal/dashboard/http"
 	dashboardservice "mulan/internal/dashboard/service"
@@ -70,6 +72,9 @@ func main() {
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
 
+	cashDrawerSvc := cashdrawerservice.NewService(queries)
+	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc)
+
 	webHandler := web.NewHandler("templates")
 
 	r := chi.NewRouter()
@@ -77,7 +82,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
-		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type"},
 	}))
 
@@ -86,6 +91,10 @@ func main() {
 	r.Get("/manager/option-groups", webHandler.OptionGroups)
 	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
+	// Logo lives in the settings table so it survives redeploys and is shared
+	// across terminals. We intercept the specific path before falling back
+	// to the static file server for everything else under /elements.
+	r.Get("/elements/logo.png", settingsHandler.ServeLogo)
 	r.Handle("/elements/*", http.StripPrefix("/elements/", http.FileServer(http.Dir("elements"))))
 
 	r.Route("/api", func(r chi.Router) {
@@ -99,6 +108,7 @@ func main() {
 		r.Route("/orders", orderHandler.Routes)
 		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/dashboard", dashboardHandler.Routes)
+		r.Route("/cash-drawer", cashDrawerHandler.Routes)
 	})
 
 	log.Println("server starting on :" + cfg.Port)

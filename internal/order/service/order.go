@@ -15,17 +15,29 @@ import (
 	"mulan/sqlc"
 )
 
+// HeldOrder is the service-level view of a held order returned to handlers.
+type HeldOrder struct {
+	Code      string
+	CreatedAt pgtype.Timestamptz
+	HeldAt    pgtype.Timestamptz
+	HeldLabel *string
+	Payload   []byte
+}
+
 const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // Sentinel errors translated to specific HTTP statuses by the handler.
 var (
-	ErrAlreadyPaid    = errors.New("order already paid")
-	ErrNoItems        = errors.New("no items")
-	ErrUnknownMenu    = errors.New("unknown menu")
-	ErrMenuInactive   = errors.New("menu inactive")
-	ErrInvalidOption  = errors.New("option not allowed for menu")
-	ErrUnknownOption  = errors.New("unknown option")
+	ErrAlreadyPaid     = errors.New("order already paid")
+	ErrNoItems         = errors.New("no items")
+	ErrUnknownMenu     = errors.New("unknown menu")
+	ErrMenuInactive    = errors.New("menu inactive")
+	ErrInvalidOption   = errors.New("option not allowed for menu")
+	ErrUnknownOption   = errors.New("unknown option")
 	ErrMissingRequired = errors.New("missing required option")
+	ErrOrderNotFound   = errors.New("order not found")
+	ErrNotHeld         = errors.New("order is not held")
+	ErrCannotHold      = errors.New("order cannot be held")
 )
 
 type OrderService struct {
@@ -162,14 +174,99 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	totalSatang := subtotalSatang + vatSatang
 
 	return &domain.CheckoutResult{
-		Code:       code,
-		Subtotal:   float64(subtotalSatang) / 100,
-		VAT:        float64(vatSatang) / 100,
-		VATPercent: cfg.VatPercent,
-		ShopName:   cfg.ShopName,
-		Total:      float64(totalSatang) / 100,
-		Items:      resultItems,
+		Code:          code,
+		Subtotal:      float64(subtotalSatang) / 100,
+		VAT:           float64(vatSatang) / 100,
+		VATPercent:    cfg.VatPercent,
+		ShopName:      cfg.ShopName,
+		ReceiptFooter: cfg.ReceiptFooter,
+		Total:         float64(totalSatang) / 100,
+		Items:         resultItems,
 	}, nil
+}
+
+// Hold parks an open order. Payload is opaque JSON owned by the POS client
+// (line items, options, etc.) so the order can be restored exactly on resume.
+// Held orders survive process restarts and are visible across terminals.
+func (s *OrderService) Hold(ctx context.Context, code string, label *string, payload []byte) (HeldOrder, error) {
+	order, err := s.q.GetOrderByCode(ctx, code)
+	if err != nil {
+		return HeldOrder{}, fmt.Errorf("%w: %v", ErrOrderNotFound, err)
+	}
+	if order.Status == "paid" {
+		return HeldOrder{}, ErrAlreadyPaid
+	}
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+	var lbl pgtype.Text
+	if label != nil && *label != "" {
+		lbl = pgtype.Text{String: *label, Valid: true}
+	}
+	row, err := s.q.HoldOrder(ctx, sqlc.HoldOrderParams{
+		Code:        code,
+		HeldLabel:   lbl,
+		HeldPayload: payload,
+	})
+	if err != nil {
+		return HeldOrder{}, fmt.Errorf("hold order: %w", err)
+	}
+	out := HeldOrder{
+		Code:      row.Code,
+		CreatedAt: row.CreatedAt,
+		HeldAt:    row.HeldAt,
+		Payload:   row.HeldPayload,
+	}
+	if row.HeldLabel.Valid {
+		v := row.HeldLabel.String
+		out.HeldLabel = &v
+	}
+	return out, nil
+}
+
+// Resume flips a held order back to open and returns the payload captured at
+// hold time. The DB-side payload is cleared atomically so resuming twice is
+// a no-op.
+func (s *OrderService) Resume(ctx context.Context, code string) ([]byte, error) {
+	row, err := s.q.ResumeOrder(ctx, code)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotHeld
+		}
+		return nil, fmt.Errorf("resume order: %w", err)
+	}
+	return row.HeldPayload, nil
+}
+
+// DiscardHeld permanently removes a held order. Only held orders are touched;
+// the WHERE clause guards against accidentally deleting an open/paid row.
+func (s *OrderService) DiscardHeld(ctx context.Context, code string) error {
+	if err := s.q.DiscardHeldOrder(ctx, code); err != nil {
+		return fmt.Errorf("discard held: %w", err)
+	}
+	return nil
+}
+
+// ListHeld returns all currently held orders, newest hold first.
+func (s *OrderService) ListHeld(ctx context.Context) ([]HeldOrder, error) {
+	rows, err := s.q.ListHeldOrders(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list held: %w", err)
+	}
+	out := make([]HeldOrder, len(rows))
+	for i, r := range rows {
+		out[i] = HeldOrder{
+			Code:      r.Code,
+			CreatedAt: r.CreatedAt,
+			HeldAt:    r.HeldAt,
+			Payload:   r.HeldPayload,
+		}
+		if r.HeldLabel.Valid {
+			v := r.HeldLabel.String
+			out[i].HeldLabel = &v
+		}
+	}
+	return out, nil
 }
 
 func validateInputs(items []CheckoutItemInput) error {

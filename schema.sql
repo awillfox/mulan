@@ -2,6 +2,23 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 -- Set comment to schema: "public"
 COMMENT ON SCHEMA "public" IS 'standard public schema';
+-- Create "cash_drawer_audit" table
+CREATE TABLE "public"."cash_drawer_audit" (
+  "id" bigserial NOT NULL,
+  "event_type" character varying(20) NOT NULL,
+  "amount" bigint NULL,
+  "delta" bigint NULL,
+  "note" character varying(255) NULL,
+  "actor" character varying(120) NULL,
+  "terminal" character varying(120) NULL,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id"),
+  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY ((ARRAY['set'::character varying, 'clear'::character varying, 'adjust'::character varying, 'kick'::character varying, 'open_for_change'::character varying])::text[]))
+);
+-- Create index "cash_drawer_audit_created_at" to table: "cash_drawer_audit"
+CREATE INDEX "cash_drawer_audit_created_at" ON "public"."cash_drawer_audit" ("created_at");
+-- Create index "cash_drawer_audit_event_type_created_at" to table: "cash_drawer_audit"
+CREATE INDEX "cash_drawer_audit_event_type_created_at" ON "public"."cash_drawer_audit" ("event_type", "created_at");
 -- Create "option_groups" table
 CREATE TABLE "public"."option_groups" (
   "id" serial NOT NULL,
@@ -16,6 +33,9 @@ CREATE TABLE "public"."settings" (
   "shop_name" character varying(255) NOT NULL DEFAULT 'My Shop',
   "vat_percent" double precision NOT NULL DEFAULT 0,
   "updated_at" timestamptz NOT NULL DEFAULT now(),
+  "logo" bytea NULL,
+  "logo_mime" character varying(60) NULL,
+  "receipt_footer" character varying(255) NOT NULL DEFAULT 'Thank you! Come again!',
   PRIMARY KEY ("id"),
   CONSTRAINT "settings_singleton" CHECK (id = 1)
 );
@@ -63,10 +83,15 @@ CREATE TABLE "public"."orders" (
   "code" character varying(20) NOT NULL,
   "status" character varying(20) NOT NULL DEFAULT 'open',
   "created_at" timestamptz NOT NULL DEFAULT now(),
+  "held_at" timestamptz NULL,
+  "held_label" character varying(120) NULL,
+  "held_payload" jsonb NOT NULL DEFAULT '{}',
   PRIMARY KEY ("id")
 );
 -- Create index "orders_code_key" to table: "orders"
 CREATE UNIQUE INDEX "orders_code_key" ON "public"."orders" ("code");
+-- Create index "orders_status_held_at" to table: "orders"
+CREATE INDEX "orders_status_held_at" ON "public"."orders" ("status", "held_at");
 -- Create "order_items" table
 CREATE TABLE "public"."order_items" (
   "id" serial NOT NULL,

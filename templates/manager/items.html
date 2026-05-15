@@ -2,80 +2,721 @@
 {{define "title"}}Item Manager{{end}}
 
 {{define "content"}}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<style>
+  /* ── Material 3 tokens (match dashboard) ───────────────────────── */
+  :root {
+    --md-sys-color-primary: #0b57d0;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #d3e3fd;
+    --md-sys-color-on-primary-container: #001d35;
+    --md-sys-color-secondary-container: #dae2f9;
+    --md-sys-color-error: #b3261e;
+    --md-sys-color-error-container: #f9dedc;
+    --md-sys-color-on-error-container: #410e0b;
+    --md-sys-color-tertiary: #146c2e;
+    --md-sys-color-surface: #f8fafd;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #f1f4f9;
+    --md-sys-color-surface-container: #ebeef4;
+    --md-sys-color-surface-container-high: #e5e8ee;
+    --md-sys-color-on-surface: #1a1c1e;
+    --md-sys-color-on-surface-variant: #43474e;
+    --md-sys-color-outline: #73777f;
+    --md-sys-color-outline-variant: #c3c6cf;
 
-    <!-- ── Categories ── -->
+    --m3-shape-sm: 8px;
+    --m3-shape-md: 12px;
+    --m3-shape-lg: 16px;
+    --m3-shape-xl: 28px;
+
+    --m3-elev-1: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px 1px rgba(0,0,0,0.04);
+    --m3-elev-2: 0 1px 2px rgba(0,0,0,0.06), 0 2px 6px 2px rgba(0,0,0,0.05);
+    --m3-elev-3: 0 4px 8px 3px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  body { background: var(--md-sys-color-surface) !important; color: var(--md-sys-color-on-surface); }
+  .display-font { font-family: 'Google Sans Display','Google Sans',sans-serif; letter-spacing: -0.01em; }
+  .mono { font-family: 'Roboto Mono',monospace; }
+
+  /* ── Cards ────────────────────────────────────────────────────── */
+  .m3-card {
+    background: var(--md-sys-color-surface-container-lowest);
+    border-radius: var(--m3-shape-lg);
+    box-shadow: var(--m3-elev-1);
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────── */
+  .m3-btn-filled {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 40px; padding: 0 24px;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 14px; font-weight: 500;
+    transition: box-shadow .2s, filter .2s;
+  }
+  .m3-btn-filled:hover { box-shadow: var(--m3-elev-2); filter: brightness(1.05); }
+  .m3-btn-filled:disabled { opacity: .4; cursor: not-allowed; }
+
+  .m3-btn-tonal {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 40px; padding: 0 20px;
+    border-radius: 999px;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font-size: 14px; font-weight: 500;
+    transition: filter .2s;
+  }
+  .m3-btn-tonal:hover { filter: brightness(.97); }
+
+  .m3-btn-outlined {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 40px; padding: 0 20px;
+    border-radius: 999px;
+    border: 1px solid var(--md-sys-color-outline);
+    background: transparent;
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px; font-weight: 500;
+  }
+  .m3-btn-outlined:hover { background: rgba(11,87,208,0.06); }
+
+  .m3-btn-text {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 12px;
+    border-radius: 999px;
+    color: var(--md-sys-color-primary);
+    font-size: 14px; font-weight: 500;
+  }
+  .m3-btn-text:hover { background: rgba(11,87,208,0.08); }
+  .m3-btn-text.danger { color: var(--md-sys-color-error); }
+  .m3-btn-text.danger:hover { background: rgba(179,38,30,.08); }
+
+  .m3-icon-btn {
+    width: 40px; height: 40px;
+    border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--md-sys-color-on-surface-variant);
+    transition: background .2s;
+  }
+  .m3-icon-btn:hover { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); }
+
+  /* ── Chips ────────────────────────────────────────────────────── */
+  .m3-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; user-select: none;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .m3-chip:hover { background: rgba(11,87,208,0.06); }
+  .m3-chip.is-active {
+    background: var(--md-sys-color-primary-container);
+    border-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .m3-chip .material-symbols-rounded { font-size: 16px; }
+  .m3-chip .chip-count {
+    background: rgba(0,0,0,.08);
+    border-radius: 999px; padding: 0 8px;
+    font-size: 11px; height: 18px; display: inline-flex; align-items: center;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .m3-chip.is-active .chip-count { background: rgba(0,29,53,.12); color: var(--md-sys-color-on-primary-container); }
+
+  .m3-badge {
+    display: inline-flex; align-items: center;
+    height: 22px; padding: 0 10px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px; font-weight: 500;
+  }
+  .m3-badge-success { background: #e6f4ea; color: #137333; }
+  .m3-badge-warn    { background: #fef7e0; color: #b06000; }
+  .m3-badge-danger  { background: #fce8e6; color: #c5221f; }
+
+  /* ── Inputs ───────────────────────────────────────────────────── */
+  .m3-input {
+    height: 48px;
+    padding: 0 16px;
+    border-radius: var(--m3-shape-sm);
+    border: 1px solid var(--md-sys-color-outline);
+    background: transparent;
+    font-size: 14px;
+    color: var(--md-sys-color-on-surface);
+    font-family: inherit;
+    width: 100%;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .m3-input:focus { outline: none; border-color: var(--md-sys-color-primary); box-shadow: inset 0 0 0 1px var(--md-sys-color-primary); }
+  .m3-input-sm { height: 40px; }
+
+  .m3-label {
+    display: block;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  .search-wrap {
+    position: relative;
+    flex: 1; min-width: 240px;
+  }
+  .search-wrap .material-symbols-rounded {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    color: var(--md-sys-color-on-surface-variant); font-size: 20px;
+    pointer-events: none;
+  }
+  .search-wrap input {
+    width: 100%; height: 48px;
+    padding: 0 14px 0 46px;
+    border-radius: 999px;
+    border: none;
+    background: var(--md-sys-color-surface-container);
+    font-size: 14px;
+    color: var(--md-sys-color-on-surface);
+    font-family: inherit;
+  }
+  .search-wrap input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: -1px; background: var(--md-sys-color-surface-container-lowest); }
+  .search-wrap .kbd {
+    position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    font-family: 'Roboto Mono',monospace; font-size: 11px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 4px; padding: 2px 6px;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+
+  /* ── Layout shell ─────────────────────────────────────────────── */
+  .shell { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
+
+  /* ── Sidebar ──────────────────────────────────────────────────── */
+  .sidebar-section { padding: 16px; }
+  .sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 6px 12px;
+  }
+  .sidebar-header .label {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .cat-row {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 40px; padding: 0 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    color: var(--md-sys-color-on-surface);
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .cat-row:hover { background: var(--md-sys-color-surface-container); }
+  .cat-row.is-active {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .cat-row.is-active .cat-count { background: rgba(0,29,53,.16); color: var(--md-sys-color-on-primary-container); }
+  .cat-row .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .cat-row .name span.material-symbols-rounded { font-size: 18px; color: inherit; }
+  .cat-row .label-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; font-weight: 500; }
+  .cat-row .cat-actions {
+    display: none; gap: 0px; align-items: center;
+  }
+  .cat-row:hover .cat-actions { display: inline-flex; }
+  .cat-row.is-active .cat-actions { display: inline-flex; }
+  .cat-row .cat-count {
+    font-size: 11px; font-weight: 500;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    border-radius: 999px; padding: 2px 8px;
+  }
+  .cat-mini-btn {
+    width: 28px; height: 28px; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .cat-mini-btn:hover { background: rgba(0,0,0,.06); }
+  .cat-mini-btn .material-symbols-rounded { font-size: 16px; }
+
+  /* ── Table ────────────────────────────────────────────────────── */
+  .item-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .item-table thead th {
+    text-align: left;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 12px 12px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-lowest);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .item-table tbody td {
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface);
+    vertical-align: middle;
+  }
+  .item-table tbody tr { transition: background .12s; }
+  .item-table tbody tr:hover { background: var(--md-sys-color-surface-container-low); }
+  .item-table tbody tr.selected { background: var(--md-sys-color-primary-container); }
+  .item-table tbody tr.selected:hover { background: #c4d8fc; }
+  .item-table tbody tr.is-inactive .item-name,
+  .item-table tbody tr.is-inactive .item-meta { opacity: .55; }
+
+  .item-name { font-weight: 500; color: var(--md-sys-color-on-surface); font-size: 14px; }
+  .item-meta { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 2px; }
+
+  .price-cell input {
+    width: 110px; height: 36px;
+    border-radius: var(--m3-shape-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    padding: 0 10px;
+    text-align: right;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 13px;
+    color: var(--md-sys-color-on-surface);
+    transition: background .15s, border-color .15s;
+  }
+  .price-cell input:hover { background: var(--md-sys-color-surface-container); }
+  .price-cell input:focus {
+    outline: none;
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+
+  /* ── Toggle switch ────────────────────────────────────────────── */
+  .m3-switch { position: relative; width: 44px; height: 24px; display: inline-block; cursor: pointer; }
+  .m3-switch input { opacity: 0; width: 0; height: 0; }
+  .m3-switch .track {
+    position: absolute; inset: 0;
+    background: var(--md-sys-color-surface-container-high);
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    transition: background .2s, border-color .2s;
+  }
+  .m3-switch .thumb {
+    position: absolute; top: 50%; left: 4px;
+    width: 14px; height: 14px;
+    background: var(--md-sys-color-outline);
+    border-radius: 50%;
+    transform: translateY(-50%);
+    transition: left .2s cubic-bezier(.2,.7,.2,1), width .2s, height .2s, background .2s;
+  }
+  .m3-switch input:checked + .track { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+  .m3-switch input:checked + .track .thumb { background: #fff; width: 20px; height: 20px; left: 22px; }
+
+  /* ── Checkbox ─────────────────────────────────────────────────── */
+  .m3-check {
+    width: 18px; height: 18px;
+    appearance: none;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    transition: background .15s, border-color .15s;
+  }
+  .m3-check:checked {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+  }
+  .m3-check:checked::after {
+    content: '';
+    position: absolute; left: 4px; top: 0px;
+    width: 5px; height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .m3-check:indeterminate {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+  }
+  .m3-check:indeterminate::after {
+    content: '';
+    position: absolute; left: 2px; top: 6px;
+    width: 10px; height: 2px;
+    background: #fff;
+  }
+
+  /* ── Selection bar (sticky bulk) ──────────────────────────────── */
+  .bulk-bar {
+    position: sticky; top: 16px; z-index: 30;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    background: var(--md-sys-color-on-surface);
+    color: #fff;
+    border-radius: 999px;
+    box-shadow: var(--m3-elev-3);
+    margin-bottom: 12px;
+    animation: bulk-rise .22s cubic-bezier(.2,.7,.2,1);
+  }
+  @keyframes bulk-rise { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .bulk-bar .count { font-weight: 500; font-size: 14px; padding: 0 8px; }
+  .bulk-bar button {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 12px;
+    border-radius: 999px;
+    color: #fff; font-size: 13px; font-weight: 500;
+    transition: background .15s;
+  }
+  .bulk-bar button:hover { background: rgba(255,255,255,.12); }
+  .bulk-bar button.danger:hover { background: rgba(255,90,80,.2); color: #ffb4ab; }
+  .bulk-bar .divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
+  .bulk-bar select {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+    color: #fff; font-size: 13px; height: 32px; padding: 0 10px; border-radius: 999px;
+    font-family: inherit;
+  }
+  .bulk-bar select option { color: var(--md-sys-color-on-surface); }
+
+  /* ── Page header ──────────────────────────────────────────────── */
+  .page-head {
+    display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .page-title { font-family: 'Google Sans Display','Google Sans',sans-serif; font-size: 32px; font-weight: 500; letter-spacing: -0.02em; }
+  .page-sub { color: var(--md-sys-color-on-surface-variant); font-size: 14px; margin-top: 4px; }
+
+  /* ── Dialog ───────────────────────────────────────────────────── */
+  .m3-dialog-scrim {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.32);
+    backdrop-filter: blur(2px);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .m3-dialog-scrim.is-open { display: flex; animation: scrim-in .18s ease; }
+  @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  .m3-dialog {
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: var(--m3-shape-xl);
+    width: 100%; max-width: 480px;
+    box-shadow: var(--m3-elev-3);
+    overflow: hidden;
+    animation: dialog-pop .22s cubic-bezier(.2,.7,.2,1);
+  }
+  .m3-dialog.lg { max-width: 560px; }
+  @keyframes dialog-pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+  .m3-dialog-head {
+    padding: 24px 24px 8px;
+    font-family: 'Google Sans Display','Google Sans',sans-serif;
+    font-size: 22px; font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+  }
+  .m3-dialog-body { padding: 8px 24px 16px; max-height: 70vh; overflow-y: auto; }
+  .m3-dialog-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 16px 16px;
+  }
+
+  /* Snackbar */
+  .snackbar {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--md-sys-color-on-surface);
+    color: #fff;
+    padding: 14px 16px;
+    border-radius: var(--m3-shape-sm);
+    box-shadow: var(--m3-elev-3);
+    font-size: 14px;
+    z-index: 200;
+    transition: transform .25s cubic-bezier(.2,.7,.2,1), opacity .25s;
+    opacity: 0;
+    max-width: 90vw;
+  }
+  .snackbar.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* group badge cluster */
+  .group-pill {
+    display: inline-flex; align-items: center;
+    height: 22px; padding: 0 8px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 11px; font-weight: 500;
+    margin-right: 4px; margin-top: 2px;
+  }
+
+  /* empty state */
+  .empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .empty-state .material-symbols-rounded { font-size: 48px; opacity: .5; }
+  .empty-state h3 { font-family: 'Google Sans Display','Google Sans',sans-serif; font-size: 18px; color: var(--md-sys-color-on-surface); margin-top: 8px; font-weight: 500; }
+  .empty-state p { font-size: 13px; margin-top: 4px; }
+
+  /* reveal */
+  @keyframes m3-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .reveal { animation: m3-rise .35s cubic-bezier(.2,.7,.2,1) backwards; }
+
+  /* sort menu */
+  .sort-menu {
+    position: absolute; top: calc(100% + 6px); right: 0;
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: var(--m3-shape-md);
+    box-shadow: var(--m3-elev-3);
+    padding: 6px;
+    min-width: 200px;
+    display: none;
+    z-index: 20;
+  }
+  .sort-menu.is-open { display: block; animation: m3-rise .15s ease; }
+  .sort-menu button {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 10px 12px;
+    border-radius: var(--m3-shape-sm);
+    font-size: 14px; color: var(--md-sys-color-on-surface);
+    text-align: left;
+  }
+  .sort-menu button:hover { background: var(--md-sys-color-surface-container-high); }
+  .sort-menu button .material-symbols-rounded { font-size: 18px; }
+  .sort-menu button.is-active { color: var(--md-sys-color-primary); }
+</style>
+
+<!-- ── Page header ────────────────────────────────────────────────── -->
+<div class="page-head reveal">
     <div>
-        <div class="bg-white rounded-lg shadow">
-            <div class="p-6 border-b flex items-center justify-between">
-                <h2 class="text-lg font-bold">Categories</h2>
-                <button onclick="openCatModal()" class="bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">+ Add</button>
-            </div>
-            <div class="divide-y" id="cat-list"></div>
-        </div>
+        <div class="text-xs font-medium uppercase tracking-widest" style="color:var(--md-sys-color-on-surface-variant)">Catalog</div>
+        <h1 class="page-title mt-1">Item manager</h1>
+        <p class="page-sub" id="page-summary">Loading inventory…</p>
     </div>
-
-    <!-- ── Menu Items ── -->
-    <div>
-        <div class="bg-white rounded-lg shadow">
-            <div class="p-6 border-b flex items-center justify-between">
-                <h2 class="text-lg font-bold">Menu Items</h2>
-                <button onclick="openMenuModal()" class="bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">+ Add</button>
-            </div>
-            <div class="divide-y" id="menu-list"></div>
-        </div>
+    <div class="flex items-center gap-2">
+        <button class="m3-btn-outlined" onclick="openCatModal()">
+            <span class="material-symbols-rounded" style="font-size:18px">create_new_folder</span>
+            New category
+        </button>
+        <button class="m3-btn-filled" onclick="openMenuModal()">
+            <span class="material-symbols-rounded" style="font-size:18px">add</span>
+            New item
+        </button>
     </div>
 </div>
 
-<!-- ── Category Modal ── -->
-<div id="cat-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-80 p-6">
-        <h3 class="font-bold text-lg mb-4" id="cat-modal-title">Add Category</h3>
-        <input id="cat-name" type="text" placeholder="Category name"
-               class="w-full border rounded px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <div class="flex justify-end gap-2">
-            <button onclick="closeCatModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
-            <button onclick="saveCat()" class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
-        </div>
-    </div>
-</div>
+<div class="shell">
 
-<!-- ── Menu Modal ── -->
-<div id="menu-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-96 p-6">
-        <h3 class="font-bold text-lg mb-4" id="menu-modal-title">Add Menu Item</h3>
-        <div class="space-y-3">
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">Name</label>
-                <input id="menu-name" type="text" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <!-- ── Sidebar: categories ─────────────────────────────────────── -->
+    <aside class="m3-card reveal" style="animation-delay:.05s">
+        <div class="sidebar-section">
+            <div class="sidebar-header">
+                <span class="label">Categories</span>
+                <button class="cat-mini-btn" onclick="openCatModal()" title="Add category">
+                    <span class="material-symbols-rounded">add</span>
+                </button>
             </div>
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">Price (THB)</label>
-                <input id="menu-price" type="number" min="0" step="0.01" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">Category</label>
-                <select id="menu-cat" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— None —</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">VFD Name <span class="text-gray-400">(max 20 chars)</span></label>
-                <input id="menu-vfd" type="text" maxlength="20" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-            <div>
-                <label class="block text-sm text-gray-600 mb-1">Option Groups <span class="text-gray-400">(check to attach)</span></label>
-                <div id="menu-groups" class="border rounded p-2 max-h-40 overflow-y-auto space-y-1 text-sm">
-                    <p class="text-xs text-gray-400">No option groups defined yet.</p>
+            <div id="sidebar-cats"></div>
+        </div>
+    </aside>
+
+    <!-- ── Main: toolbar + table ───────────────────────────────────── -->
+    <section>
+        <!-- Toolbar -->
+        <div class="m3-card p-4 mb-4 reveal" style="animation-delay:.10s">
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="search-wrap">
+                    <span class="material-symbols-rounded">search</span>
+                    <input id="search" type="text" placeholder="Search items by name or VFD…" autocomplete="off">
+                    <span class="kbd">/</span>
+                </div>
+
+                <!-- status filter chips -->
+                <div class="flex gap-1.5">
+                    <button class="status-chip m3-chip is-active" data-status="all">All</button>
+                    <button class="status-chip m3-chip" data-status="active">
+                        <span class="material-symbols-rounded">check_circle</span>Active
+                    </button>
+                    <button class="status-chip m3-chip" data-status="inactive">
+                        <span class="material-symbols-rounded">do_not_disturb_on</span>Disabled
+                    </button>
+                </div>
+
+                <!-- sort dropdown -->
+                <div style="position:relative" id="sort-host">
+                    <button class="m3-chip" id="sort-trigger">
+                        <span class="material-symbols-rounded">sort</span>
+                        <span id="sort-label">Sort</span>
+                    </button>
+                    <div class="sort-menu" id="sort-menu">
+                        <button data-sort="name-asc">  <span class="material-symbols-rounded">sort_by_alpha</span>Name (A→Z)</button>
+                        <button data-sort="name-desc"> <span class="material-symbols-rounded">sort_by_alpha</span>Name (Z→A)</button>
+                        <button data-sort="price-desc"><span class="material-symbols-rounded">arrow_downward</span>Price (high→low)</button>
+                        <button data-sort="price-asc"> <span class="material-symbols-rounded">arrow_upward</span>Price (low→high)</button>
+                        <button data-sort="cat">       <span class="material-symbols-rounded">folder</span>Category</button>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="flex justify-end gap-2 mt-5">
-            <button onclick="closeMenuModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
-            <button onclick="saveMenu()" class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+
+        <!-- Bulk action bar (hidden when no selection) -->
+        <div id="bulk-bar" class="bulk-bar" style="display:none">
+            <span class="material-symbols-rounded" style="color:#fff">check_circle</span>
+            <span class="count"><span id="bulk-count">0</span> selected</span>
+            <div class="divider"></div>
+            <button onclick="bulkSetActive(true)"><span class="material-symbols-rounded" style="font-size:18px">visibility</span>Enable</button>
+            <button onclick="bulkSetActive(false)"><span class="material-symbols-rounded" style="font-size:18px">visibility_off</span>Disable</button>
+            <select id="bulk-category" onchange="bulkChangeCategory(this.value); this.value='';">
+                <option value="">Change category…</option>
+                <option value="__none">— None —</option>
+            </select>
+            <div class="divider"></div>
+            <button class="danger" onclick="bulkDelete()"><span class="material-symbols-rounded" style="font-size:18px">delete</span>Delete</button>
+            <div style="flex:1"></div>
+            <button onclick="clearSelection()" title="Clear selection"><span class="material-symbols-rounded" style="font-size:18px">close</span></button>
+        </div>
+
+        <!-- Table -->
+        <div class="m3-card reveal" style="animation-delay:.15s">
+            <div style="overflow-x:auto">
+                <table class="item-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px"><input id="select-all" type="checkbox" class="m3-check" aria-label="Select all"></th>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th style="text-align:right">Price</th>
+                            <th>VFD</th>
+                            <th>Options</th>
+                            <th>Status</th>
+                            <th style="width:64px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="item-tbody"></tbody>
+                </table>
+            </div>
+            <div id="empty-items" class="empty-state hidden">
+                <span class="material-symbols-rounded">inventory_2</span>
+                <h3>No items match</h3>
+                <p>Try clearing search or switching category.</p>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- ── Category dialog ────────────────────────────────────────────── -->
+<div id="cat-modal" class="m3-dialog-scrim">
+    <div class="m3-dialog" role="dialog" aria-modal="true">
+        <div class="m3-dialog-head" id="cat-modal-title">Add category</div>
+        <div class="m3-dialog-body">
+            <label class="m3-label">Name</label>
+            <input id="cat-name" class="m3-input" type="text" placeholder="e.g. Beverages">
+        </div>
+        <div class="m3-dialog-actions">
+            <button class="m3-btn-text" onclick="closeCatModal()">Cancel</button>
+            <button class="m3-btn-filled" onclick="saveCat()">Save</button>
         </div>
     </div>
 </div>
+
+<!-- ── Menu item dialog ───────────────────────────────────────────── -->
+<div id="menu-modal" class="m3-dialog-scrim">
+    <div class="m3-dialog lg" role="dialog" aria-modal="true">
+        <div class="m3-dialog-head" id="menu-modal-title">Add item</div>
+        <div class="m3-dialog-body">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2">
+                    <label class="m3-label">Name</label>
+                    <input id="menu-name" class="m3-input" type="text" placeholder="Item name">
+                </div>
+                <div>
+                    <label class="m3-label">Price (THB)</label>
+                    <input id="menu-price" class="m3-input" type="number" min="0" step="0.01" placeholder="0.00">
+                </div>
+                <div>
+                    <label class="m3-label">Category</label>
+                    <select id="menu-cat" class="m3-input">
+                        <option value="">— None —</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="m3-label">VFD name <span style="color:var(--md-sys-color-outline)">· max 20 chars</span></label>
+                    <input id="menu-vfd" class="m3-input" type="text" maxlength="20" placeholder="Shown on customer display">
+                </div>
+                <div class="col-span-2">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="m3-label" style="margin:0">Option groups</label>
+                        <button type="button" class="m3-btn-text" style="height:28px;padding:0 10px;font-size:13px"
+                                onclick="toggleInlineGroupForm()">
+                            <span class="material-symbols-rounded" style="font-size:16px">add</span>
+                            <span id="inline-group-toggle-label">New group</span>
+                        </button>
+                    </div>
+
+                    <!-- inline create form (hidden until + clicked) -->
+                    <div id="inline-group-form"
+                         style="display:none;border:1px solid var(--md-sys-color-primary);border-radius:var(--m3-shape-md);padding:12px;margin-bottom:8px;background:var(--md-sys-color-surface-container-low)">
+                        <div class="grid grid-cols-5 gap-2 items-end">
+                            <div class="col-span-3">
+                                <label class="m3-label">Group name</label>
+                                <input id="inline-group-name" type="text" class="m3-input m3-input-sm" placeholder="e.g. Sweetness level">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="m3-label">Selection</label>
+                                <select id="inline-group-mode" class="m3-input m3-input-sm">
+                                    <option value="single_required">Single required</option>
+                                    <option value="single_optional">Single optional</option>
+                                    <option value="multi">Multi</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <div class="flex items-center justify-between">
+                                <label class="m3-label" style="margin:0">Options</label>
+                                <span class="text-xs" style="color:var(--md-sys-color-on-surface-variant)">name · price delta (THB, can be 0 or negative)</span>
+                            </div>
+                            <div id="inline-options-rows" class="mt-1.5 space-y-1.5"></div>
+                            <button type="button" class="m3-btn-text" style="height:30px;padding:0 10px;font-size:13px;margin-top:6px" onclick="addInlineOptionRow()">
+                                <span class="material-symbols-rounded" style="font-size:16px">add</span>Add option
+                            </button>
+                        </div>
+
+                        <div class="flex justify-end gap-1 mt-3 pt-2" style="border-top:1px solid var(--md-sys-color-outline-variant)">
+                            <button type="button" class="m3-btn-text" onclick="cancelInlineGroup()">Cancel</button>
+                            <button type="button" class="m3-btn-text" style="color:var(--md-sys-color-primary);font-weight:500" onclick="saveInlineGroup()">
+                                <span class="material-symbols-rounded" style="font-size:16px">check</span>Create group
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="menu-groups" style="border:1px solid var(--md-sys-color-outline-variant);border-radius:var(--m3-shape-sm);padding:8px;max-height:180px;overflow-y:auto" class="space-y-1 text-sm">
+                        <p class="text-xs" style="color:var(--md-sys-color-on-surface-variant)">No option groups defined yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="m3-dialog-actions">
+            <button class="m3-btn-text" onclick="closeMenuModal()">Cancel</button>
+            <button class="m3-btn-filled" onclick="saveMenu()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Confirm delete dialog ──────────────────────────────────────── -->
+<div id="confirm-modal" class="m3-dialog-scrim">
+    <div class="m3-dialog" role="dialog" aria-modal="true">
+        <div class="m3-dialog-head" id="confirm-title">Confirm</div>
+        <div class="m3-dialog-body">
+            <p id="confirm-body" style="color:var(--md-sys-color-on-surface-variant);font-size:14px">Are you sure?</p>
+        </div>
+        <div class="m3-dialog-actions">
+            <button class="m3-btn-text" onclick="closeConfirm()">Cancel</button>
+            <button class="m3-btn-text danger" id="confirm-ok">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- snackbar -->
+<div id="snackbar" class="snackbar"></div>
 
 <script>
 const unwrap = r => r.json().then(d => d.data ?? d);
@@ -85,50 +726,305 @@ let menus = [];
 let optionGroups = [];
 let catEditId = null;
 let menuEditId = null;
+const selection = new Set();
 
-// ── Load ──────────────────────────────────────────────
+// filters
+let filter = { search: '', categoryId: 'all', status: 'all', sort: 'name-asc' };
+
+// ── Helpers ────────────────────────────────────────────────────────
+function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function fmtTHB(n) { return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function snack(msg) {
+    const el = document.getElementById('snackbar');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── Load ───────────────────────────────────────────────────────────
 async function load() {
     [categories, menus, optionGroups] = await Promise.all([
         fetch('/api/menu-categories').then(unwrap),
         fetch('/api/menus').then(unwrap),
         fetch('/api/option-groups').then(unwrap),
     ]);
-    renderCategories();
-    renderMenus();
+    renderSidebar();
+    renderTable();
     populateCatSelect();
+    populateBulkCategorySelect();
+    updateSummary();
 }
 
-// ── Categories ────────────────────────────────────────
-function renderCategories() {
-    const el = document.getElementById('cat-list');
-    if (!categories.length) {
-        el.innerHTML = '<p class="p-6 text-sm text-gray-400">No categories yet.</p>';
+function updateSummary() {
+    const total = menus.length;
+    const active = menus.filter(m => m.active).length;
+    const cats = categories.length;
+    document.getElementById('page-summary').textContent =
+        `${total} items · ${active} active · ${cats} categor${cats === 1 ? 'y' : 'ies'}`;
+}
+
+// ── Sidebar (categories) ───────────────────────────────────────────
+function categoryItemCount(catId) {
+    if (catId === 'all')          return menus.length;
+    if (catId === 'uncategorized')return menus.filter(m => m.category_id == null).length;
+    return menus.filter(m => m.category_id === catId).length;
+}
+
+function renderSidebar() {
+    const wrap = document.getElementById('sidebar-cats');
+    const row = (id, name, icon, count, opts = {}) => {
+        const active = filter.categoryId === id;
+        const actions = opts.actions ? `
+            <div class="cat-actions">
+                <button class="cat-mini-btn" title="Edit"
+                        onclick="event.stopPropagation();openCatModal(${opts.editId}, '${esc(name).replace(/'/g,"\\'")}')">
+                    <span class="material-symbols-rounded">edit</span>
+                </button>
+                <button class="cat-mini-btn" title="Delete"
+                        onclick="event.stopPropagation();confirmDelete('Delete category?','Items inside will become uncategorized.', () => deleteCat(${opts.editId}))">
+                    <span class="material-symbols-rounded">delete</span>
+                </button>
+            </div>` : '';
+        return `
+            <div class="cat-row ${active ? 'is-active' : ''}" onclick="setCategoryFilter(${typeof id === 'string' ? `'${id}'` : id})">
+                <div class="name">
+                    <span class="material-symbols-rounded">${icon}</span>
+                    <span class="label-text">${esc(name)}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    ${actions}
+                    <span class="cat-count">${count}</span>
+                </div>
+            </div>`;
+    };
+
+    let html = '';
+    html += row('all', 'All items', 'inventory_2', categoryItemCount('all'));
+    html += row('uncategorized', 'Uncategorized', 'help_outline', categoryItemCount('uncategorized'));
+    if (categories.length) {
+        html += `<div class="px-2 pt-3 pb-1 text-[10px] font-medium uppercase tracking-widest" style="color:var(--md-sys-color-on-surface-variant)">By category</div>`;
+    }
+    for (const c of categories) {
+        html += row(c.id, c.name, 'folder', categoryItemCount(c.id), { actions: true, editId: c.id });
+    }
+    wrap.innerHTML = html;
+}
+
+function setCategoryFilter(id) {
+    filter.categoryId = id;
+    clearSelection();
+    renderSidebar();
+    renderTable();
+}
+
+// ── Table ──────────────────────────────────────────────────────────
+function filteredMenus() {
+    const q = filter.search.trim().toLowerCase();
+    let arr = menus.filter(m => {
+        if (filter.categoryId === 'uncategorized' && m.category_id != null) return false;
+        if (filter.categoryId !== 'all' && filter.categoryId !== 'uncategorized' && m.category_id !== filter.categoryId) return false;
+        if (filter.status === 'active' && !m.active) return false;
+        if (filter.status === 'inactive' && m.active) return false;
+        if (q) {
+            const hay = (m.name + ' ' + (m.vfd_name || '')).toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    const catName = id => (categories.find(c => c.id === id)?.name || '');
+    switch (filter.sort) {
+        case 'name-asc':  arr.sort((a,b)=>a.name.localeCompare(b.name)); break;
+        case 'name-desc': arr.sort((a,b)=>b.name.localeCompare(a.name)); break;
+        case 'price-asc': arr.sort((a,b)=>a.price - b.price); break;
+        case 'price-desc':arr.sort((a,b)=>b.price - a.price); break;
+        case 'cat':       arr.sort((a,b)=> (catName(a.category_id)||'~').localeCompare(catName(b.category_id)||'~') || a.name.localeCompare(b.name)); break;
+    }
+    return arr;
+}
+
+function renderTable() {
+    const tbody = document.getElementById('item-tbody');
+    const empty = document.getElementById('empty-items');
+    const list = filteredMenus();
+    if (!list.length) {
+        tbody.innerHTML = '';
+        empty.classList.remove('hidden');
+        updateSelectAllUI();
+        updateBulkBar();
         return;
     }
-    el.innerHTML = categories.map(c => `
-        <div class="flex items-center justify-between px-6 py-3">
-            <span class="text-sm font-medium">${esc(c.name)}</span>
-            <div class="flex gap-2">
-                <button onclick="openCatModal(${c.id}, '${esc(c.name)}')"
-                        class="text-xs text-blue-600 hover:underline">Edit</button>
-                <button onclick="deleteCat(${c.id})"
-                        class="text-xs text-red-500 hover:underline">Delete</button>
-            </div>
-        </div>
-    `).join('');
+    empty.classList.add('hidden');
+    tbody.innerHTML = list.map(m => {
+        const cat = categories.find(c => c.id === m.category_id);
+        const groups = m.option_groups || [];
+        const groupsHtml = groups.length
+            ? groups.slice(0,3).map(g => `<span class="group-pill">${esc(g.name)}</span>`).join('') +
+              (groups.length > 3 ? `<span class="group-pill">+${groups.length - 3}</span>` : '')
+            : `<span style="font-size:12px;color:var(--md-sys-color-outline)">—</span>`;
+        return `
+        <tr data-id="${m.id}" class="${m.active ? '' : 'is-inactive'} ${selection.has(m.id) ? 'selected' : ''}">
+            <td><input type="checkbox" class="m3-check row-check" data-id="${m.id}" ${selection.has(m.id) ? 'checked' : ''} aria-label="Select"></td>
+            <td>
+                <div class="item-name">${esc(m.name)}</div>
+                <div class="item-meta">ID #${m.id}</div>
+            </td>
+            <td>
+                ${cat ? `<span class="m3-badge">${esc(cat.name)}</span>` : `<span style="font-size:12px;color:var(--md-sys-color-outline)">Uncategorized</span>`}
+            </td>
+            <td class="price-cell" style="text-align:right">
+                <input type="number" min="0" step="0.01" value="${m.price.toFixed(2)}"
+                       data-orig="${m.price.toFixed(2)}"
+                       onblur="inlineSavePrice(${m.id}, this)"
+                       onkeydown="if(event.key==='Enter') this.blur(); if(event.key==='Escape'){this.value=this.dataset.orig; this.blur();}">
+            </td>
+            <td><span class="mono" style="font-size:12px;color:var(--md-sys-color-on-surface-variant)">${esc(m.vfd_name || '—')}</span></td>
+            <td>${groupsHtml}</td>
+            <td>
+                <label class="m3-switch" title="${m.active ? 'Disable' : 'Enable'}">
+                    <input type="checkbox" ${m.active ? 'checked' : ''} onchange="toggleMenu(${m.id})">
+                    <span class="track"><span class="thumb"></span></span>
+                </label>
+            </td>
+            <td>
+                <div class="flex items-center gap-1 justify-end">
+                    <button class="m3-icon-btn" onclick="openMenuModal(${m.id})" title="Edit">
+                        <span class="material-symbols-rounded">edit</span>
+                    </button>
+                    <button class="m3-icon-btn" onclick="confirmDelete('Delete item?','&quot;${esc(m.name)}&quot; will be removed.', () => deleteMenu(${m.id}))" title="Delete">
+                        <span class="material-symbols-rounded" style="color:var(--md-sys-color-error)">delete</span>
+                    </button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.row-check').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const id = parseInt(cb.dataset.id);
+            if (cb.checked) selection.add(id); else selection.delete(id);
+            cb.closest('tr').classList.toggle('selected', cb.checked);
+            updateSelectAllUI();
+            updateBulkBar();
+        });
+    });
+
+    updateSelectAllUI();
+    updateBulkBar();
 }
 
+function updateSelectAllUI() {
+    const cb = document.getElementById('select-all');
+    const visible = filteredMenus();
+    const visIds = visible.map(m => m.id);
+    const selVis = visIds.filter(id => selection.has(id)).length;
+    if (selVis === 0) { cb.checked = false; cb.indeterminate = false; }
+    else if (selVis === visIds.length) { cb.checked = true; cb.indeterminate = false; }
+    else { cb.checked = false; cb.indeterminate = true; }
+}
+
+function updateBulkBar() {
+    const bar = document.getElementById('bulk-bar');
+    document.getElementById('bulk-count').textContent = selection.size;
+    bar.style.display = selection.size > 0 ? '' : 'none';
+}
+
+function clearSelection() {
+    selection.clear();
+    document.querySelectorAll('.row-check').forEach(cb => { cb.checked = false; cb.closest('tr').classList.remove('selected'); });
+    updateSelectAllUI();
+    updateBulkBar();
+}
+
+document.getElementById('select-all').addEventListener('change', e => {
+    const visible = filteredMenus();
+    if (e.target.checked) visible.forEach(m => selection.add(m.id));
+    else visible.forEach(m => selection.delete(m.id));
+    renderTable();
+});
+
+// ── Bulk ops ───────────────────────────────────────────────────────
+function populateBulkCategorySelect() {
+    const sel = document.getElementById('bulk-category');
+    sel.innerHTML = '<option value="">Change category…</option><option value="__none">— None —</option>' +
+        categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+async function bulkSetActive(target) {
+    const ids = Array.from(selection);
+    const targets = ids.map(id => menus.find(m => m.id === id)).filter(m => m && m.active !== target);
+    if (!targets.length) { snack('Nothing to update.'); return; }
+    await Promise.all(targets.map(m => fetch(`/api/menus/${m.id}/toggle`, { method: 'PATCH' })));
+    snack(`${targets.length} item${targets.length>1?'s':''} ${target ? 'enabled' : 'disabled'}.`);
+    await load();
+}
+
+async function bulkChangeCategory(val) {
+    if (!val) return;
+    const newCat = val === '__none' ? null : parseInt(val);
+    const ids = Array.from(selection);
+    await Promise.all(ids.map(id => {
+        const m = menus.find(x => x.id === id);
+        if (!m) return;
+        return fetch(`/api/menus/${id}`, {
+            method: 'PATCH', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name: m.name, price: m.price, category_id: newCat, vfd_name: m.vfd_name || null }),
+        });
+    }));
+    snack(`${ids.length} item${ids.length>1?'s':''} moved.`);
+    await load();
+}
+
+function bulkDelete() {
+    const n = selection.size;
+    confirmDelete(`Delete ${n} item${n>1?'s':''}?`, 'This cannot be undone.', async () => {
+        const ids = Array.from(selection);
+        await Promise.all(ids.map(id => fetch(`/api/menus/${id}`, { method: 'DELETE' })));
+        selection.clear();
+        snack(`${n} item${n>1?'s':''} deleted.`);
+        await load();
+    });
+}
+
+// ── Inline price save ──────────────────────────────────────────────
+async function inlineSavePrice(id, input) {
+    const newPrice = parseFloat(input.value);
+    const orig = parseFloat(input.dataset.orig);
+    if (isNaN(newPrice) || newPrice < 0) { input.value = orig.toFixed(2); return; }
+    if (Math.abs(newPrice - orig) < 0.005) return;
+    const m = menus.find(x => x.id === id);
+    if (!m) return;
+    await fetch(`/api/menus/${id}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: m.name, price: newPrice, category_id: m.category_id ?? null, vfd_name: m.vfd_name || null }),
+    });
+    m.price = newPrice;
+    input.dataset.orig = newPrice.toFixed(2);
+    input.value = newPrice.toFixed(2);
+    snack(`Price updated · ${fmtTHB(newPrice)}`);
+}
+
+// ── Toggle ─────────────────────────────────────────────────────────
+async function toggleMenu(id) {
+    await fetch(`/api/menus/${id}/toggle`, { method: 'PATCH' });
+    const m = menus.find(x => x.id === id);
+    if (m) m.active = !m.active;
+    renderSidebar();
+    renderTable();
+    updateSummary();
+}
+
+// ── Modals: category ───────────────────────────────────────────────
 function openCatModal(id, name) {
     catEditId = id || null;
-    document.getElementById('cat-modal-title').textContent = id ? 'Edit Category' : 'Add Category';
+    document.getElementById('cat-modal-title').textContent = id ? 'Edit category' : 'Add category';
     document.getElementById('cat-name').value = name || '';
-    document.getElementById('cat-modal').classList.remove('hidden');
-    document.getElementById('cat-name').focus();
+    document.getElementById('cat-modal').classList.add('is-open');
+    setTimeout(() => document.getElementById('cat-name').focus(), 50);
 }
-function closeCatModal() {
-    document.getElementById('cat-modal').classList.add('hidden');
-    catEditId = null;
-}
+function closeCatModal() { document.getElementById('cat-modal').classList.remove('is-open'); catEditId = null; }
 
 async function saveCat() {
     const name = document.getElementById('cat-name').value.trim();
@@ -138,53 +1034,26 @@ async function saveCat() {
             method: 'PATCH', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ name }),
         });
+        snack('Category updated.');
     } else {
         await fetch('/api/menu-categories', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ name }),
         });
+        snack('Category added.');
     }
     closeCatModal();
     await load();
 }
 
 async function deleteCat(id) {
-    if (!confirm('Delete this category?')) return;
     await fetch(`/api/menu-categories/${id}`, { method: 'DELETE' });
+    if (filter.categoryId === id) filter.categoryId = 'all';
+    snack('Category deleted.');
     await load();
 }
 
-// ── Menus ─────────────────────────────────────────────
-function renderMenus() {
-    const el = document.getElementById('menu-list');
-    if (!menus.length) {
-        el.innerHTML = '<p class="p-6 text-sm text-gray-400">No menu items yet.</p>';
-        return;
-    }
-    el.innerHTML = menus.map(m => {
-        const cat = categories.find(c => c.id === m.category_id);
-        const toggleLabel = m.active ? 'Disable' : 'Enable';
-        const toggleClass = m.active ? 'text-yellow-600' : 'text-green-600';
-        const rowDim = m.active ? '' : 'opacity-50';
-        return `
-        <div class="flex items-center justify-between px-6 py-3 ${rowDim}">
-            <div>
-                <p class="text-sm font-medium">${esc(m.name)}${m.active ? '' : ' <span class="text-xs bg-gray-200 text-gray-500 rounded px-1">disabled</span>'}</p>
-                <p class="text-xs text-gray-400">${cat ? esc(cat.name) : 'No category'} · ฿${m.price.toFixed(2)}</p>
-            </div>
-            <div class="flex gap-2">
-                <button onclick="toggleMenu(${m.id})"
-                        class="text-xs ${toggleClass} hover:underline">${toggleLabel}</button>
-                <button onclick="openMenuModal(${m.id})"
-                        class="text-xs text-blue-600 hover:underline">Edit</button>
-                <button onclick="deleteMenu(${m.id})"
-                        class="text-xs text-red-500 hover:underline">Delete</button>
-            </div>
-        </div>
-        `;
-    }).join('');
-}
-
+// ── Modals: menu ───────────────────────────────────────────────────
 function populateCatSelect() {
     const sel = document.getElementById('menu-cat');
     const prev = sel.value;
@@ -196,36 +1065,131 @@ function populateCatSelect() {
 function openMenuModal(id) {
     menuEditId = id || null;
     const m = id ? menus.find(x => x.id === id) : null;
-    document.getElementById('menu-modal-title').textContent = id ? 'Edit Menu Item' : 'Add Menu Item';
+    document.getElementById('menu-modal-title').textContent = id ? 'Edit item' : 'Add item';
     document.getElementById('menu-name').value  = m ? m.name  : '';
     document.getElementById('menu-price').value = m ? m.price : '';
+    populateCatSelect();
     document.getElementById('menu-cat').value   = m && m.category_id != null ? m.category_id : '';
     document.getElementById('menu-vfd').value   = m && m.vfd_name ? m.vfd_name : '';
-    populateCatSelect();
     populateGroupCheckboxes(m);
-    if (m && m.category_id != null) document.getElementById('menu-cat').value = m.category_id;
-    document.getElementById('menu-modal').classList.remove('hidden');
-    document.getElementById('menu-name').focus();
+    cancelInlineGroup();
+    document.getElementById('menu-modal').classList.add('is-open');
+    setTimeout(() => document.getElementById('menu-name').focus(), 50);
 }
 
-function populateGroupCheckboxes(m) {
+function currentlyAttachedGroupIds() {
+    return new Set(Array.from(document.querySelectorAll('.menu-group-cb:checked')).map(cb => parseInt(cb.value)));
+}
+
+function populateGroupCheckboxes(mOrSet) {
     const el = document.getElementById('menu-groups');
+    let attached;
+    if (mOrSet instanceof Set) attached = mOrSet;
+    else attached = new Set((mOrSet && mOrSet.option_groups || []).map(g => g.id));
+
     if (!optionGroups.length) {
-        el.innerHTML = '<p class="text-xs text-gray-400">No option groups defined yet. <a href="/manager/option-groups" class="text-blue-600 underline">Create one</a>.</p>';
+        el.innerHTML = `<p class="text-xs" style="color:var(--md-sys-color-on-surface-variant)">No option groups yet. Click <strong>New group</strong> above to create one.</p>`;
         return;
     }
-    const attached = new Set((m && m.option_groups || []).map(g => g.id));
     el.innerHTML = optionGroups.map(g => `
-        <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" value="${g.id}" ${attached.has(g.id) ? 'checked' : ''} class="menu-group-cb">
-            <span>${esc(g.name)} <span class="text-gray-400 text-xs">(${g.selection_mode})</span></span>
+        <label class="flex items-center gap-3 cursor-pointer py-1.5 px-2 rounded hover:bg-black/[.03]">
+            <input type="checkbox" class="m3-check menu-group-cb" value="${g.id}" ${attached.has(g.id) ? 'checked' : ''}>
+            <span style="font-size:14px">${esc(g.name)}
+                <span class="m3-badge" style="margin-left:6px">${esc(g.selection_mode)}</span>
+            </span>
         </label>
     `).join('');
 }
-function closeMenuModal() {
-    document.getElementById('menu-modal').classList.add('hidden');
-    menuEditId = null;
+
+// ── Inline create option group (from item dialog) ──────────────────
+function inlineOptionRowHtml() {
+    return `
+        <div class="inline-opt-row grid grid-cols-5 gap-2 items-center">
+            <input type="text" class="m3-input m3-input-sm col-span-3 inline-opt-name" placeholder="Option name (e.g. Hot)">
+            <input type="number" step="0.01" class="m3-input m3-input-sm col-span-1 inline-opt-price" placeholder="0.00">
+            <button type="button" class="m3-icon-btn col-span-1 justify-self-end" onclick="this.closest('.inline-opt-row').remove()" title="Remove">
+                <span class="material-symbols-rounded" style="font-size:18px">close</span>
+            </button>
+        </div>`;
 }
+function addInlineOptionRow() {
+    const wrap = document.getElementById('inline-options-rows');
+    wrap.insertAdjacentHTML('beforeend', inlineOptionRowHtml());
+    const rows = wrap.querySelectorAll('.inline-opt-row');
+    rows[rows.length - 1].querySelector('.inline-opt-name').focus();
+}
+function resetInlineOptionRows() {
+    const wrap = document.getElementById('inline-options-rows');
+    wrap.innerHTML = inlineOptionRowHtml() + inlineOptionRowHtml(); // start with 2 blank rows
+}
+function toggleInlineGroupForm() {
+    const form = document.getElementById('inline-group-form');
+    const open = form.style.display === 'none' || form.style.display === '';
+    form.style.display = open ? 'block' : 'none';
+    document.getElementById('inline-group-toggle-label').textContent = open ? 'Cancel' : 'New group';
+    if (open) {
+        document.getElementById('inline-group-name').value = '';
+        document.getElementById('inline-group-mode').value = 'single_required';
+        resetInlineOptionRows();
+        setTimeout(() => document.getElementById('inline-group-name').focus(), 30);
+    }
+}
+function cancelInlineGroup() {
+    const form = document.getElementById('inline-group-form');
+    form.style.display = 'none';
+    document.getElementById('inline-group-toggle-label').textContent = 'New group';
+}
+async function saveInlineGroup() {
+    const name = document.getElementById('inline-group-name').value.trim();
+    const mode = document.getElementById('inline-group-mode').value;
+    if (!name) {
+        document.getElementById('inline-group-name').focus();
+        return;
+    }
+
+    // collect option rows
+    const rows = Array.from(document.querySelectorAll('#inline-options-rows .inline-opt-row'));
+    const options = rows.map(r => {
+        const nm = r.querySelector('.inline-opt-name').value.trim();
+        const pdRaw = r.querySelector('.inline-opt-price').value;
+        const pd = pdRaw === '' ? 0 : parseFloat(pdRaw);
+        return { name: nm, price_delta: isNaN(pd) ? 0 : pd };
+    }).filter(o => o.name);
+
+    // 1) create group
+    const res = await fetch('/api/option-groups', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, selection_mode: mode }),
+    });
+    if (!res.ok) { snack('Failed to create group.'); return; }
+    const created = await res.json().then(d => d.data ?? d);
+    const groupId = created && created.id;
+    if (!groupId) { snack('Group created but missing id.'); return; }
+
+    // 2) create options sequentially to keep sort_order stable
+    let optFail = 0;
+    for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        const r = await fetch(`/api/option-groups/${groupId}/options`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name: o.name, price_delta: o.price_delta, sort_order: i }),
+        });
+        if (!r.ok) optFail++;
+    }
+
+    // 3) refresh full list (now contains the new group with its options)
+    optionGroups = await fetch('/api/option-groups').then(unwrap);
+    const attached = currentlyAttachedGroupIds();
+    attached.add(groupId);
+    populateGroupCheckboxes(attached);
+    cancelInlineGroup();
+
+    if (optFail > 0) snack(`Group "${name}" created · ${optFail} option(s) failed.`);
+    else if (options.length) snack(`Group "${name}" created with ${options.length} option${options.length>1?'s':''}.`);
+    else snack(`Group "${name}" created.`);
+}
+
+function closeMenuModal() { document.getElementById('menu-modal').classList.remove('is-open'); menuEditId = null; }
 
 async function saveMenu() {
     const name  = document.getElementById('menu-name').value.trim();
@@ -233,15 +1197,8 @@ async function saveMenu() {
     const catVal = document.getElementById('menu-cat').value;
     const vfd   = document.getElementById('menu-vfd').value.trim() || null;
     if (!name || isNaN(price)) return;
-
-    const body = {
-        name, price,
-        category_id: catVal ? parseInt(catVal) : null,
-        vfd_name: vfd,
-    };
-
-    const groupIds = Array.from(document.querySelectorAll('.menu-group-cb:checked'))
-        .map(cb => parseInt(cb.value));
+    const body = { name, price, category_id: catVal ? parseInt(catVal) : null, vfd_name: vfd };
+    const groupIds = Array.from(document.querySelectorAll('.menu-group-cb:checked')).map(cb => parseInt(cb.value));
 
     let menuId = menuEditId;
     if (menuEditId) {
@@ -262,33 +1219,100 @@ async function saveMenu() {
             body: JSON.stringify({ group_ids: groupIds }),
         });
     }
+    snack(menuEditId ? 'Item updated.' : 'Item added.');
     closeMenuModal();
     await load();
 }
 
-async function toggleMenu(id) {
-    await fetch(`/api/menus/${id}/toggle`, { method: 'PATCH' });
-    await load();
-}
-
 async function deleteMenu(id) {
-    if (!confirm('Delete this menu item?')) return;
     await fetch(`/api/menus/${id}`, { method: 'DELETE' });
+    selection.delete(id);
+    snack('Item deleted.');
     await load();
 }
 
-// ── Keyboard shortcuts ────────────────────────────────
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeCatModal(); closeMenuModal(); }
-    if (e.key === 'Enter') {
-        if (!document.getElementById('cat-modal').classList.contains('hidden')) saveCat();
-        if (!document.getElementById('menu-modal').classList.contains('hidden')) saveMenu();
-    }
+// ── Confirm dialog ─────────────────────────────────────────────────
+let pendingConfirm = null;
+function confirmDelete(title, body, onOk) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-body').textContent = body;
+    pendingConfirm = onOk;
+    document.getElementById('confirm-modal').classList.add('is-open');
+}
+function closeConfirm() {
+    document.getElementById('confirm-modal').classList.remove('is-open');
+    pendingConfirm = null;
+}
+document.getElementById('confirm-ok').addEventListener('click', () => {
+    const fn = pendingConfirm;
+    closeConfirm();
+    if (fn) fn();
 });
 
-function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// ── Toolbar interactions ───────────────────────────────────────────
+// search (debounced)
+const searchEl = document.getElementById('search');
+let searchTimer = null;
+searchEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        filter.search = searchEl.value;
+        renderTable();
+    }, 120);
+});
+
+// status chips
+document.querySelectorAll('.status-chip').forEach(c => {
+    c.addEventListener('click', () => {
+        document.querySelectorAll('.status-chip').forEach(x => x.classList.remove('is-active'));
+        c.classList.add('is-active');
+        filter.status = c.dataset.status;
+        renderTable();
+    });
+});
+
+// sort menu
+const sortHost = document.getElementById('sort-host');
+const sortTrigger = document.getElementById('sort-trigger');
+const sortMenu = document.getElementById('sort-menu');
+const sortLabel = document.getElementById('sort-label');
+const sortLabels = {'name-asc':'Name A→Z','name-desc':'Name Z→A','price-desc':'Price ↓','price-asc':'Price ↑','cat':'Category'};
+sortLabel.textContent = sortLabels[filter.sort];
+sortTrigger.addEventListener('click', e => { e.stopPropagation(); sortMenu.classList.toggle('is-open'); });
+sortMenu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+        filter.sort = b.dataset.sort;
+        sortLabel.textContent = sortLabels[filter.sort];
+        sortMenu.classList.remove('is-open');
+        sortMenu.querySelectorAll('button').forEach(x => x.classList.toggle('is-active', x.dataset.sort === filter.sort));
+        renderTable();
+    });
+});
+document.addEventListener('click', e => {
+    if (!sortHost.contains(e.target)) sortMenu.classList.remove('is-open');
+});
+
+// ── Keyboard ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeCatModal(); closeMenuModal(); closeConfirm(); sortMenu.classList.remove('is-open'); }
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
+        e.preventDefault();
+        searchEl.focus();
+    }
+    if (e.key === 'Enter') {
+        if (document.getElementById('cat-modal').classList.contains('is-open')) saveCat();
+        else if (document.getElementById('menu-modal').classList.contains('is-open')) {
+            const ae = document.activeElement;
+            // Enter inside inline-create form → save inline group; otherwise save item.
+            if (ae && ae.closest && ae.closest('#inline-group-form')) {
+                e.preventDefault();
+                saveInlineGroup();
+            } else if (ae && ae.tagName === 'INPUT' && ae.type !== 'checkbox') {
+                saveMenu();
+            }
+        }
+    }
+});
 
 load();
 </script>

@@ -18,6 +18,19 @@ table "settings" {
     null    = false
     default = 0
   }
+  column "receipt_footer" {
+    type    = varchar(255)
+    null    = false
+    default = "Thank you! Come again!"
+  }
+  column "logo" {
+    type = bytea
+    null = true
+  }
+  column "logo_mime" {
+    type = varchar(60)
+    null = true
+  }
   column "updated_at" {
     type    = timestamptz
     null    = false
@@ -53,6 +66,19 @@ table "orders" {
     null    = false
     default = sql("now()")
   }
+  column "held_at" {
+    type = timestamptz
+    null = true
+  }
+  column "held_label" {
+    type = varchar(120)
+    null = true
+  }
+  column "held_payload" {
+    type    = jsonb
+    null    = false
+    default = sql("'{}'::jsonb")
+  }
 
   primary_key {
     columns = [column.id]
@@ -60,6 +86,60 @@ table "orders" {
   index "orders_code_key" {
     columns = [column.code]
     unique  = true
+  }
+  index "orders_status_held_at" {
+    columns = [column.status, column.held_at]
+  }
+}
+
+table "cash_drawer_audit" {
+  schema = schema.public
+
+  column "id" {
+    type = bigserial
+    null = false
+  }
+  column "event_type" {
+    type = varchar(20)
+    null = false
+  }
+  column "amount" {
+    type = bigint
+    null = true
+  }
+  column "delta" {
+    type = bigint
+    null = true
+  }
+  column "note" {
+    type = varchar(255)
+    null = true
+  }
+  column "actor" {
+    type = varchar(120)
+    null = true
+  }
+  column "terminal" {
+    type = varchar(120)
+    null = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "cash_drawer_audit_created_at" {
+    columns = [column.created_at]
+  }
+  index "cash_drawer_audit_event_type_created_at" {
+    columns = [column.event_type, column.created_at]
+  }
+  check "cash_drawer_audit_event_type" {
+    expr = "event_type IN ('set','clear','adjust','kick','open_for_change')"
   }
 }
 
