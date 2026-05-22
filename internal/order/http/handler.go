@@ -138,13 +138,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 type checkoutItemRequest struct {
-	MenuID    int32   `json:"menu_id"`
-	Qty       int32   `json:"qty"`
-	OptionIDs []int32 `json:"option_ids"`
+	MenuID      int32   `json:"menu_id"`
+	Qty         int32   `json:"qty"`
+	OptionIDs   []int32 `json:"option_ids"`
+	DiscountIDs []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
-	Items []checkoutItemRequest `json:"items"`
+	Items       []checkoutItemRequest `json:"items"`
+	DiscountIDs []int32               `json:"discount_ids"` // whole-order discounts
 }
 
 type checkoutOptionResponse struct {
@@ -159,15 +161,23 @@ type checkoutItemResponse struct {
 	Options []checkoutOptionResponse `json:"options"`
 }
 
+type checkoutDiscountResponse struct {
+	Name   string  `json:"name"`
+	Type   string  `json:"type"`
+	Amount float64 `json:"amount"`
+}
+
 type checkoutResponse struct {
-	Code          string                 `json:"code"`
-	Subtotal      float64                `json:"subtotal"`
-	VAT           float64                `json:"vat"`
-	VATPercent    float64                `json:"vat_percent"`
-	ShopName      string                 `json:"shop_name"`
-	ReceiptFooter string                 `json:"receipt_footer"`
-	Total         float64                `json:"total"`
-	Items         []checkoutItemResponse `json:"items"`
+	Code          string                     `json:"code"`
+	Subtotal      float64                    `json:"subtotal"`
+	Discount      float64                    `json:"discount"`
+	VAT           float64                    `json:"vat"`
+	VATPercent    float64                    `json:"vat_percent"`
+	ShopName      string                     `json:"shop_name"`
+	ReceiptFooter string                     `json:"receipt_footer"`
+	Total         float64                    `json:"total"`
+	Items         []checkoutItemResponse     `json:"items"`
+	Discounts     []checkoutDiscountResponse `json:"discounts"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -186,13 +196,14 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	items := make([]service.CheckoutItemInput, len(req.Items))
 	for i, it := range req.Items {
 		items[i] = service.CheckoutItemInput{
-			MenuID:    it.MenuID,
-			Qty:       it.Qty,
-			OptionIDs: it.OptionIDs,
+			MenuID:      it.MenuID,
+			Qty:         it.Qty,
+			OptionIDs:   it.OptionIDs,
+			DiscountIDs: it.DiscountIDs,
 		}
 	}
 
-	result, err := h.svc.Checkout(r.Context(), code, items)
+	result, err := h.svc.Checkout(r.Context(), code, items, req.DiscountIDs)
 	if err != nil {
 		status, msg := classifyCheckoutError(err)
 		response.Error(w, r, status, msg, err)
@@ -216,15 +227,26 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	respDiscounts := make([]checkoutDiscountResponse, len(result.Discounts))
+	for i, d := range result.Discounts {
+		respDiscounts[i] = checkoutDiscountResponse{
+			Name:   d.Name,
+			Type:   d.Type,
+			Amount: money.New(d.Amount, money.THB).AsMajorUnits(),
+		}
+	}
+
 	response.OK(w, r, checkoutResponse{
 		Code:          result.Code,
 		Subtotal:      result.Subtotal,
+		Discount:      result.Discount,
 		VAT:           result.VAT,
 		VATPercent:    result.VATPercent,
 		ShopName:      result.ShopName,
 		ReceiptFooter: result.ReceiptFooter,
 		Total:         result.Total,
 		Items:         respItems,
+		Discounts:     respDiscounts,
 	})
 }
 
@@ -244,6 +266,10 @@ func classifyCheckoutError(err error) (int, string) {
 		return http.StatusBadRequest, "unknown option"
 	case errors.Is(err, service.ErrInvalidOption):
 		return http.StatusBadRequest, "option not valid for menu"
+	case errors.Is(err, service.ErrUnknownDiscount):
+		return http.StatusBadRequest, "unknown discount"
+	case errors.Is(err, service.ErrDiscountInactive):
+		return http.StatusBadRequest, "discount is not available"
 	default:
 		return http.StatusInternalServerError, "checkout failed"
 	}

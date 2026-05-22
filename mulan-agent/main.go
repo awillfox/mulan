@@ -125,7 +125,8 @@ func truncate(s string, max int) string {
 func main() {
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
-	viper.SetDefault("API_BASE", "http://localhost:8085")
+	// Server (mulan) LAN address. Override per-device via .env if it moves.
+	viper.SetDefault("API_BASE", "http://192.168.1.100:8085")
 	viper.SetDefault("PORT", "8081")
 	viper.SetDefault("INPOUTX64_DLL", `C:\Tools\inpoutx64.dll`)
 	viper.SetDefault("RECEIPT_PRINTER_ADDR", "")
@@ -293,16 +294,18 @@ func cashDrawerHandler() http.HandlerFunc {
 }
 
 type checkoutRequestItem struct {
-	MenuID    int32   `json:"menu_id"`
-	Name      string  `json:"name"`
-	Price     float64 `json:"price"`
-	Qty       int32   `json:"qty"`
-	OptionIDs []int32 `json:"option_ids"`
+	MenuID      int32   `json:"menu_id"`
+	Name        string  `json:"name"`
+	Price       float64 `json:"price"`
+	Qty         int32   `json:"qty"`
+	OptionIDs   []int32 `json:"option_ids"`
+	DiscountIDs []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
 	OrderCode     string                `json:"order_code"`
 	Items         []checkoutRequestItem `json:"items"`
+	DiscountIDs   []int32               `json:"discount_ids,omitempty"`   // whole-order discounts
 	PaymentMethod string                `json:"payment_method,omitempty"` // "cash" | "card" | "qr"
 	CashTendered  float64               `json:"cash_tendered,omitempty"`  // THB, cash payments only
 	CashChange    float64               `json:"cash_change,omitempty"`    // THB, cash payments only
@@ -323,6 +326,7 @@ type checkoutItem struct {
 type checkoutResponse struct {
 	Code          string         `json:"code"`
 	Subtotal      float64        `json:"subtotal"`
+	Discount      float64        `json:"discount"`
 	VAT           float64        `json:"vat"`
 	VATPercent    float64        `json:"vat_percent"`
 	ShopName      string         `json:"shop_name"`
@@ -349,7 +353,7 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 		}
 
 		// Forward to mulan API to persist order items and get computed totals
-		result, err := callCheckout(apiBase, req.OrderCode, req.Items)
+		result, err := callCheckout(apiBase, req.OrderCode, req.Items, req.DiscountIDs)
 		if err != nil {
 			log.Printf("checkout API error: %v", err)
 			http.Error(w, "checkout failed", http.StatusBadGateway)
@@ -379,7 +383,7 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 				Tendered: req.CashTendered,
 				Change:   req.CashChange,
 			}
-			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.VAT, result.VATPercent, result.Total, pay); err != nil {
+			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.VAT, result.VATPercent, result.Total, pay); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
@@ -398,8 +402,8 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 	}
 }
 
-func callCheckout(apiBase, code string, items any) (*checkoutResponse, error) {
-	body, _ := json.Marshal(map[string]any{"items": items})
+func callCheckout(apiBase, code string, items any, discountIDs []int32) (*checkoutResponse, error) {
+	body, _ := json.Marshal(map[string]any{"items": items, "discount_ids": discountIDs})
 	resp, err := http.Post(apiBase+"/api/orders/"+code+"/checkout", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

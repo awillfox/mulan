@@ -1071,34 +1071,202 @@ function openMenuModal(id) {
     populateCatSelect();
     document.getElementById('menu-cat').value   = m && m.category_id != null ? m.category_id : '';
     document.getElementById('menu-vfd').value   = m && m.vfd_name ? m.vfd_name : '';
-    populateGroupCheckboxes(m);
+    buildMenuGroupState(m);
+    renderMenuGroups();
     cancelInlineGroup();
     document.getElementById('menu-modal').classList.add('is-open');
     setTimeout(() => document.getElementById('menu-name').focus(), 50);
 }
 
-function currentlyAttachedGroupIds() {
-    return new Set(Array.from(document.querySelectorAll('.menu-group-cb:checked')).map(cb => parseInt(cb.value)));
+// ── Menu option-group editor (per-item) ───────────────────────────
+// menuGroupState drives the #menu-groups list while the item dialog is
+// open. Each entry is one row:
+//   kind 'preset'   — a shared preset. `attached` = box ticked.
+//                     `isolated` = "Customize" ticked → it ships as a
+//                     private per-menu copy instead of the shared group.
+//   kind 'isolated' — a private group already owned by this menu (cloned
+//                     earlier). Always editable, removable.
+// `options[]` holds {name, price(THB)}; only read into payload for
+// isolated rows.
+let menuGroupState = [];
+
+function buildMenuGroupState(m) {
+    menuGroupState = [];
+    const attachedShared = {};
+    const isolatedOnMenu = [];
+    for (const g of (m && m.option_groups) || []) {
+        if (g.isolated) isolatedOnMenu.push(g);
+        else attachedShared[g.id] = true;
+    }
+    for (const p of optionGroups) {
+        menuGroupState.push({
+            kind: 'preset', presetId: p.id, name: p.name, mode: p.selection_mode,
+            attached: !!attachedShared[p.id], isolated: false,
+            options: (p.options || []).map(o => ({ name: o.name, price: o.price_delta })),
+        });
+    }
+    for (const g of isolatedOnMenu) {
+        menuGroupState.push({
+            kind: 'isolated', presetId: null, name: g.name, mode: g.selection_mode,
+            attached: true, isolated: true,
+            options: (g.options || []).map(o => ({ name: o.name, price: o.price_delta })),
+        });
+    }
 }
 
-function populateGroupCheckboxes(mOrSet) {
-    const el = document.getElementById('menu-groups');
-    let attached;
-    if (mOrSet instanceof Set) attached = mOrSet;
-    else attached = new Set((mOrSet && mOrSet.option_groups || []).map(g => g.id));
+// Rebuild preset rows from a refreshed optionGroups list while keeping any
+// in-progress attach/customize state (used after inline group creation).
+function rebuildPresetEntries() {
+    const prev = {};
+    for (const e of menuGroupState) if (e.kind === 'preset') prev[e.presetId] = e;
+    const isolated = menuGroupState.filter(e => e.kind === 'isolated');
+    menuGroupState = [];
+    for (const p of optionGroups) {
+        const old = prev[p.id];
+        menuGroupState.push({
+            kind: 'preset', presetId: p.id, name: p.name, mode: p.selection_mode,
+            attached: old ? old.attached : false,
+            isolated: old ? old.isolated : false,
+            options: (old && old.isolated)
+                ? old.options
+                : (p.options || []).map(o => ({ name: o.name, price: o.price_delta })),
+        });
+    }
+    for (const iso of isolated) menuGroupState.push(iso);
+}
 
-    if (!optionGroups.length) {
+function mgOptRowHtml(i, j, o) {
+    return `
+        <div class="mg-opt-row grid grid-cols-5 gap-2 items-center" data-oidx="${j}">
+            <input type="text" class="m3-input m3-input-sm col-span-3 mg-opt-name" value="${esc(o.name)}" placeholder="Option name">
+            <input type="number" step="0.01" class="m3-input m3-input-sm col-span-1 mg-opt-price" value="${o.price}" placeholder="0.00">
+            <button type="button" class="m3-icon-btn col-span-1 justify-self-end" onclick="removeMgOption(${i},${j})" title="Remove option">
+                <span class="material-symbols-rounded" style="font-size:18px">close</span>
+            </button>
+        </div>`;
+}
+
+function mgOptsPanelHtml(i, e) {
+    const rows = e.options.map((o, j) => mgOptRowHtml(i, j, o)).join('');
+    return `
+        <div class="mg-opts" style="margin:6px 0 4px 30px;padding-left:10px;border-left:2px solid var(--md-sys-color-primary)">
+            <div class="text-xs mb-1" style="color:var(--md-sys-color-on-surface-variant)">Options for this item only · name · price delta (THB)</div>
+            <div class="space-y-1.5">${rows || ''}</div>
+            <button type="button" class="m3-btn-text" style="height:28px;padding:0 8px;font-size:12px;margin-top:4px" onclick="addMgOption(${i})">
+                <span class="material-symbols-rounded" style="font-size:15px">add</span>Add option
+            </button>
+        </div>`;
+}
+
+function renderMenuGroups() {
+    const el = document.getElementById('menu-groups');
+    if (!menuGroupState.length) {
         el.innerHTML = `<p class="text-xs" style="color:var(--md-sys-color-on-surface-variant)">No option groups yet. Click <strong>New group</strong> above to create one.</p>`;
         return;
     }
-    el.innerHTML = optionGroups.map(g => `
-        <label class="flex items-center gap-3 cursor-pointer py-1.5 px-2 rounded hover:bg-black/[.03]">
-            <input type="checkbox" class="m3-check menu-group-cb" value="${g.id}" ${attached.has(g.id) ? 'checked' : ''}>
-            <span style="font-size:14px">${esc(g.name)}
-                <span class="m3-badge" style="margin-left:6px">${esc(g.selection_mode)}</span>
-            </span>
-        </label>
-    `).join('');
+    el.innerHTML = menuGroupState.map((e, i) => {
+        if (e.kind === 'isolated') {
+            return `
+                <div class="mg-entry" data-idx="${i}" style="border:1px solid var(--md-sys-color-primary);border-radius:var(--m3-shape-sm);padding:6px 8px;margin-bottom:4px">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded" style="font-size:18px;color:var(--md-sys-color-primary)">tune</span>
+                        <span style="font-size:14px">${esc(e.name)}
+                            <span class="m3-badge" style="margin-left:6px">${esc(e.mode)}</span>
+                            <span class="m3-badge" style="margin-left:4px">customized</span>
+                        </span>
+                        <button type="button" class="m3-icon-btn" style="margin-left:auto" onclick="removeIsolatedGroup(${i})" title="Remove group from item">
+                            <span class="material-symbols-rounded" style="font-size:18px">delete</span>
+                        </button>
+                    </div>
+                    ${mgOptsPanelHtml(i, e)}
+                </div>`;
+        }
+        return `
+            <div class="mg-entry" data-idx="${i}">
+                <div class="flex items-center gap-3 py-1.5 px-2 rounded">
+                    <input type="checkbox" class="m3-check mg-attach" ${e.attached ? 'checked' : ''} onchange="onMgAttachChange(${i})">
+                    <span style="font-size:14px">${esc(e.name)}
+                        <span class="m3-badge" style="margin-left:6px">${esc(e.mode)}</span>
+                    </span>
+                    <label class="flex items-center gap-1.5 text-xs cursor-pointer" style="margin-left:auto;color:var(--md-sys-color-on-surface-variant)" title="Use this preset but edit options & prices for this item only">
+                        <input type="checkbox" class="m3-check mg-isolate" ${e.isolated ? 'checked' : ''} ${e.attached ? '' : 'disabled'} onchange="onMgIsolateChange(${i})">
+                        Customize
+                    </label>
+                </div>
+                ${e.isolated ? mgOptsPanelHtml(i, e) : ''}
+            </div>`;
+    }).join('');
+}
+
+// Pull the live DOM values back into menuGroupState before any re-render so
+// in-progress edits survive. Options are read only where a panel is shown.
+function syncMenuGroupsFromDOM() {
+    document.querySelectorAll('#menu-groups .mg-entry').forEach(el => {
+        const i = parseInt(el.dataset.idx);
+        const e = menuGroupState[i];
+        if (!e) return;
+        const att = el.querySelector('.mg-attach');
+        const iso = el.querySelector('.mg-isolate');
+        if (att) e.attached = att.checked;
+        if (iso) e.isolated = iso.checked && !iso.disabled;
+        if (e.kind === 'isolated') { e.attached = true; e.isolated = true; }
+        if (el.querySelector('.mg-opts')) {
+            e.options = Array.from(el.querySelectorAll('.mg-opt-row')).map(r => ({
+                name: r.querySelector('.mg-opt-name').value,
+                price: parseFloat(r.querySelector('.mg-opt-price').value) || 0,
+            }));
+        }
+    });
+}
+
+function onMgAttachChange(i) {
+    syncMenuGroupsFromDOM();
+    const e = menuGroupState[i];
+    if (!e.attached) e.isolated = false;
+    renderMenuGroups();
+}
+function onMgIsolateChange(i) {
+    syncMenuGroupsFromDOM();
+    const e = menuGroupState[i];
+    if (e.isolated) e.attached = true;
+    renderMenuGroups();
+}
+function addMgOption(i) {
+    syncMenuGroupsFromDOM();
+    menuGroupState[i].options.push({ name: '', price: 0 });
+    renderMenuGroups();
+    const rows = document.querySelectorAll(`#menu-groups .mg-entry[data-idx="${i}"] .mg-opt-row`);
+    if (rows.length) rows[rows.length - 1].querySelector('.mg-opt-name').focus();
+}
+function removeMgOption(i, j) {
+    syncMenuGroupsFromDOM();
+    menuGroupState[i].options.splice(j, 1);
+    renderMenuGroups();
+}
+function removeIsolatedGroup(i) {
+    syncMenuGroupsFromDOM();
+    menuGroupState.splice(i, 1);
+    renderMenuGroups();
+}
+
+// Serialise menuGroupState into the PUT /option-groups payload.
+function collectMenuGroupsPayload() {
+    syncMenuGroupsFromDOM();
+    const isoPayload = e => ({
+        isolated: true,
+        name: e.name,
+        selection_mode: e.mode,
+        options: e.options
+            .map(o => ({ name: (o.name || '').trim(), price_delta: o.price || 0 }))
+            .filter(o => o.name),
+    });
+    const out = [];
+    for (const e of menuGroupState) {
+        if (e.kind === 'isolated') out.push(isoPayload(e));
+        else if (e.attached && e.isolated) out.push(isoPayload(e));
+        else if (e.attached) out.push({ isolated: false, id: e.presetId });
+    }
+    return out;
 }
 
 // ── Inline create option group (from item dialog) ──────────────────
@@ -1179,9 +1347,11 @@ async function saveInlineGroup() {
 
     // 3) refresh full list (now contains the new group with its options)
     optionGroups = await fetch('/api/option-groups').then(unwrap);
-    const attached = currentlyAttachedGroupIds();
-    attached.add(groupId);
-    populateGroupCheckboxes(attached);
+    syncMenuGroupsFromDOM();
+    rebuildPresetEntries();
+    const ne = menuGroupState.find(e => e.kind === 'preset' && e.presetId === groupId);
+    if (ne) ne.attached = true;
+    renderMenuGroups();
     cancelInlineGroup();
 
     if (optFail > 0) snack(`Group "${name}" created · ${optFail} option(s) failed.`);
@@ -1198,7 +1368,7 @@ async function saveMenu() {
     const vfd   = document.getElementById('menu-vfd').value.trim() || null;
     if (!name || isNaN(price)) return;
     const body = { name, price, category_id: catVal ? parseInt(catVal) : null, vfd_name: vfd };
-    const groupIds = Array.from(document.querySelectorAll('.menu-group-cb:checked')).map(cb => parseInt(cb.value));
+    const groups = collectMenuGroupsPayload();
 
     let menuId = menuEditId;
     if (menuEditId) {
@@ -1216,7 +1386,7 @@ async function saveMenu() {
     if (menuId) {
         await fetch(`/api/menus/${menuId}/option-groups`, {
             method: 'PUT', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ group_ids: groupIds }),
+            body: JSON.stringify({ groups }),
         });
     }
     snack(menuEditId ? 'Item updated.' : 'Item added.');

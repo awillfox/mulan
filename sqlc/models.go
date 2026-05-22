@@ -19,6 +19,15 @@ type CashDrawerAudit struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type Discount struct {
+	ID           int32              `db:"id" json:"id"`
+	Name         string             `db:"name" json:"name"`
+	DiscountType string             `db:"discount_type" json:"discount_type"`
+	Value        int64              `db:"value" json:"value"`
+	Active       bool               `db:"active" json:"active"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Menu struct {
 	ID         int32       `db:"id" json:"id"`
 	Name       string      `db:"name" json:"name"`
@@ -48,9 +57,10 @@ type Option struct {
 }
 
 type OptionGroup struct {
-	ID            int32  `db:"id" json:"id"`
-	Name          string `db:"name" json:"name"`
-	SelectionMode string `db:"selection_mode" json:"selection_mode"`
+	ID            int32       `db:"id" json:"id"`
+	Name          string      `db:"name" json:"name"`
+	SelectionMode string      `db:"selection_mode" json:"selection_mode"`
+	OwnerMenuID   pgtype.Int4 `db:"owner_menu_id" json:"owner_menu_id"`
 }
 
 type Order struct {
@@ -61,6 +71,16 @@ type Order struct {
 	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
 	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
 	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+type OrderDiscount struct {
+	ID           int32       `db:"id" json:"id"`
+	OrderID      int32       `db:"order_id" json:"order_id"`
+	OrderItemID  pgtype.Int4 `db:"order_item_id" json:"order_item_id"`
+	DiscountID   pgtype.Int4 `db:"discount_id" json:"discount_id"`
+	Name         string      `db:"name" json:"name"`
+	DiscountType string      `db:"discount_type" json:"discount_type"`
+	Amount       int64       `db:"amount" json:"amount"`
 }
 
 type OrderItem struct {
@@ -84,8 +104,8 @@ type Setting struct {
 	ID            int32              `db:"id" json:"id"`
 	ShopName      string             `db:"shop_name" json:"shop_name"`
 	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
-	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
 	Logo          []byte             `db:"logo" json:"logo"`
 	LogoMime      pgtype.Text        `db:"logo_mime" json:"logo_mime"`
-	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }

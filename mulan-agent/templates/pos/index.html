@@ -101,6 +101,7 @@
   .main {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 420px;
+    grid-template-rows: 1fr;          /* explicit — panes fill full height */
     min-height: 0;
     overflow: hidden;
   }
@@ -108,7 +109,9 @@
   @media (max-width: 900px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 45vh); } }
 
   /* ── Left pane ────────────────────────────────────────────────── */
-  .menu-pane { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; padding: 12px 12px 12px 16px; gap: 10px; }
+  /* flex (not fixed grid rows) so the grid still fills when the search bar
+     is hidden via display prefs — otherwise an empty 1fr row wastes space */
+  .menu-pane { display: flex; flex-direction: column; min-height: 0; padding: 12px 12px 12px 16px; gap: 10px; }
 
   /* search */
   .search-bar {
@@ -134,37 +137,77 @@
   .search-bar.has-text .clear-btn { display: inline-flex; }
   .search-bar .clear-btn:hover { background: var(--surf-3); }
 
-  /* category chips */
-  .cat-strip {
-    display: flex; gap: 8px; overflow-x: auto;
-    padding: 2px 2px 6px;
-    scrollbar-width: thin;
+  /* category dropdown — tap to open, up/down paged (resistive-friendly) */
+  .cat-select-wrap { position: relative; }
+  .cat-select {
+    width: 100%; height: 48px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px 0 16px;
+    background: var(--surf);
+    border: 1px solid var(--outline-soft);
+    border-radius: var(--shape-md);
+    box-shadow: var(--elev-1);
+    font-size: 15px; font-weight: 600; color: var(--on-surf);
+    cursor: pointer;
   }
-  .cat-strip::-webkit-scrollbar { height: 6px; }
-  .cat-strip::-webkit-scrollbar-thumb { background: var(--outline-soft); border-radius: 999px; }
+  .cat-select .cat-cur {
+    flex: 1; text-align: left;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cat-select .material-symbols-rounded { color: var(--on-surf-var); }
+  .count {
+    background: var(--surf-3); border-radius: 999px; padding: 1px 9px;
+    font-size: 12px; font-weight: 600; color: var(--on-surf-var);
+  }
+
+  .cat-scrim { display: none; position: fixed; inset: 0; z-index: 25; }
+  .cat-scrim.open { display: block; }
+
+  .cat-menu {
+    display: none;
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+    z-index: 30;
+    background: var(--surf);
+    border: 1px solid var(--outline-soft);
+    border-radius: var(--shape-md);
+    box-shadow: var(--elev-3);
+    padding: 6px;
+  }
+  .cat-menu.open { display: block; }
+  .cat-opt {
+    width: 100%; height: 48px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
+    border: none; background: transparent;
+    border-radius: var(--shape-sm);
+    font-size: 15px; font-weight: 500; color: var(--on-surf);
+    cursor: pointer;
+  }
+  .cat-opt:active { transform: scale(.98); }
+  .cat-opt .label { flex: 1; text-align: left; }
+  .cat-opt.is-active { background: var(--p); color: var(--p-fg); }
+  .cat-opt.is-active .count { background: rgba(255,255,255,.22); color: var(--p-fg); }
+  .cat-nav {
+    width: 100%; height: 38px; margin: 2px 0;
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer;
+    background: var(--surf-2); color: var(--on-surf-var);
+    border-radius: var(--shape-sm);
+  }
+  .cat-nav:active { transform: scale(.98); }
+  .cat-nav:disabled { opacity: .35; }
+
+  /* generic pill button — reused by the drawer cash-float presets */
   .cat-chip {
-    flex-shrink: 0;
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     height: 40px; padding: 0 18px;
     border-radius: 999px;
     background: var(--surf);
     border: 1px solid var(--outline-soft);
     color: var(--on-surf-var);
     font-size: 14px; font-weight: 500;
-    transition: background .15s, color .15s, border-color .15s;
   }
   .cat-chip:hover { background: var(--surf-2); }
-  .cat-chip.is-active {
-    background: var(--p);
-    border-color: var(--p);
-    color: var(--p-fg);
-    box-shadow: var(--elev-1);
-  }
-  .cat-chip .count {
-    background: rgba(0,0,0,.08); border-radius: 999px; padding: 1px 8px;
-    font-size: 11px; color: inherit;
-  }
-  .cat-chip.is-active .count { background: rgba(255,255,255,.22); }
 
   /* menu grid */
   .menu-grid-wrap {
@@ -172,30 +215,56 @@
     border-radius: var(--shape-lg);
     box-shadow: var(--elev-1);
     overflow: hidden;
+    flex: 1;            /* fill all leftover height in the flex column */
     min-height: 0;
-    display: flex; flex-direction: column;
+    /* grid so the menu-grid row reliably fills, pager pinned below */
+    display: grid;
+    grid-template-rows: 1fr auto;
   }
   .menu-grid {
-    flex: 1;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    /* No scroll — resistive touch is hard to drag, so the grid is paged
+       with the buttons below. Fixed 3x3 at every screen size: 9 cards per
+       page, each cell a 1fr track so cards fill the box and shrink to fit. */
+    min-height: 0; min-width: 0;
+    overflow: hidden;
     padding: 12px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
     gap: 10px;
-    align-content: start;
   }
-  .menu-grid::-webkit-scrollbar { width: 8px; }
-  .menu-grid::-webkit-scrollbar-thumb { background: var(--outline-soft); border-radius: 999px; }
+
+  /* paged navigation — large targets for resistive touchscreen */
+  .menu-pager {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--outline-soft);
+  }
+  .menu-pager button {
+    flex: 1; height: 52px;
+    border: none; border-radius: var(--shape-md);
+    background: var(--p-ctr); color: var(--p-on-ctr);
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    transition: transform .12s ease, opacity .15s;
+  }
+  .menu-pager button:active { transform: scale(.97); }
+  .menu-pager button:disabled { opacity: .35; cursor: not-allowed; }
+  .menu-pager .pg-ind {
+    min-width: 76px; text-align: center;
+    font-weight: 600; font-size: 15px; color: var(--on-surf);
+    font-variant-numeric: tabular-nums;
+  }
 
   .menu-card {
-    aspect-ratio: 1 / 1;
+    /* fills its 1fr grid cell — sizes responsively with the viewport */
+    min-width: 0; min-height: 0;
     background: var(--surf-2);
     border: 1px solid transparent;
     border-radius: var(--shape-md);
-    padding: 12px 10px;
+    padding: clamp(6px, 1.4vw, 12px) clamp(4px, 1.2vw, 10px);
     display: flex; flex-direction: column; align-items: stretch;
-    gap: 6px;
+    gap: 4px;
     cursor: pointer;
     transition: transform .12s ease, background .15s, border-color .15s, box-shadow .15s;
     position: relative;
@@ -206,7 +275,7 @@
     flex: 1;
     display: flex; align-items: center; justify-content: center;
     text-align: center;
-    font-weight: 600; font-size: 15px; color: var(--on-surf);
+    font-weight: 600; font-size: clamp(12px, 1.7vw, 16px); color: var(--on-surf);
     line-height: 1.2;
     overflow: hidden;
     /* line clamp for very long names */
@@ -215,7 +284,7 @@
   }
   .menu-card .price {
     font-family: 'Roboto Mono',monospace; font-weight: 600;
-    color: var(--p); font-size: 14px;
+    color: var(--p); font-size: clamp(12px, 1.5vw, 15px);
     align-self: center;
     text-align: center;
   }
@@ -647,10 +716,18 @@
                 </button>
             </div>
 
-            <div class="cat-strip" id="cat-strip"></div>
+            <div class="cat-select-wrap">
+                <button class="cat-select" id="cat-select" onclick="toggleCatMenu()">
+                    <span class="cat-cur" id="cat-cur">All</span>
+                    <span class="material-symbols-rounded" id="cat-caret">arrow_drop_down</span>
+                </button>
+                <div class="cat-menu" id="cat-menu"></div>
+            </div>
+            <div class="cat-scrim" id="cat-scrim" onclick="closeCatMenu()"></div>
 
             <div class="menu-grid-wrap">
                 <div class="menu-grid" id="menu-grid"></div>
+                <div class="menu-pager" id="menu-pager"></div>
             </div>
         </section>
 
@@ -670,6 +747,13 @@
 
             <div class="totals" id="totals" style="display:none">
                 <div class="total-row"><span>Subtotal</span><span class="v mono" id="t-sub">฿0.00</span></div>
+                <div class="total-row" id="disc-row" style="display:none;color:var(--pay)">
+                    <span style="display:inline-flex;align-items:center;gap:4px">
+                        <span class="material-symbols-rounded" style="font-size:16px">sell</span>
+                        Discount
+                    </span>
+                    <span class="v mono" id="t-disc" style="color:var(--pay)">−฿0.00</span>
+                </div>
                 <div class="total-row" id="vat-row" style="display:none"><span id="vat-label">VAT</span><span class="v mono" id="t-vat">฿0.00</span></div>
                 <div class="total-row grand"><span>Total</span><span class="v mono" id="t-grand">฿0.00</span></div>
             </div>
@@ -687,7 +771,7 @@
                     <span class="material-symbols-rounded">point_of_sale</span>
                     <span>Drawer</span>
                 </button>
-                <button class="util-btn" id="discount-btn" onclick="snack('Discounts coming soon','warn')">
+                <button class="util-btn" id="discount-btn" onclick="openDiscountModal(null)">
                     <span class="material-symbols-rounded">sell</span>
                     <span>Discount</span>
                 </button>
@@ -721,6 +805,26 @@
             <button class="btn-filled" id="options-confirm" onclick="confirmOptions()">
                 <span class="material-symbols-rounded" style="font-size:18px">add_shopping_cart</span>
                 Add to order
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Discount dialog ───────────────────────────────────────────── -->
+<div id="discount-modal" class="scrim">
+    <div class="dialog">
+        <div class="d-head">
+            <h3 id="discount-title">Discount</h3>
+            <button class="icon-btn" onclick="closeDiscountModal()">
+                <span class="material-symbols-rounded">close</span>
+            </button>
+        </div>
+        <div class="d-body" id="discount-body"></div>
+        <div class="d-foot">
+            <button class="btn-text" onclick="closeDiscountModal()">Cancel</button>
+            <button class="btn-filled" id="discount-confirm" onclick="confirmDiscount()">
+                <span class="material-symbols-rounded" style="font-size:18px">check</span>
+                Apply
             </button>
         </div>
     </div>
@@ -920,9 +1024,12 @@ let categories = [];
 let order = [];
 let orderCode = null;
 let activeCategory = null;
+let menuPage = 0;          // current page in the paged menu grid
 let searchText = '';
 let shopName = 'Mulan POS';
 let vatPercent = 0;
+let discounts = [];        // active preset discounts from the manager
+let orderDiscounts = [];   // whole-order discounts applied to this order
 
 const unwrap = r => r.json().then(d => d.data ?? d);
 
@@ -937,12 +1044,14 @@ function fmtPlain(n) { return (n || 0).toLocaleString('th-TH', {minimumFractionD
 // ── Init ──────────────────────────────────────────────────────────
 async function init() {
     try {
-        const [m, c] = await Promise.all([
+        const [m, c, d] = await Promise.all([
             fetch(API_BASE + '/api/menus').then(unwrap),
             fetch(API_BASE + '/api/menu-categories').then(unwrap),
+            fetch(API_BASE + '/api/discounts/active').then(unwrap).catch(() => []),
         ]);
         menus = m || [];
         categories = c || [];
+        discounts = d || [];
         // optional: try to load shop settings
         try {
             const s = await fetch(API_BASE + '/api/settings').then(unwrap);
@@ -1003,31 +1112,88 @@ async function reloadMenus() {
     } catch { snack('Reload failed.', 'danger'); }
 }
 
-// ── Categories ────────────────────────────────────────────────────
+// ── Categories (dropdown) ─────────────────────────────────────────
+let catList = [];            // [{id, name, count}]
+let catMenuPage = 0;
+const CAT_PAGE_SIZE = 6;     // categories shown per dropdown page
+
 function renderCategories() {
-    const strip = document.getElementById('cat-strip');
-    const countAll = menus.length;
     const countByCat = id => menus.filter(m => m.category_id === id).length;
     const countUncat = menus.filter(m => m.category_id == null).length;
-    let html = `<button class="cat-chip ${activeCategory===null?'is-active':''}" onclick="filterCategory(null)">
-        <span class="material-symbols-rounded" style="font-size:18px">apps</span>
-        All <span class="count">${countAll}</span>
-    </button>`;
-    for (const c of categories) {
-        const n = countByCat(c.id);
-        html += `<button class="cat-chip ${activeCategory===c.id?'is-active':''}" onclick="filterCategory(${c.id})">
-            ${esc(c.name)} <span class="count">${n}</span>
-        </button>`;
-    }
-    if (countUncat) {
-        html += `<button class="cat-chip ${activeCategory==='uncat'?'is-active':''}" onclick="filterCategory('uncat')">
-            Uncategorised <span class="count">${countUncat}</span>
-        </button>`;
-    }
-    strip.innerHTML = html;
+    catList = [{ id: null, name: 'All', count: menus.length }];
+    for (const c of categories) catList.push({ id: c.id, name: c.name, count: countByCat(c.id) });
+    if (countUncat) catList.push({ id: 'uncat', name: 'Uncategorised', count: countUncat });
+    renderCatCurrent();
+    renderCatMenu();
 }
+
+function renderCatCurrent() {
+    const cur = catList.find(c => c.id === activeCategory) || catList[0];
+    document.getElementById('cat-cur').innerHTML =
+        `${esc(cur.name)} <span class="count">${cur.count}</span>`;
+}
+
+// catArg renders a category id as a literal for an inline onclick handler.
+function catArg(id) {
+    if (id === null) return 'null';
+    return typeof id === 'string' ? `'${id}'` : id;
+}
+
+function renderCatMenu() {
+    const el = document.getElementById('cat-menu');
+    const pages = Math.ceil(catList.length / CAT_PAGE_SIZE) || 1;
+    if (catMenuPage > pages - 1) catMenuPage = pages - 1;
+    if (catMenuPage < 0) catMenuPage = 0;
+    const start = catMenuPage * CAT_PAGE_SIZE;
+    let html = '';
+    if (pages > 1) {
+        html += `<button class="cat-nav" onclick="catMenuStep(-1)" ${catMenuPage <= 0 ? 'disabled' : ''}>
+            <span class="material-symbols-rounded">keyboard_arrow_up</span></button>`;
+    }
+    html += catList.slice(start, start + CAT_PAGE_SIZE).map(c => `
+        <button class="cat-opt ${c.id === activeCategory ? 'is-active' : ''}" onclick="pickCategory(${catArg(c.id)})">
+            <span class="label">${esc(c.name)}</span>
+            <span class="count">${c.count}</span>
+        </button>`).join('');
+    if (pages > 1) {
+        html += `<button class="cat-nav" onclick="catMenuStep(1)" ${catMenuPage >= pages - 1 ? 'disabled' : ''}>
+            <span class="material-symbols-rounded">keyboard_arrow_down</span></button>`;
+    }
+    el.innerHTML = html;
+}
+
+function catMenuStep(delta) {
+    catMenuPage += delta;
+    renderCatMenu();
+}
+
+function toggleCatMenu() {
+    const open = !document.getElementById('cat-menu').classList.contains('open');
+    if (open) {
+        // open on the page holding the active category
+        const idx = catList.findIndex(c => c.id === activeCategory);
+        catMenuPage = idx >= 0 ? Math.floor(idx / CAT_PAGE_SIZE) : 0;
+        renderCatMenu();
+    }
+    document.getElementById('cat-menu').classList.toggle('open', open);
+    document.getElementById('cat-scrim').classList.toggle('open', open);
+    document.getElementById('cat-caret').textContent = open ? 'arrow_drop_up' : 'arrow_drop_down';
+}
+
+function closeCatMenu() {
+    document.getElementById('cat-menu').classList.remove('open');
+    document.getElementById('cat-scrim').classList.remove('open');
+    document.getElementById('cat-caret').textContent = 'arrow_drop_down';
+}
+
+function pickCategory(id) {
+    closeCatMenu();
+    filterCategory(id);
+}
+
 function filterCategory(id) {
     activeCategory = id;
+    menuPage = 0;
     renderCategories();
     renderMenus();
 }
@@ -1045,6 +1211,24 @@ function filteredMenus() {
         return true;
     });
 }
+// Fixed 3x3 menu grid — 9 cards per page at every screen size.
+const MENU_PAGE_SIZE = 9;
+
+function menuCardHtml(m) {
+    if (!m.active) {
+        return `<button class="menu-card disabled" data-menu-id="${m.id}" disabled>
+            <div class="name">${esc(m.name)}</div>
+            <div class="unavail">Unavailable</div>
+        </button>`;
+    }
+    const hasOpts = (m.option_groups || []).length > 0;
+    return `<button class="menu-card" data-menu-id="${m.id}" onclick="addToOrder(${m.id})">
+        ${hasOpts ? '<span class="opt-flag"><span class="material-symbols-rounded">tune</span></span>' : ''}
+        <div class="name">${esc(m.name)}</div>
+        <div class="price">${fmt(m.price)}</div>
+    </button>`;
+}
+
 function renderMenus() {
     const grid = document.getElementById('menu-grid');
     const list = filteredMenus();
@@ -1054,22 +1238,35 @@ function renderMenus() {
             <h3>No items found</h3>
             <p style="font-size:13px">Try clearing search or changing category.</p>
         </div>`;
+        renderPager(0, 0);
         return;
     }
-    grid.innerHTML = list.map(m => {
-        if (!m.active) {
-            return `<button class="menu-card disabled" data-menu-id="${m.id}" disabled>
-                <div class="name">${esc(m.name)}</div>
-                <div class="unavail">Unavailable</div>
-            </button>`;
-        }
-        const hasOpts = (m.option_groups || []).length > 0;
-        return `<button class="menu-card" data-menu-id="${m.id}" onclick="addToOrder(${m.id})">
-            ${hasOpts ? '<span class="opt-flag"><span class="material-symbols-rounded">tune</span></span>' : ''}
-            <div class="name">${esc(m.name)}</div>
-            <div class="price">${fmt(m.price)}</div>
-        </button>`;
-    }).join('');
+    const size = MENU_PAGE_SIZE;
+    const pages = Math.ceil(list.length / size);
+    if (menuPage > pages - 1) menuPage = pages - 1;
+    if (menuPage < 0) menuPage = 0;
+    const start = menuPage * size;
+    grid.innerHTML = list.slice(start, start + size).map(menuCardHtml).join('');
+    renderPager(menuPage, pages);
+}
+
+// renderPager draws the Prev / "x of y" / Next bar. The bar is always shown
+// (even at one page) so the grid box height stays stable between renders.
+function renderPager(page, pages) {
+    const el = document.getElementById('menu-pager');
+    const atFirst = page <= 0;
+    const atLast = page >= pages - 1;
+    el.innerHTML = `
+        <button onclick="menuPageStep(-1)" ${atFirst ? 'disabled' : ''}>
+            <span class="material-symbols-rounded">chevron_left</span>Prev</button>
+        <div class="pg-ind">${pages ? page + 1 : 0} / ${pages}</div>
+        <button onclick="menuPageStep(1)" ${atLast ? 'disabled' : ''}>
+            Next<span class="material-symbols-rounded">chevron_right</span></button>`;
+}
+
+function menuPageStep(delta) {
+    menuPage += delta;
+    renderMenus();
 }
 
 // ── Order list ────────────────────────────────────────────────────
@@ -1083,15 +1280,52 @@ function unitPrice(line) {
 function orderSubtotal() {
     return order.reduce((s, l) => s + unitPrice(l) * l.qty, 0);
 }
+// discAmountFor returns the THB a single discount removes from `base`.
+// Percentage discounts are computed against base; fixed discounts are flat.
+// Any satang fraction is rounded UP to a whole baht to match the server.
+function discAmountFor(d, base) {
+    if (!d) return 0;
+    const raw = d.discount_type === 'percent'
+        ? base * (d.value || 0) / 100
+        : (d.value || 0);
+    return Math.ceil(raw - 1e-9);
+}
+// lineDiscount sums the per-line discounts on one cart line, clamped so the
+// line can't go below zero. Percentage discounts use the line's full total
+// as their base so stacking order doesn't matter (matches the server).
+function lineDiscount(line) {
+    const base = unitPrice(line) * line.qty;
+    let rem = base, sum = 0;
+    for (const d of (line.discounts || [])) {
+        let amt = discAmountFor(d, base);
+        if (amt > rem) amt = rem;
+        if (amt < 0) amt = 0;
+        rem -= amt; sum += amt;
+    }
+    return sum;
+}
 function orderTotals() {
     const sub = orderSubtotal();
+    const itemDisc = order.reduce((s, l) => s + lineDiscount(l), 0);
+    const afterItem = sub - itemDisc;
+    // Whole-order discounts apply against the subtotal net of per-line
+    // discounts, clamped so the order can't go negative.
+    let rem = afterItem, orderDisc = 0;
+    for (const d of orderDiscounts) {
+        let amt = discAmountFor(d, afterItem);
+        if (amt > rem) amt = rem;
+        if (amt < 0) amt = 0;
+        rem -= amt; orderDisc += amt;
+    }
+    const discount = itemDisc + orderDisc;
+    const grand = sub - discount;
     let vat = 0;
     if (vatPercent > 0) {
-        // assume tax-inclusive pricing (common in TH POS):
-        // subtotal already includes VAT, derive VAT portion for display
-        vat = sub - (sub / (1 + vatPercent / 100));
+        // tax-inclusive pricing (common in TH POS): VAT portion derived
+        // from the discounted total for display.
+        vat = grand - (grand / (1 + vatPercent / 100));
     }
-    return { sub, vat, grand: sub };
+    return { sub, discount, vat, grand };
 }
 
 async function ensureOrderCode() {
@@ -1189,11 +1423,15 @@ function renderOrder(opts = {}) {
         const optsHtml = (o.options || []).length
             ? `<div class="l-opts">${o.options.map(op => `<div>${esc(op.name)}${op.price_delta > 0 ? ` <span class="mono">+${fmtPlain(op.price_delta)}</span>` : (op.price_delta < 0 ? ` <span class="mono">−${fmtPlain(Math.abs(op.price_delta))}</span>` : '')}</div>`).join('')}</div>`
             : '';
+        const discHtml = (o.discounts || []).length
+            ? `<div class="l-opts" style="color:var(--pay)">${o.discounts.map(d => `<div>${esc(d.name)} <span class="mono">−${fmtPlain(discAmountFor(d, u * o.qty))}</span></div>`).join('')}</div>`
+            : '';
         const flash = opts.flashKey === o.key ? 'flash' : '';
         return `<div class="line ${flash}" data-key="${esc(o.key)}">
             <div>
                 <div class="l-name">${esc(o.name)}</div>
                 ${optsHtml}
+                ${discHtml}
                 <div class="l-unit">${fmt(u)} each</div>
             </div>
             <div class="l-total">${fmt(total)}</div>
@@ -1208,6 +1446,10 @@ function renderOrder(opts = {}) {
                     </button>
                 </div>
                 <div class="l-actions">
+                    <button onclick="openDiscountModal('${esc(o.key)}')" aria-label="Line discount"
+                            style="${(o.discounts || []).length ? 'color:var(--pay)' : ''}">
+                        <span class="material-symbols-rounded">sell</span>
+                    </button>
                     <button class="l-del" onclick="removeLine('${esc(o.key)}')" aria-label="Remove">
                         <span class="material-symbols-rounded">close</span>
                     </button>
@@ -1227,6 +1469,12 @@ function renderOrder(opts = {}) {
 
     totals.style.display = '';
     document.getElementById('t-sub').textContent = fmt(totalsObj.sub);
+    if (totalsObj.discount > 0) {
+        document.getElementById('disc-row').style.display = '';
+        document.getElementById('t-disc').textContent = '−' + fmt(totalsObj.discount);
+    } else {
+        document.getElementById('disc-row').style.display = 'none';
+    }
     if (vatPercent > 0) {
         document.getElementById('vat-row').style.display = '';
         document.getElementById('vat-label').textContent = `VAT (${vatPercent}% incl.)`;
@@ -1306,6 +1554,66 @@ function confirmOptions() {
     const m = pendingMenu;
     closeOptionsModal();
     addLine(m, selected);
+}
+
+// ── Discount modal ────────────────────────────────────────────────
+// discountCtx = null  → whole-order discounts (orderDiscounts)
+// discountCtx = key   → per-line discounts for that cart line
+let discountCtx = null;
+function openDiscountModal(lineKey) {
+    discountCtx = lineKey || null;
+    const body = document.getElementById('discount-body');
+    const title = document.getElementById('discount-title');
+    const confirmBtn = document.getElementById('discount-confirm');
+
+    if (!discounts.length) {
+        title.textContent = 'Discounts';
+        confirmBtn.style.display = 'none';
+        body.innerHTML = `<p style="padding:18px 4px;font-size:14px;color:var(--on-surf-var)">
+            No discounts set up yet. Add them in <strong>Manager → Discounts</strong>.</p>`;
+        document.getElementById('discount-modal').classList.add('is-open');
+        return;
+    }
+    confirmBtn.style.display = '';
+
+    let current = [];
+    if (discountCtx) {
+        const line = order.find(o => o.key === discountCtx);
+        title.textContent = 'Line discount';
+        current = ((line && line.discounts) || []).map(d => d.id);
+    } else {
+        title.textContent = 'Order discount';
+        current = orderDiscounts.map(d => d.id);
+    }
+
+    body.innerHTML = `<div class="opt-list">${discounts.map(d => {
+        const on = current.includes(d.id);
+        const label = d.discount_type === 'percent' ? d.value + '%' : '−' + fmt(d.value);
+        return `<label class="opt-row ${on ? 'is-selected' : ''}">
+            <input type="checkbox" value="${d.id}" ${on ? 'checked' : ''}
+                   onchange="this.closest('.opt-row').classList.toggle('is-selected', this.checked)">
+            <span class="o-name">${esc(d.name)}</span>
+            <span class="o-price">${label}</span>
+        </label>`;
+    }).join('')}</div>`;
+    document.getElementById('discount-modal').classList.add('is-open');
+}
+function closeDiscountModal() {
+    document.getElementById('discount-modal').classList.remove('is-open');
+    discountCtx = null;
+}
+function confirmDiscount() {
+    const picked = [...document.querySelectorAll('#discount-body input:checked')]
+        .map(c => discounts.find(d => d.id === parseInt(c.value)))
+        .filter(Boolean);
+    if (discountCtx) {
+        const line = order.find(o => o.key === discountCtx);
+        if (line) line.discounts = picked;
+    } else {
+        orderDiscounts = picked;
+    }
+    closeDiscountModal();
+    renderOrder();
 }
 
 // ── Tender (payment) ──────────────────────────────────────────────
@@ -1462,10 +1770,12 @@ async function doCheckout(method, tendered, change) {
                 payment_method: method,
                 cash_tendered: method === 'cash' ? tendered : 0,
                 cash_change:   method === 'cash' ? change   : 0,
+                discount_ids: orderDiscounts.map(d => d.id),
                 items: order.map(o => ({
                     menu_id: o.id, name: o.name, price: o.price, qty: o.qty,
                     option_ids: (o.options || []).map(op => op.id),
                     options: o.options || [],
+                    discount_ids: (o.discounts || []).map(d => d.id),
                 })),
             }),
         });
@@ -1486,6 +1796,7 @@ async function doCheckout(method, tendered, change) {
     }
     order = [];
     orderCode = null;
+    orderDiscounts = [];
     renderOrder();
     // Surface change due as a modal that the cashier cannot dismiss for 30s.
     // Only relevant for cash with actual change (not exact tender).
@@ -1517,8 +1828,9 @@ async function holdOrder() {
     if (!order.length) return;
     if (!orderCode) { snack('No order code to hold.', 'warn'); return; }
     const payload = {
-        items: order,           // line list incl. options
-        order_code: orderCode,  // self-reference for safety
+        items: order,                    // line list incl. options + line discounts
+        order_discounts: orderDiscounts, // whole-order discounts
+        order_code: orderCode,           // self-reference for safety
         saved_at: Date.now(),
     };
     try {
@@ -1535,7 +1847,7 @@ async function holdOrder() {
         snack('Failed to hold order.', 'danger');
         return;
     }
-    order = []; orderCode = null;
+    order = []; orderCode = null; orderDiscounts = [];
     renderOrder();
     await fetchHeld();
     snack('Order held.', 'success');
@@ -1608,6 +1920,7 @@ async function doRecall(code) {
         const body = await res.json().then(d => d.data ?? d);
         const payload = body.payload || {};
         order = payload.items || [];
+        orderDiscounts = payload.order_discounts || [];
         orderCode = code;
         await fetchHeld();
         closeHeldSheet();
@@ -1632,6 +1945,7 @@ function voidOrder() {
     if (!order.length) return;
     confirmDialog('Void this order?', `${order.length} line${order.length>1?'s':''} will be discarded. The order code stays open.`, () => {
         order = [];
+        orderDiscounts = [];
         renderOrder();
         snack('Order voided.', 'warn');
     });
@@ -1821,6 +2135,7 @@ searchEl.addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
         searchText = searchEl.value;
+        menuPage = 0;
         renderMenus();
     }, 80);
 });
@@ -1837,6 +2152,7 @@ searchEl.addEventListener('keydown', e => {
 function clearSearch() {
     searchEl.value = '';
     searchText = '';
+    menuPage = 0;
     searchBar.classList.remove('has-text');
     renderMenus();
 }
@@ -1865,6 +2181,7 @@ document.addEventListener('keydown', e => {
     if (document.getElementById('change-modal').classList.contains('is-open')) return closeChangeModal();
     if (document.getElementById('confirm-modal').classList.contains('is-open')) return closeConfirm();
     if (document.getElementById('tender-modal').classList.contains('is-open')) return closeTender();
+    if (document.getElementById('discount-modal').classList.contains('is-open')) return closeDiscountModal();
     if (document.getElementById('options-modal').classList.contains('is-open')) return closeOptionsModal();
     if (document.getElementById('held-scrim').classList.contains('is-open'))    return closeHeldSheet();
     if (document.getElementById('settings-modal').classList.contains('is-open'))return closeSettings();
@@ -1894,6 +2211,29 @@ function connectEvents() {
             }
         }
         snack(active ? `"${name}" is now available.` : `"${name}" is unavailable.`, active ? 'success' : 'warn');
+    });
+    // Discounts created / edited / enabled / disabled / deleted in the
+    // manager — refetch the active set so the picker stays current without
+    // a page reload.
+    es.addEventListener('discounts_changed', async () => {
+        try {
+            discounts = await fetch(API_BASE + '/api/discounts/active').then(unwrap) || [];
+        } catch { return; }
+        // Drop already-applied discounts that no longer exist or went
+        // inactive, so the cashier can't check out with a stale discount.
+        const live = new Set(discounts.map(d => d.id));
+        const before = orderDiscounts.length + order.reduce((s, l) => s + (l.discounts || []).length, 0);
+        orderDiscounts = orderDiscounts.filter(d => live.has(d.id));
+        for (const l of order) {
+            if (l.discounts) l.discounts = l.discounts.filter(d => live.has(d.id));
+        }
+        const after = orderDiscounts.length + order.reduce((s, l) => s + (l.discounts || []).length, 0);
+        renderOrder();
+        if (after < before) snack('A discount changed and was removed from the order.', 'warn');
+        // Rebuild the picker if it's open so the new list shows immediately.
+        if (document.getElementById('discount-modal').classList.contains('is-open')) {
+            openDiscountModal(discountCtx);
+        }
     });
     es.onerror = () => { /* browser auto-reconnects */ };
 }

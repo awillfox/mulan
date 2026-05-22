@@ -189,7 +189,10 @@ func (pm Payment) label() string {
 	}
 }
 
-func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, vat, vatPercent, total float64, pay Payment) error {
+// PrintReceipt prints a full receipt. subtotal is the pre-discount total,
+// discount is the combined THB taken off (0 when no discount applied), vat is
+// computed on the discounted subtotal, and total is the final amount due.
+func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, vat, vatPercent, total float64, pay Payment) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -269,11 +272,17 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 		}
 	}
 
-	// Subtotal, VAT, Total — skip Subtotal/VAT lines when VAT is 0.
+	// Subtotal, Discount, VAT, Total. Subtotal/VAT lines print when there's
+	// VAT or a discount to break down; otherwise just the TOTAL.
 	divider()
-	if vat > 0 {
+	if vat > 0 || discount > 0 {
 		writeRow("Subtotal", fmt.Sprintf("%9.2f ฿", subtotal))
-		writeRow(fmt.Sprintf("VAT %g%%", vatPercent), fmt.Sprintf("%9.2f ฿", vat))
+		if discount > 0 {
+			writeRow("Discount", fmt.Sprintf("-%9.2f ฿", discount))
+		}
+		if vat > 0 {
+			writeRow(fmt.Sprintf("VAT %g%%", vatPercent), fmt.Sprintf("%9.2f ฿", vat))
+		}
 		divider()
 	}
 	writeRow("TOTAL", fmt.Sprintf("%9.2f ฿", total))
@@ -304,7 +313,7 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 	// Cut
 	write(cmdCut)
 
-	log.Printf("receipt printed: %d items, subtotal %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, vat, total)
+	log.Printf("receipt printed: %d items, subtotal %.2f, discount %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, discount, vat, total)
 	return nil
 }
 

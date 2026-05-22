@@ -233,8 +233,25 @@ func (h *Handler) DeleteOption(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w, r)
 }
 
+// menuGroupInput is one entry of the menu's option-group list. A shared
+// entry (isolated=false) just carries the preset id. An isolated entry
+// carries a full group definition — name, mode and edited options — that
+// the server materialises as a private per-menu copy.
+type menuGroupInput struct {
+	Isolated      bool                   `json:"isolated"`
+	ID            int32                  `json:"id"`
+	Name          string                 `json:"name"`
+	SelectionMode string                 `json:"selection_mode"`
+	Options       []menuGroupOptionInput `json:"options"`
+}
+
+type menuGroupOptionInput struct {
+	Name       string  `json:"name"`
+	PriceDelta float64 `json:"price_delta"` // THB
+}
+
 type setMenuGroupsRequest struct {
-	GroupIDs []int32 `json:"group_ids"`
+	Groups []menuGroupInput `json:"groups"`
 }
 
 func (h *Handler) SetMenuGroups(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +265,37 @@ func (h *Handler) SetMenuGroups(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
-	if err := h.svc.SetMenuGroups(r.Context(), id, req.GroupIDs); err != nil {
+
+	specs := make([]service.MenuGroupSpec, 0, len(req.Groups))
+	for _, g := range req.Groups {
+		if !g.Isolated {
+			specs = append(specs, service.MenuGroupSpec{SharedID: g.ID})
+			continue
+		}
+		if g.Name == "" {
+			response.Error(w, r, http.StatusBadRequest, "isolated group name is required", errors.New("missing name"))
+			return
+		}
+		if !domain.ValidSelectionMode(g.SelectionMode) {
+			response.Error(w, r, http.StatusBadRequest, "invalid selection_mode", errors.New("invalid selection_mode"))
+			return
+		}
+		opts := make([]service.OptionSpec, 0, len(g.Options))
+		for _, o := range g.Options {
+			if o.Name == "" {
+				continue
+			}
+			opts = append(opts, service.OptionSpec{Name: o.Name, PriceDelta: satangFromTHB(o.PriceDelta)})
+		}
+		specs = append(specs, service.MenuGroupSpec{
+			Isolated:      true,
+			Name:          g.Name,
+			SelectionMode: g.SelectionMode,
+			Options:       opts,
+		})
+	}
+
+	if err := h.svc.SetMenuGroups(r.Context(), id, specs); err != nil {
 		if errors.Is(err, service.ErrUnknownGroup) {
 			response.Error(w, r, http.StatusBadRequest, "unknown option group", err)
 			return

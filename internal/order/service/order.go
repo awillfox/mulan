@@ -35,9 +35,11 @@ var (
 	ErrInvalidOption   = errors.New("option not allowed for menu")
 	ErrUnknownOption   = errors.New("unknown option")
 	ErrMissingRequired = errors.New("missing required option")
-	ErrOrderNotFound   = errors.New("order not found")
-	ErrNotHeld         = errors.New("order is not held")
-	ErrCannotHold      = errors.New("order cannot be held")
+	ErrOrderNotFound    = errors.New("order not found")
+	ErrNotHeld          = errors.New("order is not held")
+	ErrCannotHold       = errors.New("order cannot be held")
+	ErrUnknownDiscount  = errors.New("unknown discount")
+	ErrDiscountInactive = errors.New("discount inactive")
 )
 
 type OrderService struct {
@@ -63,21 +65,27 @@ func (s *OrderService) Create(ctx context.Context) (string, error) {
 }
 
 // CheckoutItemInput is what the handler accepts from the client. The server
-// only trusts MenuID, Qty, and OptionIDs — Name and Price are looked up
-// server-side from the menus/options tables.
+// only trusts MenuID, Qty, OptionIDs, and DiscountIDs — Name and Price are
+// looked up server-side from the menus/options tables.
 type CheckoutItemInput struct {
-	MenuID    int32
-	Qty       int32
-	OptionIDs []int32
+	MenuID      int32
+	Qty         int32
+	OptionIDs   []int32
+	DiscountIDs []int32 // per-line discounts applied to this line
 }
 
 // Checkout finalises an open order: it validates every line against the
-// authoritative menu/option data, persists order_items + order_item_options,
-// marks the order paid, and returns totals. The whole flow runs in a single
-// transaction so any failure rolls back cleanly. Calling Checkout on an
-// already-paid order returns ErrAlreadyPaid so the caller can map it to 409
-// instead of double-charging.
-func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput) (*domain.CheckoutResult, error) {
+// authoritative menu/option data, applies per-line and whole-order discounts,
+// persists order_items + order_item_options + order_discounts, marks the order
+// paid, and returns totals. The whole flow runs in a single transaction so any
+// failure rolls back cleanly. Calling Checkout on an already-paid order returns
+// ErrAlreadyPaid so the caller can map it to 409 instead of double-charging.
+//
+// Discounts are applied before VAT: per-line discounts reduce each line, then
+// whole-order discounts reduce the net subtotal, then VAT is computed on the
+// discounted subtotal. Every applied discount is clamped so no line — and the
+// order total — can never go below zero.
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32) (*domain.CheckoutResult, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -112,9 +120,14 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	if err != nil {
 		return nil, err
 	}
+	discByID, err := loadDiscounts(ctx, q, items, orderDiscountIDs)
+	if err != nil {
+		return nil, err
+	}
 
 	resultItems := make([]domain.CheckoutResultItem, 0, len(items))
-	var subtotalSatang int64
+	applied := make([]domain.AppliedDiscount, 0)
+	var subtotalSatang, itemDiscountSatang int64
 
 	for _, in := range items {
 		m, ok := menuByID[in.MenuID]
@@ -131,7 +144,8 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		}
 
 		unitPrice := m.Price + deltaSum
-		subtotalSatang += unitPrice * int64(in.Qty)
+		lineTotal := unitPrice * int64(in.Qty)
+		subtotalSatang += lineTotal
 
 		itemID, err := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
 			OrderID: order.ID,
@@ -154,12 +168,70 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			}
 		}
 
+		// Per-line discounts. Percentage discounts are computed against the
+		// line's own total so stacking order doesn't matter; the running
+		// remainder clamp keeps the line from going negative.
+		lineRemaining := lineTotal
+		for _, did := range dedupIDs(in.DiscountIDs) {
+			d := discByID[did]
+			amt := computeDiscountAmount(d, lineTotal)
+			if amt > lineRemaining {
+				amt = lineRemaining
+			}
+			if amt <= 0 {
+				continue
+			}
+			lineRemaining -= amt
+			itemDiscountSatang += amt
+			if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
+				OrderID:      order.ID,
+				OrderItemID:  pgtype.Int4{Int32: itemID, Valid: true},
+				DiscountID:   pgtype.Int4{Int32: d.ID, Valid: true},
+				Name:         d.Name,
+				DiscountType: d.DiscountType,
+				Amount:       amt,
+			}); err != nil {
+				return nil, fmt.Errorf("insert order discount: %w", err)
+			}
+			applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
+		}
+
 		resultItems = append(resultItems, domain.CheckoutResultItem{
 			Name:    m.Name,
 			Price:   m.Price,
 			Qty:     in.Qty,
 			Options: opts,
 		})
+	}
+
+	// Whole-order discounts apply against the subtotal net of per-line
+	// discounts; percentage discounts use that net base, and the remainder
+	// clamp keeps the order total from going below zero.
+	subtotalAfterItem := subtotalSatang - itemDiscountSatang
+	orderRemaining := subtotalAfterItem
+	var orderDiscountSatang int64
+	for _, did := range dedupIDs(orderDiscountIDs) {
+		d := discByID[did]
+		amt := computeDiscountAmount(d, subtotalAfterItem)
+		if amt > orderRemaining {
+			amt = orderRemaining
+		}
+		if amt <= 0 {
+			continue
+		}
+		orderRemaining -= amt
+		orderDiscountSatang += amt
+		if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
+			OrderID:      order.ID,
+			OrderItemID:  pgtype.Int4{Valid: false},
+			DiscountID:   pgtype.Int4{Int32: d.ID, Valid: true},
+			Name:         d.Name,
+			DiscountType: d.DiscountType,
+			Amount:       amt,
+		}); err != nil {
+			return nil, fmt.Errorf("insert order discount: %w", err)
+		}
+		applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
 	}
 
 	if err := q.PayOrder(ctx, code); err != nil {
@@ -170,18 +242,22 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	}
 
 	cfg := s.settings.Get()
-	vatSatang := subtotalSatang * int64(cfg.VatPercent*100) / 10000
-	totalSatang := subtotalSatang + vatSatang
+	discountSatang := itemDiscountSatang + orderDiscountSatang
+	discountedSubtotal := subtotalSatang - discountSatang
+	vatSatang := discountedSubtotal * int64(cfg.VatPercent*100) / 10000
+	totalSatang := discountedSubtotal + vatSatang
 
 	return &domain.CheckoutResult{
 		Code:          code,
 		Subtotal:      float64(subtotalSatang) / 100,
+		Discount:      float64(discountSatang) / 100,
 		VAT:           float64(vatSatang) / 100,
 		VATPercent:    cfg.VatPercent,
 		ShopName:      cfg.ShopName,
 		ReceiptFooter: cfg.ReceiptFooter,
 		Total:         float64(totalSatang) / 100,
 		Items:         resultItems,
+		Discounts:     applied,
 	}, nil
 }
 
@@ -387,6 +463,100 @@ func uniqueOptionIDs(items []CheckoutItemInput) []int32 {
 			seen[oid] = struct{}{}
 			out = append(out, oid)
 		}
+	}
+	return out
+}
+
+// loadDiscounts fetches every discount referenced by the order (per-line and
+// whole-order) and rejects any that doesn't exist or has been deactivated, so
+// a client can't apply a stale or unknown discount.
+func loadDiscounts(ctx context.Context, q *sqlc.Queries, items []CheckoutItemInput, orderDiscountIDs []int32) (map[int32]sqlc.Discount, error) {
+	ids := uniqueDiscountIDs(items, orderDiscountIDs)
+	if len(ids) == 0 {
+		return map[int32]sqlc.Discount{}, nil
+	}
+	rows, err := q.GetDiscountsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load discounts: %w", err)
+	}
+	out := make(map[int32]sqlc.Discount, len(rows))
+	for _, d := range rows {
+		out[d.ID] = d
+	}
+	for _, id := range ids {
+		d, ok := out[id]
+		if !ok {
+			return nil, fmt.Errorf("%w: %d", ErrUnknownDiscount, id)
+		}
+		if !d.Active {
+			return nil, fmt.Errorf("%w: %d", ErrDiscountInactive, id)
+		}
+	}
+	return out, nil
+}
+
+// computeDiscountAmount returns the satang reduction d applies to base. For a
+// percentage discount d.Value is hundredths-of-a-percent (10% => 1000). A
+// non-whole-baht result is rounded UP to the next whole baht (satang coins
+// are impractical at the till). The result is clamped into [0, base].
+func computeDiscountAmount(d sqlc.Discount, base int64) int64 {
+	if base <= 0 {
+		return 0
+	}
+	var amt int64
+	if d.DiscountType == "percent" {
+		amt = base * d.Value / 10000
+	} else {
+		amt = d.Value // fixed, satang
+	}
+	// Round any leftover satang up to a whole baht (100 satang).
+	if r := amt % 100; r != 0 {
+		amt += 100 - r
+	}
+	if amt > base {
+		amt = base
+	}
+	if amt < 0 {
+		amt = 0
+	}
+	return amt
+}
+
+func uniqueDiscountIDs(items []CheckoutItemInput, orderDiscountIDs []int32) []int32 {
+	seen := make(map[int32]struct{})
+	out := make([]int32, 0)
+	add := func(ids []int32) {
+		for _, id := range ids {
+			if id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	for _, it := range items {
+		add(it.DiscountIDs)
+	}
+	add(orderDiscountIDs)
+	return out
+}
+
+// dedupIDs drops duplicate and non-positive IDs, preserving first-seen order.
+func dedupIDs(ids []int32) []int32 {
+	seen := make(map[int32]struct{}, len(ids))
+	out := make([]int32, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
 	return out
 }

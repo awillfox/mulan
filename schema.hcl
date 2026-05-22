@@ -219,9 +219,22 @@ table "option_groups" {
     null    = false
     default = "single_required"
   }
+  // NULL = shared preset group (shown in the manager / item picker).
+  // Set = private "isolated" copy owned by a single menu, cloned from a
+  // preset so its options and prices can be edited without touching the
+  // shared preset. Hidden from the shared list; cascades when the menu dies.
+  column "owner_menu_id" {
+    type = int
+    null = true
+  }
 
   primary_key {
     columns = [column.id]
+  }
+  foreign_key "fk_og_owner_menu" {
+    columns     = [column.owner_menu_id]
+    ref_columns = [table.menus.column.id]
+    on_delete   = CASCADE
   }
   check "option_groups_selection_mode" {
     expr = "selection_mode IN ('single_required','single_optional','multi')"
@@ -379,5 +392,107 @@ table "menus" {
     columns     = [column.category_id]
     ref_columns = [table.menu_categories.column.id]
     on_delete   = SET_NULL
+  }
+}
+
+table "discounts" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  # 'fixed' = flat THB off; 'percent' = percentage off.
+  column "discount_type" {
+    type    = varchar(20)
+    null    = false
+    default = "fixed"
+  }
+  # For 'fixed' this is satang (int64). For 'percent' this is
+  # hundredths-of-a-percent (10% = 1000) so the column stays integer.
+  column "value" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
+  column "active" {
+    type    = boolean
+    null    = false
+    default = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  check "discounts_discount_type" {
+    expr = "discount_type IN ('fixed','percent')"
+  }
+}
+
+# Snapshots every discount applied to a paid order. order_item_id is null
+# for whole-order discounts and set for per-line discounts. name/type/amount
+# are frozen at checkout so receipts and reports stay stable when a preset
+# discount is later edited or deleted.
+table "order_discounts" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "order_id" {
+    type = int
+    null = false
+  }
+  column "order_item_id" {
+    type = int
+    null = true
+  }
+  column "discount_id" {
+    type = int
+    null = true
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "discount_type" {
+    type = varchar(20)
+    null = false
+  }
+  column "amount" {
+    type = bigint
+    null = false
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_order_discounts_order" {
+    columns     = [column.order_id]
+    ref_columns = [table.orders.column.id]
+    on_delete   = CASCADE
+  }
+  foreign_key "fk_order_discounts_item" {
+    columns     = [column.order_item_id]
+    ref_columns = [table.order_items.column.id]
+    on_delete   = CASCADE
+  }
+  foreign_key "fk_order_discounts_discount" {
+    columns     = [column.discount_id]
+    ref_columns = [table.discounts.column.id]
+    on_delete   = SET_NULL
+  }
+  index "order_discounts_order" {
+    columns = [column.order_id]
   }
 }
