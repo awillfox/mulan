@@ -20,3 +20,14 @@ FROM orders
 WHERE status = 'paid'
   AND created_at >= CURRENT_DATE
   AND created_at < CURRENT_DATE + INTERVAL '1 day';
+
+-- name: ListHeldOrders :many
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE status = 'held'
+ORDER BY held_at DESC NULLS LAST;
+
+-- name: GetHeldOrder :one
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE code = $1 AND status = 'held';

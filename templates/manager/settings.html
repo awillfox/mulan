@@ -2,7 +2,43 @@
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
-<div class="max-w-xl">
+<div class="max-w-xl space-y-6">
+
+    <!-- ── Shop logo ───────────────────────────────────────────────── -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+            <h2 class="text-lg font-bold">Shop Logo</h2>
+            <p class="text-sm text-gray-500 mt-1">Printed on receipts and shown on the POS. PNG, JPG, GIF, or WebP — max 2 MiB.</p>
+        </div>
+        <div class="p-6">
+            <div class="flex items-center gap-5">
+                <!-- Preview tile -->
+                <div id="logo-preview"
+                     class="w-28 h-28 rounded-lg bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <span class="text-xs text-gray-400" id="logo-empty">No logo</span>
+                    <img id="logo-img" class="hidden w-full h-full object-contain" alt="Shop logo">
+                </div>
+
+                <div class="flex-1">
+                    <div id="logo-meta" class="text-xs text-gray-500 mb-3">—</div>
+                    <div class="flex flex-wrap gap-2">
+                        <input type="file" id="logo-file" accept="image/*" class="hidden" onchange="uploadLogo()">
+                        <button onclick="document.getElementById('logo-file').click()"
+                                class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">
+                            Upload
+                        </button>
+                        <button id="logo-remove-btn" onclick="removeLogo()"
+                                class="px-4 py-2 text-sm rounded border border-gray-300 text-red-600 hover:bg-red-50 hidden">
+                            Remove
+                        </button>
+                    </div>
+                    <p id="logo-status" class="text-xs text-gray-400 mt-2"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Shop info ──────────────────────────────────────────────── -->
     <div class="bg-white rounded-lg shadow">
         <div class="p-6 border-b">
             <h2 class="text-lg font-bold">Shop Settings</h2>
@@ -17,6 +53,12 @@
             <div>
                 <label class="block text-sm text-gray-600 mb-1">VAT Percent <span class="text-gray-400">(0 disables VAT line on receipt)</span></label>
                 <input id="vat-percent" type="number" min="0" max="100" step="0.01"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Receipt Footer <span class="text-gray-400">(message at bottom of receipt, max 255 chars)</span></label>
+                <input id="receipt-footer" type="text" maxlength="255"
+                       placeholder="Thank you! Come again!"
                        class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
             <div class="flex items-center justify-between pt-2">
@@ -37,6 +79,8 @@ async function load() {
     const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name || '';
     document.getElementById('vat-percent').value = s.vat_percent ?? 0;
+    document.getElementById('receipt-footer').value = s.receipt_footer || '';
+    refreshLogoPreview();
 }
 
 async function save() {
@@ -46,16 +90,18 @@ async function save() {
     if (isNaN(vat_percent) || vat_percent < 0 || vat_percent > 100) {
         setStatus('VAT must be 0–100', true); return;
     }
+    const receipt_footer = document.getElementById('receipt-footer').value;
     setStatus('Saving…');
     const r = await fetch('/api/settings', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ shop_name, vat_percent }),
+        body: JSON.stringify({ shop_name, vat_percent, receipt_footer }),
     });
     if (!r.ok) { setStatus('Save failed', true); return; }
     const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name;
     document.getElementById('vat-percent').value = s.vat_percent;
+    document.getElementById('receipt-footer').value = s.receipt_footer || '';
     setStatus('Saved');
 }
 
@@ -66,8 +112,87 @@ function setStatus(msg, err) {
     if (!err) setTimeout(() => { el.textContent = ''; }, 2000);
 }
 
+// ── Logo upload / preview / remove ─────────────────────────────────
+function setLogoStatus(msg, level) {
+    const el = document.getElementById('logo-status');
+    el.textContent = msg || '';
+    el.className = 'text-xs mt-2 ' + (level === 'err' ? 'text-red-500' : (level === 'ok' ? 'text-green-600' : 'text-gray-400'));
+}
+
+async function refreshLogoPreview() {
+    const img = document.getElementById('logo-img');
+    const empty = document.getElementById('logo-empty');
+    const meta = document.getElementById('logo-meta');
+    const removeBtn = document.getElementById('logo-remove-btn');
+    // Cache-busting query so the just-uploaded image shows immediately.
+    const url = '/api/settings/logo?t=' + Date.now();
+    try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('no logo');
+        const blob = await r.blob();
+        const objUrl = URL.createObjectURL(blob);
+        img.src = objUrl;
+        img.classList.remove('hidden');
+        empty.classList.add('hidden');
+        removeBtn.classList.remove('hidden');
+        meta.textContent = `${blob.type || 'image'} · ${formatBytes(blob.size)}`;
+    } catch {
+        img.classList.add('hidden');
+        empty.classList.remove('hidden');
+        removeBtn.classList.add('hidden');
+        meta.textContent = 'No logo set.';
+    }
+}
+
+function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+async function uploadLogo() {
+    const input = document.getElementById('logo-file');
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+        setLogoStatus('File too large (max 2 MiB).', 'err');
+        input.value = '';
+        return;
+    }
+    setLogoStatus('Uploading…');
+    const form = new FormData();
+    form.append('file', file);
+    try {
+        const r = await fetch('/api/settings/logo', { method: 'PUT', body: form });
+        if (!r.ok) {
+            const body = await r.text();
+            setLogoStatus('Upload failed: ' + (body || r.status), 'err');
+            return;
+        }
+        setLogoStatus('Logo uploaded.', 'ok');
+        await refreshLogoPreview();
+    } catch (e) {
+        setLogoStatus('Upload failed.', 'err');
+    } finally {
+        input.value = ''; // allow re-upload of same file
+    }
+}
+
+async function removeLogo() {
+    if (!confirm('Remove the shop logo?')) return;
+    setLogoStatus('Removing…');
+    try {
+        const r = await fetch('/api/settings/logo', { method: 'DELETE' });
+        if (!r.ok) { setLogoStatus('Remove failed.', 'err'); return; }
+        setLogoStatus('Logo removed.', 'ok');
+        await refreshLogoPreview();
+    } catch {
+        setLogoStatus('Remove failed.', 'err');
+    }
+}
+
 document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && (e.target.id === 'shop-name' || e.target.id === 'vat-percent')) save();
+    if (e.key === 'Enter' && (e.target.id === 'shop-name' || e.target.id === 'vat-percent' || e.target.id === 'receipt-footer')) save();
 });
 
 load();

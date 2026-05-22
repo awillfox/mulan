@@ -27,22 +27,55 @@ var (
 	cmdCut         = []byte{0x1D, 0x56, 0x41, 0x10} // partial cut + feed
 )
 
+// cmdSelectCodepage builds the "ESC t n" sequence which switches the
+// printer's active character-code table. For Thai we send a TIS-620-compatible
+// table so the printer knows the incoming bytes are Thai and composes the
+// vowels/tone marks above the base glyph instead of advancing horizontally
+// (the classic "overlapping" symptom). Common Thai code-page indices:
+//
+//	21 — Thai Character Code 42 (Epson default factory setting on some units)
+//	26 — Thai Character Code 18 / TIS-620 (most Epson TM-T models)
+//	30 — Thai Character Code 16
+//
+// Default 26 works for most Epson TM-T series. Override via the
+// RECEIPT_PRINTER_CODEPAGE env var if your printer uses a different index.
+func cmdSelectCodepage(n byte) []byte {
+	return []byte{0x1B, 0x74, n}
+}
+
 // Printer sends ESC/POS commands to a network receipt printer via raw TCP.
 type Printer struct {
 	addr      string
 	logoBytes []byte // PNG bytes, nil = no logo
+	codepage  byte   // ESC t value, 0 = don't send (use printer default)
 }
 
 // New creates a Printer targeting addr. Does a quick dial test to fail fast.
 // logoBytes is optional PNG image data; pass nil to skip the logo.
-func New(addr string, logoBytes []byte) (*Printer, error) {
+// codepage is the ESC/POS character code table index sent after init —
+// pass 0 to leave the printer on its current setting.
+func New(addr string, logoBytes []byte, codepage byte) (*Printer, error) {
 	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", addr, err)
 	}
 	conn.Close()
-	log.Printf("receipt printer ready (tcp %s)", addr)
-	return &Printer{addr: addr, logoBytes: logoBytes}, nil
+	if codepage != 0 {
+		log.Printf("receipt printer ready (tcp %s, codepage %d)", addr, codepage)
+	} else {
+		log.Printf("receipt printer ready (tcp %s)", addr)
+	}
+	return &Printer{addr: addr, logoBytes: logoBytes, codepage: codepage}, nil
+}
+
+// writeInit sends ESC @ then optionally the configured codepage. Thai
+// composition is left to the printer's native rendering (the Epson FS C
+// command breaks Thai on VOZY G80 and other Chinese ESC/POS clones).
+func (p *Printer) writeInit(conn net.Conn) {
+	conn.Write(cmdInit)
+	if p.codepage != 0 {
+		conn.Write(cmdSelectCodepage(p.codepage))
+	}
 }
 
 // OrderItemOption is one selected option for an order line.
@@ -87,24 +120,32 @@ func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
 	}
 
 	write := func(b []byte) { conn.Write(b) }
+	// Helpers below render text into raster bitmaps via IBM Plex Sans Thai
+	// Looped, so the whole receipt is one consistent font with proper Thai
+	// composition. ESC alignment commands don't apply to raster, so each
+	// helper bakes its alignment into the bitmap.
 	writeln := func(s string) {
-		conn.Write(encode(s))
-		conn.Write([]byte{0x0A})
+		if err := renderAndSendLine(conn, s); err != nil {
+			conn.Write(encode(s))
+			conn.Write([]byte{0x0A})
+		}
 	}
-	divider := func() { writeln(strings.Repeat("-", printerWidth)) }
+	writeCenter := func(s string) {
+		if err := renderAndSendCenter(conn, s); err != nil {
+			conn.Write(encode(s))
+			conn.Write([]byte{0x0A})
+		}
+	}
+	divider := func() { renderAndSendDivider(conn) }
 
-	write(cmdInit)
+	p.writeInit(conn)
 	time.Sleep(50 * time.Millisecond)
 
 	// Header
-	write(cmdAlignCenter)
-	write(cmdBoldOn)
-	writeln(centerText("ORDER BILL", printerWidth))
-	write(cmdBoldOff)
+	writeCenter("ORDER BILL")
 	divider()
 
 	// Order code + time
-	write(cmdAlignLeft)
 	if orderCode != "" {
 		writeln("Order: " + orderCode)
 	}
@@ -113,11 +154,9 @@ func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
 
 	// Items — qty x name, no price; options indented as sub-lines
 	for _, it := range items {
-		qty := fmt.Sprintf("%d x ", it.Qty)
-		name := displayTruncate(it.Name, printerWidth-displayWidth(qty))
-		writeln(qty + name)
+		writeln(fmt.Sprintf("%d x %s", it.Qty, it.Name))
 		for _, o := range it.Options {
-			writeln("    - " + displayTruncate(o.Name, printerWidth-6))
+			writeln("    - " + o.Name)
 		}
 	}
 
@@ -130,7 +169,30 @@ func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
 }
 
 // PrintReceipt opens a fresh TCP connection, prints a full receipt, and cuts.
-func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, vat, vatPercent, total float64) error {
+// Payment describes how an order was settled, printed in the receipt's
+// payment section. Tendered/Change are only meaningful for cash.
+type Payment struct {
+	Method   string  // "cash" | "card" | "qr" (empty treated as cash)
+	Tendered float64 // THB cash handed over
+	Change   float64 // THB change returned
+}
+
+// label returns the human-readable payment method for the receipt.
+func (pm Payment) label() string {
+	switch pm.Method {
+	case "card":
+		return "Credit Card"
+	case "qr":
+		return "QR Payment"
+	default:
+		return "Cash"
+	}
+}
+
+// PrintReceipt prints a full receipt. subtotal is the pre-discount total,
+// discount is the combined THB taken off (0 when no discount applied), vat is
+// computed on the discounted subtotal, and total is the final amount due.
+func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, vat, vatPercent, total float64, pay Payment) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -149,14 +211,28 @@ func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, va
 
 	write := func(b []byte) { conn.Write(b) }
 	writeln := func(s string) {
-		conn.Write(encode(s))
-		conn.Write([]byte{0x0A})
+		if err := renderAndSendLine(conn, s); err != nil {
+			conn.Write(encode(s))
+			conn.Write([]byte{0x0A})
+		}
 	}
-	divider := func() { writeln(strings.Repeat("-", printerWidth)) }
+	writeCenter := func(s string) {
+		if err := renderAndSendCenter(conn, s); err != nil {
+			conn.Write(encode(s))
+			conn.Write([]byte{0x0A})
+		}
+	}
+	writeRow := func(left, right string) {
+		if err := renderAndSendRow(conn, left, right); err != nil {
+			conn.Write(encode(left + "  " + right))
+			conn.Write([]byte{0x0A})
+		}
+	}
+	divider := func() { renderAndSendDivider(conn) }
 
 	now := time.Now()
 
-	write(cmdInit)
+	p.writeInit(conn)
 	time.Sleep(50 * time.Millisecond)
 
 	// Logo
@@ -169,63 +245,75 @@ func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, va
 	}
 
 	// Header
-	write(cmdAlignCenter)
-	write(cmdBoldOn)
-	writeln(centerText(storeName, printerWidth))
-	write(cmdBoldOff)
+	writeCenter(storeName)
 	divider()
 
 	// Date/time
-	write(cmdAlignLeft)
 	writeln(now.Format("2006-01-02  15:04:05"))
 	divider()
 
 	// Column header
-	writeln(runesPadRight("Item", printerWidth-16) + fmt.Sprintf("%4s %11s", "Qty", "Amount"))
+	writeRow("Item", "Qty       Amount")
 	divider()
 
-	// Items — display-width padding so Thai combining chars align correctly.
-	// Options indented as sub-lines under each item with their price delta.
+	// Items — proportional text on left, right-aligned amounts pinned to
+	// the print edge so column reading stays clean across all rows.
 	for _, it := range items {
-		name := displayTruncate(it.Name, printerWidth-16)
 		amount := it.UnitPrice() * float64(it.Qty)
-		writeln(runesPadRight(name, printerWidth-16) + fmt.Sprintf("%4d %11.2f", it.Qty, amount))
+		writeRow(it.Name, fmt.Sprintf("%d   %9.2f", it.Qty, amount))
 		for _, o := range it.Options {
-			label := "  + " + o.Name
-			line := displayTruncate(label, printerWidth-16)
 			delta := ""
 			if o.PriceDelta > 0 {
-				delta = fmt.Sprintf("%16.2f", o.PriceDelta)
-			} else {
-				delta = strings.Repeat(" ", 16)
+				delta = fmt.Sprintf("%9.2f", o.PriceDelta)
+			} else if o.PriceDelta < 0 {
+				delta = fmt.Sprintf("-%9.2f", -o.PriceDelta)
 			}
-			writeln(runesPadRight(line, printerWidth-16) + delta)
+			writeRow("  + "+o.Name, delta)
 		}
 	}
 
-	// Subtotal, VAT, Total — skip Subtotal/VAT lines when VAT is 0.
+	// Subtotal, Discount, VAT, Total. Subtotal/VAT lines print when there's
+	// VAT or a discount to break down; otherwise just the TOTAL.
 	divider()
-	if vat > 0 {
-		writeln(runesPadRight("Subtotal", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", subtotal))
-		vatLabel := fmt.Sprintf("VAT %g%%", vatPercent)
-		writeln(runesPadRight(vatLabel, printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", vat))
+	if vat > 0 || discount > 0 {
+		writeRow("Subtotal", fmt.Sprintf("%9.2f ฿", subtotal))
+		if discount > 0 {
+			writeRow("Discount", fmt.Sprintf("-%9.2f ฿", discount))
+		}
+		if vat > 0 {
+			writeRow(fmt.Sprintf("VAT %g%%", vatPercent), fmt.Sprintf("%9.2f ฿", vat))
+		}
 		divider()
 	}
-	write(cmdBoldOn)
-	writeln(runesPadRight("TOTAL", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", total))
-	write(cmdBoldOff)
+	writeRow("TOTAL", fmt.Sprintf("%9.2f ฿", total))
 	divider()
 
-	// Footer
-	write(cmdAlignCenter)
-	writeln("Thank you! Come again!")
+	// Payment section — method, plus cash tendered/change when paid in cash.
+	writeRow("Payment", pay.label())
+	if pay.Method == "" || pay.Method == "cash" {
+		if pay.Tendered > 0 {
+			writeRow("Cash received", fmt.Sprintf("%9.2f ฿", pay.Tendered))
+		}
+		if pay.Change > 0 {
+			writeRow("Change", fmt.Sprintf("%9.2f ฿", pay.Change))
+		}
+	}
+	divider()
+
+	// Footer — configurable in manager settings. Falls back to a default
+	// when the shop hasn't set one.
+	footerText := footer
+	if footerText == "" {
+		footerText = "Thank you! Come again!"
+	}
+	writeCenter(footerText)
 	writeln("")
 	writeln("")
 
 	// Cut
 	write(cmdCut)
 
-	log.Printf("receipt printed: %d items, subtotal %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, vat, total)
+	log.Printf("receipt printed: %d items, subtotal %.2f, discount %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, discount, vat, total)
 	return nil
 }
 

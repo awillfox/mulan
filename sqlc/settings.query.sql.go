@@ -7,20 +7,48 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getSettings = `-- name: GetSettings :one
-SELECT id, shop_name, vat_percent, updated_at FROM settings WHERE id = 1
+SELECT id, shop_name, vat_percent, receipt_footer, updated_at FROM settings WHERE id = 1
 `
 
-func (q *Queries) GetSettings(ctx context.Context) (Setting, error) {
+type GetSettingsRow struct {
+	ID            int32              `db:"id" json:"id"`
+	ShopName      string             `db:"shop_name" json:"shop_name"`
+	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
+	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetSettings(ctx context.Context) (GetSettingsRow, error) {
 	row := q.db.QueryRow(ctx, getSettings)
-	var i Setting
+	var i GetSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.ShopName,
 		&i.VatPercent,
+		&i.ReceiptFooter,
 		&i.UpdatedAt,
 	)
+	return i, err
+}
+
+const getSettingsLogo = `-- name: GetSettingsLogo :one
+SELECT logo, logo_mime, updated_at FROM settings WHERE id = 1
+`
+
+type GetSettingsLogoRow struct {
+	Logo      []byte             `db:"logo" json:"logo"`
+	LogoMime  pgtype.Text        `db:"logo_mime" json:"logo_mime"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetSettingsLogo(ctx context.Context) (GetSettingsLogoRow, error) {
+	row := q.db.QueryRow(ctx, getSettingsLogo)
+	var i GetSettingsLogoRow
+	err := row.Scan(&i.Logo, &i.LogoMime, &i.UpdatedAt)
 	return i, err
 }

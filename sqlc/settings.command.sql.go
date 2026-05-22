@@ -7,7 +7,20 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const clearSettingsLogo = `-- name: ClearSettingsLogo :exec
+UPDATE settings
+SET logo = NULL, logo_mime = NULL, updated_at = now()
+WHERE id = 1
+`
+
+func (q *Queries) ClearSettingsLogo(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearSettingsLogo)
+	return err
+}
 
 const seedSettings = `-- name: SeedSettings :exec
 INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING
@@ -18,27 +31,54 @@ func (q *Queries) SeedSettings(ctx context.Context) error {
 	return err
 }
 
+const setSettingsLogo = `-- name: SetSettingsLogo :exec
+UPDATE settings
+SET logo = $1, logo_mime = $2, updated_at = now()
+WHERE id = 1
+`
+
+type SetSettingsLogoParams struct {
+	Logo     []byte      `db:"logo" json:"logo"`
+	LogoMime pgtype.Text `db:"logo_mime" json:"logo_mime"`
+}
+
+func (q *Queries) SetSettingsLogo(ctx context.Context, arg SetSettingsLogoParams) error {
+	_, err := q.db.Exec(ctx, setSettingsLogo, arg.Logo, arg.LogoMime)
+	return err
+}
+
 const updateSettings = `-- name: UpdateSettings :one
 UPDATE settings
-SET shop_name   = $1,
-    vat_percent = $2,
-    updated_at  = now()
+SET shop_name      = $1,
+    vat_percent    = $2,
+    receipt_footer = $3,
+    updated_at     = now()
 WHERE id = 1
-RETURNING id, shop_name, vat_percent, updated_at
+RETURNING id, shop_name, vat_percent, receipt_footer, updated_at
 `
 
 type UpdateSettingsParams struct {
-	ShopName   string  `db:"shop_name" json:"shop_name"`
-	VatPercent float64 `db:"vat_percent" json:"vat_percent"`
+	ShopName      string  `db:"shop_name" json:"shop_name"`
+	VatPercent    float64 `db:"vat_percent" json:"vat_percent"`
+	ReceiptFooter string  `db:"receipt_footer" json:"receipt_footer"`
 }
 
-func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error) {
-	row := q.db.QueryRow(ctx, updateSettings, arg.ShopName, arg.VatPercent)
-	var i Setting
+type UpdateSettingsRow struct {
+	ID            int32              `db:"id" json:"id"`
+	ShopName      string             `db:"shop_name" json:"shop_name"`
+	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
+	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (UpdateSettingsRow, error) {
+	row := q.db.QueryRow(ctx, updateSettings, arg.ShopName, arg.VatPercent, arg.ReceiptFooter)
+	var i UpdateSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.ShopName,
 		&i.VatPercent,
+		&i.ReceiptFooter,
 		&i.UpdatedAt,
 	)
 	return i, err

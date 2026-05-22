@@ -33,6 +33,7 @@ type menuOptionGroupResponse struct {
 	ID            int32                `json:"id"`
 	Name          string               `json:"name"`
 	SelectionMode string               `json:"selection_mode"`
+	Isolated      bool                 `json:"isolated"` // true = private per-menu copy
 	Options       []menuOptionResponse `json:"options"`
 }
 
@@ -85,6 +86,7 @@ func toMenuOptionGroups(groups []optiongroupservice.GroupWithOptions) []menuOpti
 			ID:            g.Group.ID,
 			Name:          g.Group.Name,
 			SelectionMode: g.Group.SelectionMode,
+			Isolated:      g.Group.OwnerMenuID.Valid,
 			Options:       opts,
 		}
 	}

@@ -1,11 +1,17 @@
 -- name: ListOptionGroups :many
-SELECT id, name, selection_mode FROM option_groups ORDER BY id;
+-- Shared preset groups only. Private isolated copies (owner_menu_id set)
+-- belong to a single menu and must not show in the manager or item picker.
+SELECT id, name, selection_mode, owner_menu_id
+FROM option_groups
+WHERE owner_menu_id IS NULL
+ORDER BY id;
 
 -- name: GetOptionGroup :one
-SELECT id, name, selection_mode FROM option_groups WHERE id = $1;
+SELECT id, name, selection_mode, owner_menu_id
+FROM option_groups WHERE id = $1;
 
 -- name: GetOptionGroupsByIDs :many
-SELECT id, name, selection_mode
+SELECT id, name, selection_mode, owner_menu_id
 FROM option_groups
 WHERE id = ANY(@ids::int[])
 ORDER BY id;

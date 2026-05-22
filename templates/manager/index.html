@@ -2,131 +2,451 @@
 {{define "title"}}Dashboard{{end}}
 
 {{define "content"}}
-<!-- Range picker -->
-<div class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center gap-3">
-    <div class="flex flex-wrap gap-2">
-        <button data-preset="today"  class="preset-btn px-3 py-1.5 rounded text-sm border hover:bg-gray-50">Today</button>
-        <button data-preset="7"      class="preset-btn px-3 py-1.5 rounded text-sm border hover:bg-gray-50">7 days</button>
-        <button data-preset="30"     class="preset-btn px-3 py-1.5 rounded text-sm border hover:bg-gray-50">30 days</button>
-        <button data-preset="90"     class="preset-btn px-3 py-1.5 rounded text-sm border hover:bg-gray-50">90 days</button>
-    </div>
-    <div class="flex-1"></div>
-    <div class="flex items-center gap-2 text-sm">
-        <label class="text-gray-500">From</label>
-        <input type="date" id="filter-from" class="border rounded px-2 py-1 text-gray-700">
-        <label class="text-gray-500">To</label>
-        <input type="date" id="filter-to" class="border rounded px-2 py-1 text-gray-700">
-        <button onclick="reload()" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Apply</button>
-    </div>
-</div>
+<style>
+  /* ── Material 3 tokens ─────────────────────────────────────────── */
+  :root {
+    --md-sys-color-primary: #0b57d0;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #d3e3fd;
+    --md-sys-color-on-primary-container: #001d35;
+    --md-sys-color-secondary: #00639b;
+    --md-sys-color-tertiary: #146c2e;
+    --md-sys-color-error: #b3261e;
+    --md-sys-color-surface: #f8fafd;
+    --md-sys-color-surface-dim: #d8dae0;
+    --md-sys-color-surface-bright: #ffffff;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #f1f4f9;
+    --md-sys-color-surface-container: #ebeef4;
+    --md-sys-color-surface-container-high: #e5e8ee;
+    --md-sys-color-surface-container-highest: #dfe2e8;
+    --md-sys-color-on-surface: #1a1c1e;
+    --md-sys-color-on-surface-variant: #43474e;
+    --md-sys-color-outline: #73777f;
+    --md-sys-color-outline-variant: #c3c6cf;
 
-<!-- KPI tiles -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <div class="bg-white rounded-lg shadow p-5">
-        <h3 class="text-xs uppercase tracking-wide text-gray-500">Revenue</h3>
-        <p class="text-2xl font-bold text-gray-900 mt-2" id="kpi-revenue">-</p>
-        <p class="text-xs mt-1" id="kpi-revenue-delta"></p>
-    </div>
-    <div class="bg-white rounded-lg shadow p-5">
-        <h3 class="text-xs uppercase tracking-wide text-gray-500">Orders</h3>
-        <p class="text-2xl font-bold text-gray-900 mt-2" id="kpi-orders">-</p>
-        <p class="text-xs mt-1" id="kpi-orders-delta"></p>
-    </div>
-    <div class="bg-white rounded-lg shadow p-5">
-        <h3 class="text-xs uppercase tracking-wide text-gray-500">Avg Ticket</h3>
-        <p class="text-2xl font-bold text-gray-900 mt-2" id="kpi-avg-ticket">-</p>
-        <p class="text-xs mt-1" id="kpi-avg-ticket-delta"></p>
-    </div>
-    <div class="bg-white rounded-lg shadow p-5">
-        <h3 class="text-xs uppercase tracking-wide text-gray-500">Items / Order</h3>
-        <p class="text-2xl font-bold text-gray-900 mt-2" id="kpi-items">-</p>
-        <p class="text-xs mt-1" id="kpi-items-delta"></p>
-    </div>
-</div>
+    --m3-shape-xs: 4px;
+    --m3-shape-sm: 8px;
+    --m3-shape-md: 12px;
+    --m3-shape-lg: 16px;
+    --m3-shape-xl: 28px;
 
-<!-- Sales over time -->
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="p-6 border-b">
-        <h2 class="text-lg font-bold">Sales Over Time</h2>
-    </div>
-    <div class="p-6">
-        <canvas id="sales-chart" height="100"></canvas>
-        <p id="sales-empty" class="text-gray-400 text-sm mt-4 hidden">No sales in this period.</p>
-    </div>
-</div>
+    --m3-elev-1: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px 1px rgba(0,0,0,0.04);
+    --m3-elev-2: 0 1px 2px rgba(0,0,0,0.06), 0 2px 6px 2px rgba(0,0,0,0.05);
 
-<!-- Hour heatmap -->
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="p-6 border-b">
-        <h2 class="text-lg font-bold">Busiest Hours</h2>
-        <p class="text-sm text-gray-500 mt-1">Revenue per (day-of-week × hour). Darker = busier.</p>
-    </div>
-    <div class="p-6 overflow-x-auto">
-        <div id="heatmap" class="text-xs"></div>
-    </div>
-</div>
+    --chart-1: #0b57d0;
+    --chart-2: #00897b;
+    --chart-3: #f9ab00;
+    --chart-4: #d93025;
+    --chart-5: #8430ce;
+    --chart-6: #1e8e3e;
+    --chart-7: #e8710a;
+    --chart-8: #c5221f;
+    --chart-9: #185abc;
+    --chart-10: #f29900;
+  }
 
-<!-- Top sellers -->
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="p-6 border-b">
-        <h2 class="text-lg font-bold">Top 10 Best Selling</h2>
-    </div>
-    <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+  /* page background tinted M3 surface */
+  body { background: var(--md-sys-color-surface) !important; color: var(--md-sys-color-on-surface); }
+
+  .display-font { font-family: 'Google Sans Display', 'Google Sans', sans-serif; letter-spacing: -0.01em; }
+  .mono { font-family: 'Roboto Mono', monospace; }
+
+  /* ── Cards (M3 filled + elevated) ───────────────────────────────── */
+  .m3-card {
+    background: var(--md-sys-color-surface-container-lowest);
+    border-radius: var(--m3-shape-lg);
+    box-shadow: var(--m3-elev-1);
+    transition: box-shadow .25s ease, transform .25s ease;
+  }
+  .m3-card-tonal {
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: var(--m3-shape-lg);
+  }
+  .m3-card:hover { box-shadow: var(--m3-elev-2); }
+
+  /* ── Chips ─────────────────────────────────────────────────────── */
+  .m3-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 14px; font-weight: 500; line-height: 1;
+    cursor: pointer; user-select: none;
+    transition: background .18s ease, color .18s ease, border-color .18s ease;
+  }
+  .m3-chip:hover { background: rgba(11,87,208,0.06); color: var(--md-sys-color-on-surface); }
+  .m3-chip.is-active {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    border-color: var(--md-sys-color-primary-container);
+  }
+  .m3-chip .material-symbols-rounded { font-size: 18px; }
+
+  /* ── Buttons (M3 filled / tonal / text) ─────────────────────────── */
+  .m3-btn-filled {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 40px; padding: 0 24px;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
+    transition: box-shadow .2s ease, filter .2s ease;
+  }
+  .m3-btn-filled:hover { box-shadow: var(--m3-elev-2); filter: brightness(1.05); }
+  .m3-btn-text {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 40px; padding: 0 12px;
+    border-radius: 999px;
+    color: var(--md-sys-color-primary);
+    font-size: 14px; font-weight: 500;
+  }
+  .m3-btn-text:hover { background: rgba(11,87,208,0.08); }
+
+  /* ── Inputs (date) ─────────────────────────────────────────────── */
+  .m3-date {
+    height: 40px; padding: 0 14px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--m3-shape-sm);
+    background: var(--md-sys-color-surface-container-lowest);
+    font-size: 14px; color: var(--md-sys-color-on-surface);
+    font-family: inherit;
+  }
+  .m3-date:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: -1px; }
+
+  /* ── Segmented button ──────────────────────────────────────────── */
+  .m3-seg {
+    display: inline-flex;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 999px;
+    overflow: hidden;
+    height: 36px;
+  }
+  .m3-seg button {
+    padding: 0 14px;
+    font-size: 13px; font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
+    border-right: 1px solid var(--md-sys-color-outline);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .m3-seg button:last-child { border-right: 0; }
+  .m3-seg button.is-active {
+    background: var(--md-sys-color-secondary-container, #d3e3fd);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .m3-seg button .material-symbols-rounded { font-size: 18px; }
+
+  /* ── KPI ───────────────────────────────────────────────────────── */
+  .kpi-icon {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .kpi-icon .material-symbols-rounded { font-size: 22px; }
+  .kpi-label { font-size: 13px; font-weight: 500; color: var(--md-sys-color-on-surface-variant); letter-spacing: 0.02em; }
+  .kpi-value { font-family: 'Google Sans Display', 'Google Sans', sans-serif; font-size: 32px; font-weight: 500; line-height: 1.1; letter-spacing: -0.02em; color: var(--md-sys-color-on-surface); }
+  .kpi-delta {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 22px; padding: 0 8px;
+    border-radius: 999px;
+    font-size: 12px; font-weight: 500;
+  }
+  .delta-up   { background: #e6f4ea; color: #137333; }
+  .delta-down { background: #fce8e6; color: #c5221f; }
+  .delta-flat { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); }
+  .kpi-delta .material-symbols-rounded { font-size: 14px; }
+
+  /* sparkline canvas wrap */
+  .spark-wrap { height: 44px; margin-top: 12px; }
+
+  /* ── Section headers ──────────────────────────────────────────── */
+  .section-title { font-family: 'Google Sans Display','Google Sans',sans-serif; font-weight: 500; font-size: 22px; letter-spacing: -0.01em; color: var(--md-sys-color-on-surface); }
+  .section-subtitle { font-size: 13px; color: var(--md-sys-color-on-surface-variant); margin-top: 2px; }
+
+  /* ── Heatmap ──────────────────────────────────────────────────── */
+  .heatmap-table { border-collapse: separate; border-spacing: 3px; }
+  .heatmap-cell {
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    transition: transform .12s ease, outline .12s ease;
+  }
+  .heatmap-cell:hover { transform: scale(1.18); outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+  .heatmap-axis { font-size: 11px; color: var(--md-sys-color-on-surface-variant); font-weight: 500; }
+
+  /* ── Top sellers list ─────────────────────────────────────────── */
+  .seller-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .seller-row:last-child { border-bottom: 0; }
+  .seller-rank { font-family: 'Roboto Mono',monospace; color: var(--md-sys-color-on-surface-variant); font-size: 13px; text-align: center; }
+  .seller-name { font-size: 14px; font-weight: 500; color: var(--md-sys-color-on-surface); display: flex; align-items: center; gap: 10px; }
+  .seller-dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
+  .seller-bar {
+    height: 6px; background: var(--md-sys-color-surface-container-high);
+    border-radius: 999px; overflow: hidden; margin-top: 6px;
+  }
+  .seller-bar > div { height: 100%; border-radius: 999px; transition: width .6s cubic-bezier(.2,.7,.2,1); }
+  .seller-meta { text-align: right; font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
+  .seller-rev { font-family: 'Roboto Mono',monospace; font-weight: 500; color: var(--md-sys-color-primary); font-size: 13px; }
+
+  /* ── Page intro band ──────────────────────────────────────────── */
+  .intro-band {
+    background: linear-gradient(135deg, var(--md-sys-color-primary-container) 0%, #e8f0fe 100%);
+    border-radius: var(--m3-shape-xl);
+    padding: 28px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .intro-band::after {
+    content: '';
+    position: absolute; right: -40px; top: -40px;
+    width: 220px; height: 220px;
+    background: radial-gradient(circle at center, rgba(255,255,255,.6) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* ── Reveal animation ─────────────────────────────────────────── */
+  @keyframes m3-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .reveal { animation: m3-rise .5s cubic-bezier(.2,.7,.2,1) backwards; }
+
+  /* responsive tweaks */
+  @media (max-width: 768px) {
+    .kpi-value { font-size: 26px; }
+    .intro-band { padding: 20px; }
+    .section-title { font-size: 18px; }
+  }
+</style>
+
+<!-- ── Page intro / filter band ───────────────────────────────────── -->
+<div class="intro-band mb-6 reveal" style="animation-delay:.02s">
+    <div class="flex flex-wrap items-end justify-between gap-6">
         <div>
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-left text-gray-500 border-b">
-                        <th class="pb-2 font-medium">#</th>
-                        <th class="pb-2 font-medium">Menu</th>
-                        <th class="pb-2 font-medium text-right">Qty Sold</th>
-                        <th class="pb-2 font-medium text-right">Revenue</th>
-                    </tr>
-                </thead>
-                <tbody id="top-menus-table"></tbody>
-            </table>
-            <p id="top-menus-empty" class="text-gray-400 text-sm mt-4 hidden">No sales data for this period.</p>
+            <div class="text-xs font-medium uppercase tracking-widest" style="color:var(--md-sys-color-on-primary-container);opacity:.7">Mulan Analytics</div>
+            <h1 class="display-font mt-2" style="font-size:32px;font-weight:500;letter-spacing:-0.02em;color:var(--md-sys-color-on-primary-container)">Sales Overview</h1>
+            <div class="mt-1 text-sm" id="range-summary" style="color:var(--md-sys-color-on-primary-container);opacity:.8">—</div>
         </div>
-        <div class="flex items-center justify-center">
-            <canvas id="top-menus-chart" width="260" height="260"></canvas>
+        <div class="flex items-center gap-2">
+            <button class="m3-btn-text" onclick="reload()" title="Refresh">
+                <span class="material-symbols-rounded">refresh</span>
+                Refresh
+            </button>
+            <button class="m3-btn-filled" onclick="reload()">
+                <span class="material-symbols-rounded" style="font-size:18px">tune</span>
+                Apply
+            </button>
         </div>
+    </div>
+
+    <!-- preset chips + date range -->
+    <div class="mt-6 flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap gap-2">
+            <button data-preset="today" class="preset-btn m3-chip">
+                <span class="material-symbols-rounded">today</span>Today
+            </button>
+            <button data-preset="7" class="preset-btn m3-chip">7 days</button>
+            <button data-preset="30" class="preset-btn m3-chip">30 days</button>
+            <button data-preset="90" class="preset-btn m3-chip">90 days</button>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-rounded" style="color:var(--md-sys-color-on-primary-container);opacity:.7">date_range</span>
+            <input type="date" id="filter-from" class="m3-date" aria-label="From">
+            <span style="color:var(--md-sys-color-on-primary-container);opacity:.6">→</span>
+            <input type="date" id="filter-to" class="m3-date" aria-label="To">
+        </div>
+    </div>
+</div>
+
+<!-- ── KPI tiles ────────────────────────────────────────────────────── -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+    <div class="m3-card p-5 reveal" style="animation-delay:.08s">
+        <div class="flex items-start justify-between">
+            <span class="kpi-icon"><span class="material-symbols-rounded">payments</span></span>
+            <span class="kpi-delta" id="kpi-revenue-delta">—</span>
+        </div>
+        <div class="kpi-label mt-4">Revenue</div>
+        <div class="kpi-value mt-1" id="kpi-revenue">—</div>
+        <div class="spark-wrap"><canvas id="spark-revenue"></canvas></div>
+    </div>
+    <div class="m3-card p-5 reveal" style="animation-delay:.14s">
+        <div class="flex items-start justify-between">
+            <span class="kpi-icon" style="background:#e6f4ea;color:#137333"><span class="material-symbols-rounded">receipt_long</span></span>
+            <span class="kpi-delta" id="kpi-orders-delta">—</span>
+        </div>
+        <div class="kpi-label mt-4">Orders</div>
+        <div class="kpi-value mt-1" id="kpi-orders">—</div>
+        <div class="spark-wrap"><canvas id="spark-orders"></canvas></div>
+    </div>
+    <div class="m3-card p-5 reveal" style="animation-delay:.20s">
+        <div class="flex items-start justify-between">
+            <span class="kpi-icon" style="background:#fef7e0;color:#b06000"><span class="material-symbols-rounded">trending_up</span></span>
+            <span class="kpi-delta" id="kpi-avg-ticket-delta">—</span>
+        </div>
+        <div class="kpi-label mt-4">Avg Ticket</div>
+        <div class="kpi-value mt-1" id="kpi-avg-ticket">—</div>
+        <div class="spark-wrap"><canvas id="spark-avg"></canvas></div>
+    </div>
+    <div class="m3-card p-5 reveal" style="animation-delay:.26s">
+        <div class="flex items-start justify-between">
+            <span class="kpi-icon" style="background:#f3e8fd;color:#6a30b9"><span class="material-symbols-rounded">restaurant</span></span>
+            <span class="kpi-delta" id="kpi-items-delta">—</span>
+        </div>
+        <div class="kpi-label mt-4">Items / Order</div>
+        <div class="kpi-value mt-1" id="kpi-items">—</div>
+        <div class="spark-wrap"><canvas id="spark-items"></canvas></div>
+    </div>
+</div>
+
+<!-- ── Sales chart ────────────────────────────────────────────────── -->
+<div class="m3-card mb-6 reveal" style="animation-delay:.32s">
+    <div class="p-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h2 class="section-title">Revenue trend</h2>
+            <p class="section-subtitle">Daily revenue across the selected period.</p>
+        </div>
+        <div class="m3-seg" role="tablist" aria-label="Chart type">
+            <button data-chart="line" class="is-active"><span class="material-symbols-rounded">show_chart</span>Line</button>
+            <button data-chart="bar"><span class="material-symbols-rounded">bar_chart</span>Bars</button>
+            <button data-chart="area"><span class="material-symbols-rounded">area_chart</span>Area</button>
+        </div>
+    </div>
+    <div class="px-6 pb-6">
+        <div style="position:relative;height:320px">
+            <canvas id="sales-chart"></canvas>
+        </div>
+        <p id="sales-empty" class="hidden mt-6 text-center" style="color:var(--md-sys-color-on-surface-variant)">
+            <span class="material-symbols-rounded" style="font-size:36px;opacity:.5">inbox</span>
+            <br>No sales in this period.
+        </p>
+    </div>
+</div>
+
+<!-- ── Heatmap + Top sellers (responsive 2 col) ───────────────────── -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <!-- Heatmap (2 col) -->
+    <div class="m3-card lg:col-span-2 reveal" style="animation-delay:.38s">
+        <div class="p-6 flex items-start justify-between gap-4">
+            <div>
+                <h2 class="section-title">Busiest hours</h2>
+                <p class="section-subtitle">Revenue density by weekday × hour. Darker = busier.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color:var(--md-sys-color-on-surface-variant)">
+                Less
+                <div class="flex gap-1">
+                    <div class="heatmap-cell" style="background:#eef2f7;width:14px;height:14px"></div>
+                    <div class="heatmap-cell" style="background:#aac7f4;width:14px;height:14px"></div>
+                    <div class="heatmap-cell" style="background:#5a8eee;width:14px;height:14px"></div>
+                    <div class="heatmap-cell" style="background:#0b57d0;width:14px;height:14px"></div>
+                    <div class="heatmap-cell" style="background:#073d92;width:14px;height:14px"></div>
+                </div>
+                More
+            </div>
+        </div>
+        <div class="px-6 pb-6 overflow-x-auto">
+            <div id="heatmap"></div>
+        </div>
+    </div>
+
+    <!-- Donut summary -->
+    <div class="m3-card reveal" style="animation-delay:.42s">
+        <div class="p-6">
+            <h2 class="section-title">Mix by qty</h2>
+            <p class="section-subtitle">Top 10 sellers share.</p>
+        </div>
+        <div class="px-6 pb-6 flex items-center justify-center" style="height:300px;position:relative">
+            <canvas id="top-menus-chart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- ── Top sellers list ───────────────────────────────────────────── -->
+<div class="m3-card mb-10 reveal" style="animation-delay:.48s">
+    <div class="p-6 flex items-start justify-between gap-4">
+        <div>
+            <h2 class="section-title">Top 10 best selling</h2>
+            <p class="section-subtitle">Ranked by units sold over the selected period.</p>
+        </div>
+        <button class="m3-btn-text" type="button">
+            <span class="material-symbols-rounded" style="font-size:18px">download</span>
+            Export
+        </button>
+    </div>
+    <div class="px-6 pb-6">
+        <div id="top-menus-list"></div>
+        <p id="top-menus-empty" class="hidden text-center py-8" style="color:var(--md-sys-color-on-surface-variant)">
+            <span class="material-symbols-rounded" style="font-size:36px;opacity:.5">restaurant_menu</span>
+            <br>No sales data for this period.
+        </p>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
-const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+// ── Palette ─────────────────────────────────────────────────────────
+const COLORS = ['#0b57d0','#00897b','#f9ab00','#d93025','#8430ce','#1e8e3e','#e8710a','#c5221f','#185abc','#f29900'];
 const DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const unwrap = r => r.json().then(d => d.data ?? d);
 
+// ── Chart.js defaults (Material) ────────────────────────────────────
+Chart.defaults.font.family = "'Roboto Flex', system-ui, sans-serif";
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#43474e';
+Chart.defaults.borderColor = '#dfe2e8';
+Chart.defaults.plugins.tooltip.backgroundColor = '#1a1c1e';
+Chart.defaults.plugins.tooltip.padding = 12;
+Chart.defaults.plugins.tooltip.cornerRadius = 8;
+Chart.defaults.plugins.tooltip.titleFont = { family: "'Google Sans', sans-serif", weight: '500', size: 12 };
+Chart.defaults.plugins.tooltip.bodyFont = { family: "'Roboto Flex', sans-serif", size: 12 };
+Chart.defaults.plugins.tooltip.displayColors = false;
+
 let pieChart = null;
 let salesChart = null;
+let chartType = 'line';
+const sparkCharts = {};
 
+// ── Format helpers ─────────────────────────────────────────────────
 function fmtTHB(n) {
+    return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+function fmtTHB2(n) {
     return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
-
-function todayStr() {
-    return new Date().toISOString().slice(0, 10);
+function fmtCompact(n) {
+    if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n/1e3).toFixed(1) + 'k';
+    return Math.round(n);
 }
-
-function daysAgoStr(n) {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return d.toISOString().slice(0, 10);
-}
-
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function daysAgoStr(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
 function setRange(from, to) {
     document.getElementById('filter-from').value = from;
     document.getElementById('filter-to').value = to;
+    updateRangeSummary();
 }
-
+function updateRangeSummary() {
+    const f = document.getElementById('filter-from').value;
+    const t = document.getElementById('filter-to').value;
+    if (!f || !t) return;
+    const fmt = s => new Date(s+'T00:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+    document.getElementById('range-summary').textContent = `${fmt(f)} → ${fmt(t)}`;
+}
 function applyPreset(preset) {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('is-active', b.dataset.preset === preset));
     const today = todayStr();
     if (preset === 'today') setRange(today, today);
-    else setRange(daysAgoStr(parseInt(preset) - 1), today);
+    else setRange(daysAgoStr(parseInt(preset)-1), today);
     reload();
 }
-
 function rangeQS() {
     const from = document.getElementById('filter-from').value;
     const to   = document.getElementById('filter-to').value;
@@ -137,99 +457,177 @@ function rangeQS() {
 }
 
 async function reload() {
+    updateRangeSummary();
     const qs = rangeQS();
-    await Promise.all([
-        loadCompare(qs),
-        loadSeries(qs),
-        loadHeatmap(qs),
-        loadTopMenus(qs),
-    ]);
+    await Promise.all([loadCompare(qs), loadSeries(qs), loadHeatmap(qs), loadTopMenus(qs)]);
 }
 
-// ── KPI tiles + period compare ────────────────────────────────────────
-function deltaPct(curr, prev) {
-    if (!prev) return null;
-    return ((curr - prev) / prev) * 100;
-}
+// ── KPI deltas ─────────────────────────────────────────────────────
+function deltaPct(curr, prev) { if (!prev) return null; return ((curr - prev) / prev) * 100; }
 function renderDelta(el, pct) {
     if (pct === null || !isFinite(pct)) {
-        el.textContent = 'no prior period';
-        el.className = 'text-xs mt-1 text-gray-400';
+        el.textContent = 'no prior';
+        el.className = 'kpi-delta delta-flat';
         return;
     }
     const up = pct >= 0;
-    el.textContent = (up ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs prior';
-    el.className = 'text-xs mt-1 ' + (up ? 'text-green-600' : 'text-red-500');
+    const flat = Math.abs(pct) < 0.05;
+    const cls = flat ? 'delta-flat' : (up ? 'delta-up' : 'delta-down');
+    const icon = flat ? 'remove' : (up ? 'arrow_upward' : 'arrow_downward');
+    el.className = 'kpi-delta ' + cls;
+    el.innerHTML = `<span class="material-symbols-rounded">${icon}</span>${Math.abs(pct).toFixed(1)}%`;
+}
+
+// ── Sparklines (one per KPI) ───────────────────────────────────────
+function drawSpark(id, points, color) {
+    const ctx = document.getElementById(id).getContext('2d');
+    if (sparkCharts[id]) sparkCharts[id].destroy();
+    const grad = ctx.createLinearGradient(0,0,0,44);
+    grad.addColorStop(0, color + '55');
+    grad.addColorStop(1, color + '00');
+    sparkCharts[id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: points.map((_,i)=>i),
+            datasets: [{
+                data: points,
+                borderColor: color,
+                backgroundColor: grad,
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } },
+            elements: { point: { radius: 0 } },
+        }
+    });
 }
 
 async function loadCompare(qs) {
     const data = await fetch('/api/dashboard/compare?' + qs).then(unwrap);
     const c = data.current, p = data.previous;
     document.getElementById('kpi-revenue').textContent    = fmtTHB(c.revenue);
-    document.getElementById('kpi-orders').textContent     = c.orders;
+    document.getElementById('kpi-orders').textContent     = (c.orders || 0).toLocaleString();
     document.getElementById('kpi-avg-ticket').textContent = fmtTHB(c.avg_ticket);
-    document.getElementById('kpi-items').textContent      = c.items_per_order.toFixed(2);
-    renderDelta(document.getElementById('kpi-revenue-delta'),    deltaPct(c.revenue,        p.revenue));
-    renderDelta(document.getElementById('kpi-orders-delta'),     deltaPct(c.orders,         p.orders));
-    renderDelta(document.getElementById('kpi-avg-ticket-delta'), deltaPct(c.avg_ticket,     p.avg_ticket));
+    document.getElementById('kpi-items').textContent      = (c.items_per_order || 0).toFixed(2);
+    renderDelta(document.getElementById('kpi-revenue-delta'),    deltaPct(c.revenue,         p.revenue));
+    renderDelta(document.getElementById('kpi-orders-delta'),     deltaPct(c.orders,          p.orders));
+    renderDelta(document.getElementById('kpi-avg-ticket-delta'), deltaPct(c.avg_ticket,      p.avg_ticket));
     renderDelta(document.getElementById('kpi-items-delta'),      deltaPct(c.items_per_order, p.items_per_order));
 }
 
-// ── Sales over time ───────────────────────────────────────────────────
+// ── Sales over time ────────────────────────────────────────────────
 async function loadSeries(qs) {
     const points = await fetch('/api/dashboard/sales-by-day?' + qs).then(unwrap);
     const empty = document.getElementById('sales-empty');
-    const ctx = document.getElementById('sales-chart').getContext('2d');
+    const canvas = document.getElementById('sales-chart');
+    const ctx = canvas.getContext('2d');
     if (salesChart) salesChart.destroy();
     if (!points || points.length === 0) {
         empty.classList.remove('hidden');
+        canvas.style.display = 'none';
+        // also reset sparks
+        ['spark-revenue','spark-orders','spark-avg','spark-items'].forEach(id => {
+            if (sparkCharts[id]) { sparkCharts[id].destroy(); delete sparkCharts[id]; }
+        });
         return;
     }
     empty.classList.add('hidden');
+    canvas.style.display = '';
+
+    const revArr   = points.map(p => p.revenue || 0);
+    const ordArr   = points.map(p => p.orders  || 0);
+    const avgArr   = points.map(p => (p.orders ? (p.revenue / p.orders) : 0));
+    const itemsArr = points.map(p => p.items_per_order || 0);
+    drawSpark('spark-revenue', revArr,   '#0b57d0');
+    drawSpark('spark-orders',  ordArr,   '#137333');
+    drawSpark('spark-avg',     avgArr,   '#b06000');
+    drawSpark('spark-items',   itemsArr, '#6a30b9');
+
+    const labels = points.map(p => {
+        const d = new Date(p.day + 'T00:00:00');
+        return d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+    });
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 320);
+    grad.addColorStop(0, 'rgba(11,87,208,0.28)');
+    grad.addColorStop(1, 'rgba(11,87,208,0.00)');
+
+    const baseDataset = {
+        label: 'Revenue',
+        data: revArr,
+        borderColor: '#0b57d0',
+        backgroundColor: chartType === 'bar' ? '#0b57d0' : grad,
+        borderWidth: chartType === 'bar' ? 0 : 2.5,
+        fill: chartType !== 'line',
+        tension: 0.4,
+        pointRadius: chartType === 'line' ? 3 : 0,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#0b57d0',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        borderRadius: chartType === 'bar' ? 8 : 0,
+    };
+
     salesChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: points.map(p => p.day),
-            datasets: [{
-                label: 'Revenue (฿)',
-                data: points.map(p => p.revenue),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59,130,246,0.1)',
-                fill: true,
-                tension: 0.3,
-            }]
-        },
+        type: chartType === 'bar' ? 'bar' : 'line',
+        data: { labels, datasets: [baseDataset] },
         options: {
             responsive: true,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => '฿' + v } } },
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => labels[items[0].dataIndex],
+                        label: ctx => '  ' + fmtTHB2(ctx.parsed.y),
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 16 } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#eceff4', drawBorder: false },
+                    ticks: { callback: v => fmtCompact(v), padding: 8 }
+                }
+            }
         }
     });
 }
 
-// ── Hour heatmap ──────────────────────────────────────────────────────
+// ── Heatmap ────────────────────────────────────────────────────────
+function tonalScale(intensity) {
+    // M3 primary tonal palette steps (Blue)
+    if (intensity === 0) return '#eef2f7';
+    if (intensity < 0.2) return '#d3e3fd';
+    if (intensity < 0.4) return '#aac7f4';
+    if (intensity < 0.6) return '#7aa7f0';
+    if (intensity < 0.8) return '#3d7be1';
+    return '#0b57d0';
+}
 async function loadHeatmap(qs) {
     const cells = await fetch('/api/dashboard/heatmap?' + qs).then(unwrap);
-    const grid = {};
-    let max = 0;
-    for (const c of cells || []) {
-        grid[c.dow + ':' + c.hour] = c.revenue;
-        if (c.revenue > max) max = c.revenue;
-    }
+    const grid = {}; let max = 0;
+    for (const c of cells || []) { grid[c.dow+':'+c.hour] = c.revenue; if (c.revenue > max) max = c.revenue; }
     const root = document.getElementById('heatmap');
-    let html = '<table class="border-collapse"><thead><tr><th class="px-2 py-1"></th>';
-    for (let h = 0; h < 24; h++) {
-        html += `<th class="px-1 py-1 text-gray-400 font-normal">${h}</th>`;
-    }
+    let html = '<table class="heatmap-table"><thead><tr><th></th>';
+    for (let h = 0; h < 24; h++) html += `<th class="heatmap-axis" style="text-align:center;font-weight:500">${h % 3 === 0 ? h : ''}</th>`;
     html += '</tr></thead><tbody>';
     for (let d = 0; d < 7; d++) {
-        html += `<tr><td class="px-2 py-1 text-gray-500 font-medium">${DOW_LABELS[d]}</td>`;
+        html += `<tr><td class="heatmap-axis" style="padding-right:10px">${DOW_LABELS[d]}</td>`;
         for (let h = 0; h < 24; h++) {
-            const v = grid[d + ':' + h] || 0;
+            const v = grid[d+':'+h] || 0;
             const intensity = max > 0 ? v / max : 0;
-            const bg = intensity === 0 ? '#f3f4f6' : `rgba(59,130,246,${0.15 + 0.85 * intensity})`;
-            const tip = `${DOW_LABELS[d]} ${String(h).padStart(2,'0')}:00 — ${fmtTHB(v)}`;
-            html += `<td class="w-6 h-6 border border-white" style="background:${bg}" title="${tip}"></td>`;
+            const bg = tonalScale(intensity);
+            const tip = `${DOW_LABELS[d]} ${String(h).padStart(2,'0')}:00 — ${fmtTHB2(v)}`;
+            html += `<td><div class="heatmap-cell" style="background:${bg}" title="${tip}"></div></td>`;
         }
         html += '</tr>';
     }
@@ -237,59 +635,90 @@ async function loadHeatmap(qs) {
     root.innerHTML = html;
 }
 
-// ── Top sellers ───────────────────────────────────────────────────────
+// ── Top sellers ────────────────────────────────────────────────────
 async function loadTopMenus(qs) {
     const items = await fetch('/api/dashboard/top-menus?' + qs).then(unwrap);
-    const tbody = document.getElementById('top-menus-table');
+    const list = document.getElementById('top-menus-list');
     const empty = document.getElementById('top-menus-empty');
+    const chartWrap = document.getElementById('top-menus-chart');
     if (!items || items.length === 0) {
-        tbody.innerHTML = '';
+        list.innerHTML = '';
         empty.classList.remove('hidden');
+        chartWrap.style.display = 'none';
         if (pieChart) { pieChart.destroy(); pieChart = null; }
         return;
     }
     empty.classList.add('hidden');
-    tbody.innerHTML = items.map((item, i) => `
-        <tr class="border-b last:border-0">
-            <td class="py-2 text-gray-400">${i + 1}</td>
-            <td class="py-2 font-medium flex items-center gap-2">
-                <span class="inline-block w-3 h-3 rounded-full" style="background:${COLORS[i]}"></span>
-                ${item.name}
-            </td>
-            <td class="py-2 text-right text-gray-700">${item.qty_sold}</td>
-            <td class="py-2 text-right text-blue-600 font-medium">${fmtTHB(item.revenue)}</td>
-        </tr>
-    `).join('');
+    chartWrap.style.display = '';
 
-    const ctx = document.getElementById('top-menus-chart').getContext('2d');
+    const maxQty = Math.max(...items.map(i => i.qty_sold));
+    list.innerHTML = items.map((item, i) => {
+        const pct = maxQty ? (item.qty_sold / maxQty) * 100 : 0;
+        return `
+        <div class="seller-row">
+            <div class="seller-rank">${i + 1}</div>
+            <div>
+                <div class="seller-name">
+                    <span class="seller-dot" style="background:${COLORS[i % COLORS.length]}"></span>
+                    ${item.name}
+                </div>
+                <div class="seller-bar">
+                    <div style="width:${pct}%;background:${COLORS[i % COLORS.length]}"></div>
+                </div>
+            </div>
+            <div>
+                <div class="seller-meta">${item.qty_sold.toLocaleString()} sold</div>
+                <div class="seller-rev">${fmtTHB(item.revenue)}</div>
+            </div>
+        </div>`;
+    }).join('');
+
+    const ctx = chartWrap.getContext('2d');
     if (pieChart) pieChart.destroy();
     pieChart = new Chart(ctx, {
-        type: 'pie',
+        type: 'doughnut',
         data: {
             labels: items.map(i => i.name),
             datasets: [{
                 data: items.map(i => i.qty_sold),
-                backgroundColor: COLORS.slice(0, items.length),
-                borderWidth: 2,
+                backgroundColor: items.map((_, i) => COLORS[i % COLORS.length]),
+                borderColor: '#fff',
+                borderWidth: 3,
+                hoverOffset: 6,
             }]
         },
         options: {
+            responsive: true, maintainAspectRatio: false,
+            cutout: '65%',
             plugins: {
-                legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } },
-                tooltip: {
-                    callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} sold` }
-                }
+                legend: { display: false },
+                tooltip: { callbacks: { label: c => `  ${c.label}: ${c.parsed} sold` } }
             }
         }
     });
 }
 
-// ── Init ──────────────────────────────────────────────────────────────
+// ── Segmented chart-type toggle ────────────────────────────────────
+document.querySelectorAll('.m3-seg button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.m3-seg button').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        chartType = btn.dataset.chart;
+        loadSeries(rangeQS());
+    });
+});
+
+// ── Init ───────────────────────────────────────────────────────────
 document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
 });
+document.querySelectorAll('#filter-from, #filter-to').forEach(el => {
+    el.addEventListener('change', () => { updateRangeSummary(); reload(); });
+});
 
-setRange(daysAgoStr(6), todayStr()); // default: last 7 days
+// default: 7 days, mark preset chip active
+setRange(daysAgoStr(6), todayStr());
+document.querySelector('.preset-btn[data-preset="7"]').classList.add('is-active');
 reload();
 </script>
 {{end}}

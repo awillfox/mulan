@@ -17,9 +17,16 @@ VALUES ($1, 'open')
 RETURNING id, code, status, created_at
 `
 
-func (q *Queries) CreateOrder(ctx context.Context, code string) (Order, error) {
+type CreateOrderRow struct {
+	ID        int32              `db:"id" json:"id"`
+	Code      string             `db:"code" json:"code"`
+	Status    string             `db:"status" json:"status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) CreateOrder(ctx context.Context, code string) (CreateOrderRow, error) {
 	row := q.db.QueryRow(ctx, createOrder, code)
-	var i Order
+	var i CreateOrderRow
 	err := row.Scan(
 		&i.ID,
 		&i.Code,
@@ -78,6 +85,46 @@ func (q *Queries) CreateOrderItemOption(ctx context.Context, arg CreateOrderItem
 	return err
 }
 
+const discardHeldOrder = `-- name: DiscardHeldOrder :exec
+DELETE FROM orders WHERE code = $1 AND status = 'held'
+`
+
+func (q *Queries) DiscardHeldOrder(ctx context.Context, code string) error {
+	_, err := q.db.Exec(ctx, discardHeldOrder, code)
+	return err
+}
+
+const holdOrder = `-- name: HoldOrder :one
+UPDATE orders
+SET status = 'held',
+    held_at = now(),
+    held_label = $2,
+    held_payload = $3
+WHERE code = $1
+RETURNING id, code, status, created_at, held_at, held_label, held_payload
+`
+
+type HoldOrderParams struct {
+	Code        string      `db:"code" json:"code"`
+	HeldLabel   pgtype.Text `db:"held_label" json:"held_label"`
+	HeldPayload []byte      `db:"held_payload" json:"held_payload"`
+}
+
+func (q *Queries) HoldOrder(ctx context.Context, arg HoldOrderParams) (Order, error) {
+	row := q.db.QueryRow(ctx, holdOrder, arg.Code, arg.HeldLabel, arg.HeldPayload)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+		&i.HeldAt,
+		&i.HeldLabel,
+		&i.HeldPayload,
+	)
+	return i, err
+}
+
 const payOrder = `-- name: PayOrder :exec
 UPDATE orders SET status = 'paid' WHERE code = $1
 `
@@ -85,4 +132,45 @@ UPDATE orders SET status = 'paid' WHERE code = $1
 func (q *Queries) PayOrder(ctx context.Context, code string) error {
 	_, err := q.db.Exec(ctx, payOrder, code)
 	return err
+}
+
+const resumeOrder = `-- name: ResumeOrder :one
+WITH prev AS (
+    SELECT o.held_payload AS old_payload
+    FROM orders o
+    WHERE o.code = $1 AND o.status = 'held'
+)
+UPDATE orders AS u
+SET status = 'open',
+    held_at = NULL,
+    held_label = NULL,
+    held_payload = '{}'::jsonb
+WHERE u.code = $1 AND u.status = 'held'
+RETURNING u.id, u.code, u.status, u.created_at,
+          (SELECT old_payload FROM prev) AS held_payload
+`
+
+type ResumeOrderRow struct {
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+// Returns the payload captured at hold time, then atomically clears it.
+// Postgres evaluates the prev CTE against the snapshot before the UPDATE,
+// so RETURNING can surface the pre-update jsonb. Without the CTE the
+// subquery would observe the new (empty) value and we'd lose the cart.
+func (q *Queries) ResumeOrder(ctx context.Context, code string) (ResumeOrderRow, error) {
+	row := q.db.QueryRow(ctx, resumeOrder, code)
+	var i ResumeOrderRow
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+		&i.HeldPayload,
+	)
+	return i, err
 }
