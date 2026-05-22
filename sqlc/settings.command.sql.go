@@ -20,25 +20,28 @@ func (q *Queries) SeedSettings(ctx context.Context) error {
 
 const updateSettings = `-- name: UpdateSettings :one
 UPDATE settings
-SET shop_name   = $1,
-    vat_percent = $2,
-    updated_at  = now()
+SET shop_name       = $1,
+    vat_percent     = $2,
+    points_per_baht = $3,
+    updated_at      = now()
 WHERE id = 1
-RETURNING id, shop_name, vat_percent, updated_at
+RETURNING id, shop_name, vat_percent, points_per_baht, updated_at
 `
 
 type UpdateSettingsParams struct {
-	ShopName   string  `db:"shop_name" json:"shop_name"`
-	VatPercent float64 `db:"vat_percent" json:"vat_percent"`
+	ShopName      string  `db:"shop_name" json:"shop_name"`
+	VatPercent    float64 `db:"vat_percent" json:"vat_percent"`
+	PointsPerBaht float64 `db:"points_per_baht" json:"points_per_baht"`
 }
 
 func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error) {
-	row := q.db.QueryRow(ctx, updateSettings, arg.ShopName, arg.VatPercent)
+	row := q.db.QueryRow(ctx, updateSettings, arg.ShopName, arg.VatPercent, arg.PointsPerBaht)
 	var i Setting
 	err := row.Scan(
 		&i.ID,
 		&i.ShopName,
 		&i.VatPercent,
+		&i.PointsPerBaht,
 		&i.UpdatedAt,
 	)
 	return i, err

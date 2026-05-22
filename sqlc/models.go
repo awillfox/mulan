@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Member struct {
+	ID        int32              `db:"id" json:"id"`
+	Phone     string             `db:"phone" json:"phone"`
+	Name      pgtype.Text        `db:"name" json:"name"`
+	Points    int64              `db:"points" json:"points"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Menu struct {
 	ID         int32       `db:"id" json:"id"`
 	Name       string      `db:"name" json:"name"`
@@ -43,10 +52,12 @@ type OptionGroup struct {
 }
 
 type Order struct {
-	ID        int32              `db:"id" json:"id"`
-	Code      string             `db:"code" json:"code"`
-	Status    string             `db:"status" json:"status"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID           int32              `db:"id" json:"id"`
+	Code         string             `db:"code" json:"code"`
+	Status       string             `db:"status" json:"status"`
+	MemberID     pgtype.Int4        `db:"member_id" json:"member_id"`
+	PointsEarned int64              `db:"points_earned" json:"points_earned"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 type OrderItem struct {
@@ -67,8 +78,9 @@ type OrderItemOption struct {
 }
 
 type Setting struct {
-	ID         int32              `db:"id" json:"id"`
-	ShopName   string             `db:"shop_name" json:"shop_name"`
-	VatPercent float64            `db:"vat_percent" json:"vat_percent"`
-	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	ID            int32              `db:"id" json:"id"`
+	ShopName      string             `db:"shop_name" json:"shop_name"`
+	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
+	PointsPerBaht float64            `db:"points_per_baht" json:"points_per_baht"`
+	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }

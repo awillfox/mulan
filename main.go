@@ -14,6 +14,8 @@ import (
 	dashboardhttp "mulan/internal/dashboard/http"
 	dashboardservice "mulan/internal/dashboard/service"
 	"mulan/internal/hub"
+	memberhttp "mulan/internal/member/http"
+	memberservice "mulan/internal/member/service"
 	menuhttp "mulan/internal/menu/http"
 	menuservice "mulan/internal/menu/service"
 	menucategoryhttp "mulan/internal/menucategory/http"
@@ -67,6 +69,9 @@ func main() {
 	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc)
 	orderHandler := orderhttp.NewHandler(orderSvc)
 
+	memberSvc := memberservice.NewService(queries)
+	memberHandler := memberhttp.NewHandler(memberSvc)
+
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
 
@@ -84,6 +89,7 @@ func main() {
 	r.Get("/manager", webHandler.Manager)
 	r.Get("/manager/items", webHandler.Items)
 	r.Get("/manager/option-groups", webHandler.OptionGroups)
+	r.Get("/manager/members", webHandler.Members)
 	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
 	r.Handle("/elements/*", http.StripPrefix("/elements/", http.FileServer(http.Dir("elements"))))
@@ -97,6 +103,7 @@ func main() {
 		r.Route("/option-groups", optionGroupHandler.Routes)
 		r.Route("/options", optionGroupHandler.OptionRoutes)
 		r.Route("/orders", orderHandler.Routes)
+		r.Route("/members", memberHandler.Routes)
 		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/dashboard", dashboardHandler.Routes)
 	})

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,12 +20,12 @@ const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // Sentinel errors translated to specific HTTP statuses by the handler.
 var (
-	ErrAlreadyPaid    = errors.New("order already paid")
-	ErrNoItems        = errors.New("no items")
-	ErrUnknownMenu    = errors.New("unknown menu")
-	ErrMenuInactive   = errors.New("menu inactive")
-	ErrInvalidOption  = errors.New("option not allowed for menu")
-	ErrUnknownOption  = errors.New("unknown option")
+	ErrAlreadyPaid     = errors.New("order already paid")
+	ErrNoItems         = errors.New("no items")
+	ErrUnknownMenu     = errors.New("unknown menu")
+	ErrMenuInactive    = errors.New("menu inactive")
+	ErrInvalidOption   = errors.New("option not allowed for menu")
+	ErrUnknownOption   = errors.New("unknown option")
 	ErrMissingRequired = errors.New("missing required option")
 )
 
@@ -59,13 +60,20 @@ type CheckoutItemInput struct {
 	OptionIDs []int32
 }
 
+// CustomerInput is the optional membership capture at checkout. An empty Phone
+// means "no member" and the whole loyalty path is skipped.
+type CustomerInput struct {
+	Phone string
+	Name  string
+}
+
 // Checkout finalises an open order: it validates every line against the
 // authoritative menu/option data, persists order_items + order_item_options,
 // marks the order paid, and returns totals. The whole flow runs in a single
 // transaction so any failure rolls back cleanly. Calling Checkout on an
 // already-paid order returns ErrAlreadyPaid so the caller can map it to 409
 // instead of double-charging.
-func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput) (*domain.CheckoutResult, error) {
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, customer CustomerInput) (*domain.CheckoutResult, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -150,25 +158,80 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		})
 	}
 
-	if err := q.PayOrder(ctx, code); err != nil {
+	// Totals are computed before PayOrder so points_earned can be snapshotted
+	// onto the order row inside this transaction.
+	cfg := s.settings.Get()
+	vatSatang := subtotalSatang * int64(cfg.VatPercent*100) / 10000
+	totalSatang := subtotalSatang + vatSatang
+
+	// Loyalty: optional. An empty phone means no member — member_id stays NULL
+	// and points_earned stays 0.
+	var (
+		memberID     pgtype.Int4
+		pointsEarned int64
+		hasMember    bool
+		memberName   string
+		memberPhone  string
+		newBalance   int64
+	)
+	if phone := strings.TrimSpace(customer.Phone); phone != "" {
+		m, err := q.FindMemberByPhone(ctx, phone)
+		if errors.Is(err, pgx.ErrNoRows) {
+			name := strings.TrimSpace(customer.Name)
+			m, err = q.CreateMember(ctx, sqlc.CreateMemberParams{
+				Phone: phone,
+				Name:  pgtype.Text{String: name, Valid: name != ""},
+			})
+		}
+		if err != nil {
+			return nil, fmt.Errorf("find-or-create member: %w", err)
+		}
+
+		// points = floor(total_paid_THB * points_per_baht). Divide satang by 100
+		// FIRST — computing on satang would award 100x too many points. int64()
+		// truncation == floor for non-negative totals.
+		totalTHB := float64(totalSatang) / 100
+		pointsEarned = int64(totalTHB * cfg.PointsPerBaht)
+
+		updated, err := q.AddMemberPoints(ctx, sqlc.AddMemberPointsParams{
+			ID:    m.ID,
+			Delta: pointsEarned,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("award points: %w", err)
+		}
+
+		memberID = pgtype.Int4{Int32: m.ID, Valid: true}
+		hasMember = true
+		memberName = updated.Name.String
+		memberPhone = updated.Phone
+		newBalance = updated.Points
+	}
+
+	if err := q.PayOrder(ctx, sqlc.PayOrderParams{
+		Code:         code,
+		MemberID:     memberID,
+		PointsEarned: pointsEarned,
+	}); err != nil {
 		return nil, fmt.Errorf("pay order: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	cfg := s.settings.Get()
-	vatSatang := subtotalSatang * int64(cfg.VatPercent*100) / 10000
-	totalSatang := subtotalSatang + vatSatang
-
 	return &domain.CheckoutResult{
-		Code:       code,
-		Subtotal:   float64(subtotalSatang) / 100,
-		VAT:        float64(vatSatang) / 100,
-		VATPercent: cfg.VatPercent,
-		ShopName:   cfg.ShopName,
-		Total:      float64(totalSatang) / 100,
-		Items:      resultItems,
+		Code:          code,
+		Subtotal:      float64(subtotalSatang) / 100,
+		VAT:           float64(vatSatang) / 100,
+		VATPercent:    cfg.VatPercent,
+		ShopName:      cfg.ShopName,
+		Total:         float64(totalSatang) / 100,
+		Items:         resultItems,
+		HasMember:     hasMember,
+		MemberName:    memberName,
+		MemberPhone:   memberPhone,
+		PointsEarned:  pointsEarned,
+		PointsBalance: newBalance,
 	}, nil
 }
 

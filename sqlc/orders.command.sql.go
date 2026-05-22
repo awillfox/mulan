@@ -17,9 +17,16 @@ VALUES ($1, 'open')
 RETURNING id, code, status, created_at
 `
 
-func (q *Queries) CreateOrder(ctx context.Context, code string) (Order, error) {
+type CreateOrderRow struct {
+	ID        int32              `db:"id" json:"id"`
+	Code      string             `db:"code" json:"code"`
+	Status    string             `db:"status" json:"status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) CreateOrder(ctx context.Context, code string) (CreateOrderRow, error) {
 	row := q.db.QueryRow(ctx, createOrder, code)
-	var i Order
+	var i CreateOrderRow
 	err := row.Scan(
 		&i.ID,
 		&i.Code,
@@ -79,10 +86,20 @@ func (q *Queries) CreateOrderItemOption(ctx context.Context, arg CreateOrderItem
 }
 
 const payOrder = `-- name: PayOrder :exec
-UPDATE orders SET status = 'paid' WHERE code = $1
+UPDATE orders
+SET status = 'paid',
+    member_id = $1,
+    points_earned = $2
+WHERE code = $3
 `
 
-func (q *Queries) PayOrder(ctx context.Context, code string) error {
-	_, err := q.db.Exec(ctx, payOrder, code)
+type PayOrderParams struct {
+	MemberID     pgtype.Int4 `db:"member_id" json:"member_id"`
+	PointsEarned int64       `db:"points_earned" json:"points_earned"`
+	Code         string      `db:"code" json:"code"`
+}
+
+func (q *Queries) PayOrder(ctx context.Context, arg PayOrderParams) error {
+	_, err := q.db.Exec(ctx, payOrder, arg.MemberID, arg.PointsEarned, arg.Code)
 	return err
 }

@@ -67,6 +67,15 @@ func (it OrderItem) UnitPrice() float64 {
 	return p
 }
 
+// MemberInfo is the optional loyalty block printed on the receipt footer.
+type MemberInfo struct {
+	Present bool
+	Name    string
+	Phone   string
+	Earned  int64 // points earned this order
+	Balance int64 // running total after this order
+}
+
 // PrintOrderBill opens a fresh TCP connection, prints a kitchen-style order
 // bill (item list, no prices), and cuts.
 func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
@@ -130,7 +139,7 @@ func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
 }
 
 // PrintReceipt opens a fresh TCP connection, prints a full receipt, and cuts.
-func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, vat, vatPercent, total float64) error {
+func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, vat, vatPercent, total float64, member MemberInfo) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -215,6 +224,20 @@ func (p *Printer) PrintReceipt(storeName string, items []OrderItem, subtotal, va
 	writeln(runesPadRight("TOTAL", printerWidth-16) + fmt.Sprintf("%4s %9.2f ฿", "", total))
 	write(cmdBoldOff)
 	divider()
+
+	// Member / loyalty block — only when a member was attached.
+	if member.Present {
+		write(cmdAlignLeft)
+		if member.Name != "" {
+			writeln("Member: " + member.Name)
+		}
+		if member.Phone != "" {
+			writeln("Phone:  " + member.Phone)
+		}
+		writeln(runesPadRight("Points earned", printerWidth-16) + fmt.Sprintf("%15d", member.Earned))
+		writeln(runesPadRight("Points balance", printerWidth-16) + fmt.Sprintf("%15d", member.Balance))
+		divider()
+	}
 
 	// Footer
 	write(cmdAlignCenter)

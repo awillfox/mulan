@@ -18,6 +18,11 @@ table "settings" {
     null    = false
     default = 0
   }
+  column "points_per_baht" {
+    type    = double_precision
+    null    = false
+    default = 1
+  }
   column "updated_at" {
     type    = timestamptz
     null    = false
@@ -48,6 +53,15 @@ table "orders" {
     null = false
     default = "open"
   }
+  column "member_id" {
+    type = int
+    null = true
+  }
+  column "points_earned" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -60,6 +74,11 @@ table "orders" {
   index "orders_code_key" {
     columns = [column.code]
     unique  = true
+  }
+  foreign_key "fk_orders_member" {
+    columns     = [column.member_id]
+    ref_columns = [table.members.column.id]
+    on_delete   = SET_NULL
   }
 }
 
@@ -299,5 +318,45 @@ table "menus" {
     columns     = [column.category_id]
     ref_columns = [table.menu_categories.column.id]
     on_delete   = SET_NULL
+  }
+}
+
+table "members" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "phone" {
+    type = varchar(20)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = true
+  }
+  column "points" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "members_phone_key" {
+    columns = [column.phone]
+    unique  = true
   }
 }

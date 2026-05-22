@@ -41,7 +41,9 @@ type checkoutItemRequest struct {
 }
 
 type checkoutRequest struct {
-	Items []checkoutItemRequest `json:"items"`
+	Items         []checkoutItemRequest `json:"items"`
+	CustomerPhone string                `json:"customer_phone"`
+	CustomerName  string                `json:"customer_name"`
 }
 
 type checkoutOptionResponse struct {
@@ -57,13 +59,18 @@ type checkoutItemResponse struct {
 }
 
 type checkoutResponse struct {
-	Code       string                 `json:"code"`
-	Subtotal   float64                `json:"subtotal"`
-	VAT        float64                `json:"vat"`
-	VATPercent float64                `json:"vat_percent"`
-	ShopName   string                 `json:"shop_name"`
-	Total      float64                `json:"total"`
-	Items      []checkoutItemResponse `json:"items"`
+	Code          string                 `json:"code"`
+	Subtotal      float64                `json:"subtotal"`
+	VAT           float64                `json:"vat"`
+	VATPercent    float64                `json:"vat_percent"`
+	ShopName      string                 `json:"shop_name"`
+	Total         float64                `json:"total"`
+	Items         []checkoutItemResponse `json:"items"`
+	HasMember     bool                   `json:"has_member"`
+	MemberName    string                 `json:"member_name,omitempty"`
+	MemberPhone   string                 `json:"member_phone,omitempty"`
+	PointsEarned  int64                  `json:"points_earned"`
+	PointsBalance int64                  `json:"points_balance"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +95,10 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.svc.Checkout(r.Context(), code, items)
+	result, err := h.svc.Checkout(r.Context(), code, items, service.CustomerInput{
+		Phone: req.CustomerPhone,
+		Name:  req.CustomerName,
+	})
 	if err != nil {
 		status, msg := classifyCheckoutError(err)
 		response.Error(w, r, status, msg, err)
@@ -113,13 +123,18 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.OK(w, r, checkoutResponse{
-		Code:       result.Code,
-		Subtotal:   result.Subtotal,
-		VAT:        result.VAT,
-		VATPercent: result.VATPercent,
-		ShopName:   result.ShopName,
-		Total:      result.Total,
-		Items:      respItems,
+		Code:          result.Code,
+		Subtotal:      result.Subtotal,
+		VAT:           result.VAT,
+		VATPercent:    result.VATPercent,
+		ShopName:      result.ShopName,
+		Total:         result.Total,
+		Items:         respItems,
+		HasMember:     result.HasMember,
+		MemberName:    result.MemberName,
+		MemberPhone:   result.MemberPhone,
+		PointsEarned:  result.PointsEarned,
+		PointsBalance: result.PointsBalance,
 	})
 }
 

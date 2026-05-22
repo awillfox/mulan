@@ -10,7 +10,7 @@ import (
 )
 
 const getSettings = `-- name: GetSettings :one
-SELECT id, shop_name, vat_percent, updated_at FROM settings WHERE id = 1
+SELECT id, shop_name, vat_percent, points_per_baht, updated_at FROM settings WHERE id = 1
 `
 
 func (q *Queries) GetSettings(ctx context.Context) (Setting, error) {
@@ -20,6 +20,7 @@ func (q *Queries) GetSettings(ctx context.Context) (Setting, error) {
 		&i.ID,
 		&i.ShopName,
 		&i.VatPercent,
+		&i.PointsPerBaht,
 		&i.UpdatedAt,
 	)
 	return i, err

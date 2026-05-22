@@ -15,6 +15,7 @@ CREATE TABLE "public"."settings" (
   "id" integer NOT NULL DEFAULT 1,
   "shop_name" character varying(255) NOT NULL DEFAULT 'My Shop',
   "vat_percent" double precision NOT NULL DEFAULT 0,
+  "points_per_baht" double precision NOT NULL DEFAULT 1,
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("id"),
   CONSTRAINT "settings_singleton" CHECK (id = 1)
@@ -57,13 +58,28 @@ CREATE TABLE "public"."options" (
 );
 -- Create index "options_group_sort" to table: "options"
 CREATE INDEX "options_group_sort" ON "public"."options" ("option_group_id", "sort_order");
+-- Create "members" table
+CREATE TABLE "public"."members" (
+  "id" serial NOT NULL,
+  "phone" character varying(20) NOT NULL,
+  "name" character varying(255) NULL,
+  "points" bigint NOT NULL DEFAULT 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id")
+);
+-- Create index "members_phone_key" to table: "members"
+CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "orders" table
 CREATE TABLE "public"."orders" (
   "id" serial NOT NULL,
   "code" character varying(20) NOT NULL,
   "status" character varying(20) NOT NULL DEFAULT 'open',
+  "member_id" integer NULL,
+  "points_earned" bigint NOT NULL DEFAULT 0,
   "created_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
+  PRIMARY KEY ("id"),
+  CONSTRAINT "fk_orders_member" FOREIGN KEY ("member_id") REFERENCES "public"."members" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
 -- Create index "orders_code_key" to table: "orders"
 CREATE UNIQUE INDEX "orders_code_key" ON "public"."orders" ("code");

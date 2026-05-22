@@ -25,21 +25,24 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 type settingsResponse struct {
-	ShopName   string  `json:"shop_name"`
-	VATPercent float64 `json:"vat_percent"`
+	ShopName      string  `json:"shop_name"`
+	VATPercent    float64 `json:"vat_percent"`
+	PointsPerBaht float64 `json:"points_per_baht"`
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	row := h.svc.Get()
 	response.OK(w, r, settingsResponse{
-		ShopName:   row.ShopName,
-		VATPercent: row.VatPercent,
+		ShopName:      row.ShopName,
+		VATPercent:    row.VatPercent,
+		PointsPerBaht: row.PointsPerBaht,
 	})
 }
 
 type updateRequest struct {
-	ShopName   string  `json:"shop_name"`
-	VATPercent float64 `json:"vat_percent"`
+	ShopName      string  `json:"shop_name"`
+	VATPercent    float64 `json:"vat_percent"`
+	PointsPerBaht float64 `json:"points_per_baht"`
 }
 
 func (req updateRequest) validate() error {
@@ -48,6 +51,9 @@ func (req updateRequest) validate() error {
 	}
 	if req.VATPercent < 0 || req.VATPercent > 100 {
 		return errors.New("vat_percent must be between 0 and 100")
+	}
+	if req.PointsPerBaht < 0 {
+		return errors.New("points_per_baht must be >= 0")
 	}
 	return nil
 }
@@ -63,14 +69,15 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent)
+	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent, req.PointsPerBaht)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to update settings", err)
 		return
 	}
 
 	response.OK(w, r, settingsResponse{
-		ShopName:   row.ShopName,
-		VATPercent: row.VatPercent,
+		ShopName:      row.ShopName,
+		VATPercent:    row.VatPercent,
+		PointsPerBaht: row.PointsPerBaht,
 	})
 }

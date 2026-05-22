@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countTodayOrders = `-- name: CountTodayOrders :one
@@ -28,9 +30,16 @@ const getOrderByCode = `-- name: GetOrderByCode :one
 SELECT id, code, status, created_at FROM orders WHERE code = $1
 `
 
-func (q *Queries) GetOrderByCode(ctx context.Context, code string) (Order, error) {
+type GetOrderByCodeRow struct {
+	ID        int32              `db:"id" json:"id"`
+	Code      string             `db:"code" json:"code"`
+	Status    string             `db:"status" json:"status"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) GetOrderByCode(ctx context.Context, code string) (GetOrderByCodeRow, error) {
 	row := q.db.QueryRow(ctx, getOrderByCode, code)
-	var i Order
+	var i GetOrderByCodeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Code,

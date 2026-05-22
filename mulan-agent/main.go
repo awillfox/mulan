@@ -188,8 +188,10 @@ type checkoutRequestItem struct {
 }
 
 type checkoutRequest struct {
-	OrderCode string                `json:"order_code"`
-	Items     []checkoutRequestItem `json:"items"`
+	OrderCode     string                `json:"order_code"`
+	Items         []checkoutRequestItem `json:"items"`
+	CustomerPhone string                `json:"customer_phone"`
+	CustomerName  string                `json:"customer_name"`
 }
 
 type checkoutOption struct {
@@ -205,13 +207,18 @@ type checkoutItem struct {
 }
 
 type checkoutResponse struct {
-	Code       string         `json:"code"`
-	Subtotal   float64        `json:"subtotal"`
-	VAT        float64        `json:"vat"`
-	VATPercent float64        `json:"vat_percent"`
-	ShopName   string         `json:"shop_name"`
-	Total      float64        `json:"total"`
-	Items      []checkoutItem `json:"items"`
+	Code          string         `json:"code"`
+	Subtotal      float64        `json:"subtotal"`
+	VAT           float64        `json:"vat"`
+	VATPercent    float64        `json:"vat_percent"`
+	ShopName      string         `json:"shop_name"`
+	Total         float64        `json:"total"`
+	Items         []checkoutItem `json:"items"`
+	HasMember     bool           `json:"has_member"`
+	MemberName    string         `json:"member_name"`
+	MemberPhone   string         `json:"member_phone"`
+	PointsEarned  int64          `json:"points_earned"`
+	PointsBalance int64          `json:"points_balance"`
 }
 
 type checkoutEnvelope struct {
@@ -232,7 +239,7 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 		}
 
 		// Forward to mulan API to persist order items and get computed totals
-		result, err := callCheckout(apiBase, req.OrderCode, req.Items)
+		result, err := callCheckout(apiBase, req.OrderCode, req.Items, req.CustomerPhone, req.CustomerName)
 		if err != nil {
 			log.Printf("checkout API error: %v", err)
 			http.Error(w, "checkout failed", http.StatusBadGateway)
@@ -257,7 +264,14 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 			if err := p.PrintOrderBill(req.OrderCode, items); err != nil {
 				log.Printf("order bill print error: %v", err)
 			}
-			if err := p.PrintReceipt(result.ShopName, items, result.Subtotal, result.VAT, result.VATPercent, result.Total); err != nil {
+			member := printer.MemberInfo{
+				Present: result.HasMember,
+				Name:    result.MemberName,
+				Phone:   result.MemberPhone,
+				Earned:  result.PointsEarned,
+				Balance: result.PointsBalance,
+			}
+			if err := p.PrintReceipt(result.ShopName, items, result.Subtotal, result.VAT, result.VATPercent, result.Total, member); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
@@ -271,8 +285,12 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 	}
 }
 
-func callCheckout(apiBase, code string, items any) (*checkoutResponse, error) {
-	body, _ := json.Marshal(map[string]any{"items": items})
+func callCheckout(apiBase, code string, items any, phone, name string) (*checkoutResponse, error) {
+	body, _ := json.Marshal(map[string]any{
+		"items":          items,
+		"customer_phone": phone,
+		"customer_name":  name,
+	})
 	resp, err := http.Post(apiBase+"/api/orders/"+code+"/checkout", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

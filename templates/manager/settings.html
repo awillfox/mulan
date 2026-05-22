@@ -19,6 +19,11 @@
                 <input id="vat-percent" type="number" min="0" max="100" step="0.01"
                        class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Points per ฿1 <span class="text-gray-400">(loyalty points earned per baht spent)</span></label>
+                <input id="points-per-baht" type="number" min="0" step="0.01"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
             <div class="flex items-center justify-between pt-2">
                 <span id="status" class="text-sm text-gray-400"></span>
                 <button onclick="save()"
@@ -37,25 +42,31 @@ async function load() {
     const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name || '';
     document.getElementById('vat-percent').value = s.vat_percent ?? 0;
+    document.getElementById('points-per-baht').value = s.points_per_baht ?? 1;
 }
 
 async function save() {
     const shop_name = document.getElementById('shop-name').value.trim();
     const vat_percent = parseFloat(document.getElementById('vat-percent').value);
+    const points_per_baht = parseFloat(document.getElementById('points-per-baht').value);
     if (!shop_name) { setStatus('Shop name is required', true); return; }
     if (isNaN(vat_percent) || vat_percent < 0 || vat_percent > 100) {
         setStatus('VAT must be 0–100', true); return;
+    }
+    if (isNaN(points_per_baht) || points_per_baht < 0) {
+        setStatus('Points per ฿1 must be ≥ 0', true); return;
     }
     setStatus('Saving…');
     const r = await fetch('/api/settings', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ shop_name, vat_percent }),
+        body: JSON.stringify({ shop_name, vat_percent, points_per_baht }),
     });
     if (!r.ok) { setStatus('Save failed', true); return; }
     const s = await unwrap(r);
     document.getElementById('shop-name').value = s.shop_name;
     document.getElementById('vat-percent').value = s.vat_percent;
+    document.getElementById('points-per-baht').value = s.points_per_baht;
     setStatus('Saved');
 }
 
@@ -67,7 +78,7 @@ function setStatus(msg, err) {
 }
 
 document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && (e.target.id === 'shop-name' || e.target.id === 'vat-percent')) save();
+    if (e.key === 'Enter' && (e.target.id === 'shop-name' || e.target.id === 'vat-percent' || e.target.id === 'points-per-baht')) save();
 });
 
 load();

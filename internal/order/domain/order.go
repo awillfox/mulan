@@ -29,4 +29,10 @@ type CheckoutResult struct {
 	ShopName   string
 	Total      float64 // THB
 	Items      []CheckoutResultItem
+
+	HasMember     bool
+	MemberName    string
+	MemberPhone   string
+	PointsEarned  int64 // points awarded by this order
+	PointsBalance int64 // member's running total after this order
 }

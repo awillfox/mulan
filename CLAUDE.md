@@ -33,7 +33,8 @@ Claude will update CLAUDE.md a long the way
 - `/manager` — dashboard, responsive for modern devices **(served by mulan)**
 - `/manager/items` — item/category manager (also attaches option groups to menus)
 - `/manager/option-groups` — manage shared option groups + their options
-- `/manager/settings` — shop name + VAT percent (persisted in DB)
+- `/manager/members` — member directory: search, CRUD, per-member points + order history
+- `/manager/settings` — shop name + VAT percent + loyalty earn rate (persisted in DB)
 
 ## API Endpoints
 - `GET /api/menus` — returns list of menus (currently mock data)
@@ -41,8 +42,14 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/menu-categories` — create a menu category `{name}`
 - `PATCH /api/menu-categories/{id}` — update a menu category `{name}`
 - `DELETE /api/menu-categories/{id}` — delete a menu category
-- `GET /api/settings` — returns `{shop_name, vat_percent}`
-- `PATCH /api/settings` — updates `{shop_name, vat_percent}`
+- `GET /api/settings` — returns `{shop_name, vat_percent, points_per_baht}`
+- `PATCH /api/settings` — updates `{shop_name, vat_percent, points_per_baht}`
+- `GET /api/members` — list members (optional `?q=` search on phone/name)
+- `POST /api/members` — create member `{phone, name?}` (409 on duplicate phone)
+- `PATCH /api/members/{id}` — update member `{phone, name?}`
+- `DELETE /api/members/{id}` — delete member (past orders kept, member_id set null)
+- `GET /api/members/{id}/orders` — member's paid order history (code, date, subtotal, points_earned)
+- `GET /api/members/lookup?phone=` — find one member by exact phone (404 if none)
 - `GET /api/option-groups` — list groups with their options
 - `POST /api/option-groups` — create group `{name, selection_mode}` (modes: `single_required`/`single_optional`/`multi`)
 - `PATCH /api/option-groups/{id}` — update group
@@ -56,7 +63,10 @@ Claude will update CLAUDE.md a long the way
 Shared, reusable option groups attach to menus via `menu_option_groups`. Each group has a selection mode: `single_required` (must pick one), `single_optional` (zero or one), `multi` (any). Options carry a `price_delta` in satang. Order lines snapshot selected options into `order_item_options` (name + price_delta) so receipts stay stable when groups/options edit later. Menu API responses include `option_groups` populated with their options. POS opens a modal whenever a clicked menu has any attached group; selected options print as indented sub-lines on both the order bill (kitchen) and the receipt.
 
 ## Settings (DB-backed)
-Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name` and `vat_percent` (double precision, 0 disables VAT). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
+Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
+
+## Membership / Loyalty
+Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router
