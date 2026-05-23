@@ -12,6 +12,32 @@ import (
 	"mulan/internal/response"
 )
 
+type heldOrderResponse struct {
+	Code      string          `json:"code"`
+	CreatedAt string          `json:"created_at,omitempty"`
+	HeldAt    string          `json:"held_at,omitempty"`
+	HeldLabel *string         `json:"held_label,omitempty"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+func toHeldResponse(h service.HeldOrder) heldOrderResponse {
+	out := heldOrderResponse{
+		Code:      h.Code,
+		HeldLabel: h.HeldLabel,
+		Payload:   json.RawMessage(h.Payload),
+	}
+	if h.CreatedAt.Valid {
+		out.CreatedAt = h.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if h.HeldAt.Valid {
+		out.HeldAt = h.HeldAt.Time.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if len(out.Payload) == 0 {
+		out.Payload = json.RawMessage(`{}`)
+	}
+	return out
+}
+
 type Handler struct {
 	svc *service.OrderService
 }
@@ -23,6 +49,83 @@ func NewHandler(svc *service.OrderService) *Handler {
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/", h.create)
 	r.Post("/{code}/checkout", h.checkout)
+	r.Get("/held", h.listHeld)
+	r.Put("/{code}/hold", h.hold)
+	r.Post("/{code}/resume", h.resume)
+	r.Delete("/{code}/hold", h.discardHeld)
+}
+
+type holdRequest struct {
+	Label   *string         `json:"label,omitempty"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+func (h *Handler) hold(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	var req holdRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
+		return
+	}
+	if len(req.Payload) == 0 {
+		response.Error(w, r, http.StatusBadRequest, "payload required", nil)
+		return
+	}
+	held, err := h.svc.Hold(r.Context(), code, req.Label, req.Payload)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrOrderNotFound):
+			response.Error(w, r, http.StatusNotFound, "order not found", err)
+		case errors.Is(err, service.ErrAlreadyPaid):
+			response.Error(w, r, http.StatusConflict, "order already paid", err)
+		default:
+			response.Error(w, r, http.StatusInternalServerError, "failed to hold order", err)
+		}
+		return
+	}
+	response.OK(w, r, toHeldResponse(held))
+}
+
+func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	payload, err := h.svc.Resume(r.Context(), code)
+	if err != nil {
+		if errors.Is(err, service.ErrNotHeld) {
+			response.Error(w, r, http.StatusNotFound, "order not held", err)
+			return
+		}
+		response.Error(w, r, http.StatusInternalServerError, "failed to resume order", err)
+		return
+	}
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	response.OK(w, r, map[string]any{
+		"code":    code,
+		"payload": json.RawMessage(payload),
+	})
+}
+
+func (h *Handler) discardHeld(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if err := h.svc.DiscardHeld(r.Context(), code); err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "failed to discard held order", err)
+		return
+	}
+	response.NoContent(w, r)
+}
+
+func (h *Handler) listHeld(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListHeld(r.Context())
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "failed to list held orders", err)
+		return
+	}
+	out := make([]heldOrderResponse, len(list))
+	for i, h := range list {
+		out[i] = toHeldResponse(h)
+	}
+	response.OK(w, r, out)
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -35,13 +138,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 type checkoutItemRequest struct {
-	MenuID    int32   `json:"menu_id"`
-	Qty       int32   `json:"qty"`
-	OptionIDs []int32 `json:"option_ids"`
+	MenuID      int32   `json:"menu_id"`
+	Qty         int32   `json:"qty"`
+	OptionIDs   []int32 `json:"option_ids"`
+	DiscountIDs []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
 	Items         []checkoutItemRequest `json:"items"`
+	DiscountIDs   []int32               `json:"discount_ids"` // whole-order discounts
 	CustomerPhone string                `json:"customer_phone"`
 	CustomerName  string                `json:"customer_name"`
 }
@@ -58,19 +163,28 @@ type checkoutItemResponse struct {
 	Options []checkoutOptionResponse `json:"options"`
 }
 
+type checkoutDiscountResponse struct {
+	Name   string  `json:"name"`
+	Type   string  `json:"type"`
+	Amount float64 `json:"amount"`
+}
+
 type checkoutResponse struct {
-	Code          string                 `json:"code"`
-	Subtotal      float64                `json:"subtotal"`
-	VAT           float64                `json:"vat"`
-	VATPercent    float64                `json:"vat_percent"`
-	ShopName      string                 `json:"shop_name"`
-	Total         float64                `json:"total"`
-	Items         []checkoutItemResponse `json:"items"`
-	HasMember     bool                   `json:"has_member"`
-	MemberName    string                 `json:"member_name,omitempty"`
-	MemberPhone   string                 `json:"member_phone,omitempty"`
-	PointsEarned  int64                  `json:"points_earned"`
-	PointsBalance int64                  `json:"points_balance"`
+	Code          string                     `json:"code"`
+	Subtotal      float64                    `json:"subtotal"`
+	Discount      float64                    `json:"discount"`
+	VAT           float64                    `json:"vat"`
+	VATPercent    float64                    `json:"vat_percent"`
+	ShopName      string                     `json:"shop_name"`
+	ReceiptFooter string                     `json:"receipt_footer"`
+	Total         float64                    `json:"total"`
+	Items         []checkoutItemResponse     `json:"items"`
+	Discounts     []checkoutDiscountResponse `json:"discounts"`
+	HasMember     bool                       `json:"has_member"`
+	MemberName    string                     `json:"member_name,omitempty"`
+	MemberPhone   string                     `json:"member_phone,omitempty"`
+	PointsEarned  int64                      `json:"points_earned"`
+	PointsBalance int64                      `json:"points_balance"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -89,13 +203,14 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	items := make([]service.CheckoutItemInput, len(req.Items))
 	for i, it := range req.Items {
 		items[i] = service.CheckoutItemInput{
-			MenuID:    it.MenuID,
-			Qty:       it.Qty,
-			OptionIDs: it.OptionIDs,
+			MenuID:      it.MenuID,
+			Qty:         it.Qty,
+			OptionIDs:   it.OptionIDs,
+			DiscountIDs: it.DiscountIDs,
 		}
 	}
 
-	result, err := h.svc.Checkout(r.Context(), code, items, service.CustomerInput{
+	result, err := h.svc.Checkout(r.Context(), code, items, req.DiscountIDs, service.CustomerInput{
 		Phone: req.CustomerPhone,
 		Name:  req.CustomerName,
 	})
@@ -122,14 +237,26 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	respDiscounts := make([]checkoutDiscountResponse, len(result.Discounts))
+	for i, d := range result.Discounts {
+		respDiscounts[i] = checkoutDiscountResponse{
+			Name:   d.Name,
+			Type:   d.Type,
+			Amount: money.New(d.Amount, money.THB).AsMajorUnits(),
+		}
+	}
+
 	response.OK(w, r, checkoutResponse{
 		Code:          result.Code,
 		Subtotal:      result.Subtotal,
+		Discount:      result.Discount,
 		VAT:           result.VAT,
 		VATPercent:    result.VATPercent,
 		ShopName:      result.ShopName,
+		ReceiptFooter: result.ReceiptFooter,
 		Total:         result.Total,
 		Items:         respItems,
+		Discounts:     respDiscounts,
 		HasMember:     result.HasMember,
 		MemberName:    result.MemberName,
 		MemberPhone:   result.MemberPhone,
@@ -154,6 +281,10 @@ func classifyCheckoutError(err error) (int, string) {
 		return http.StatusBadRequest, "unknown option"
 	case errors.Is(err, service.ErrInvalidOption):
 		return http.StatusBadRequest, "option not valid for menu"
+	case errors.Is(err, service.ErrUnknownDiscount):
+		return http.StatusBadRequest, "unknown discount"
+	case errors.Is(err, service.ErrDiscountInactive):
+		return http.StatusBadRequest, "discount is not available"
 	default:
 		return http.StatusInternalServerError, "checkout failed"
 	}

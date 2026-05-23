@@ -5,7 +5,18 @@ INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 UPDATE settings
 SET shop_name       = $1,
     vat_percent     = $2,
-    points_per_baht = $3,
+    receipt_footer  = $3,
+    points_per_baht = $4,
     updated_at      = now()
 WHERE id = 1
-RETURNING id, shop_name, vat_percent, points_per_baht, updated_at;
+RETURNING id, shop_name, vat_percent, receipt_footer, points_per_baht, updated_at;
+
+-- name: SetSettingsLogo :exec
+UPDATE settings
+SET logo = $1, logo_mime = $2, updated_at = now()
+WHERE id = 1;
+
+-- name: ClearSettingsLogo :exec
+UPDATE settings
+SET logo = NULL, logo_mime = NULL, updated_at = now()
+WHERE id = 1;

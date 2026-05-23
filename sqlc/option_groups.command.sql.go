@@ -7,23 +7,32 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOptionGroup = `-- name: CreateOptionGroup :one
-INSERT INTO option_groups (name, selection_mode)
-VALUES ($1, $2)
-RETURNING id, name, selection_mode
+INSERT INTO option_groups (name, selection_mode, owner_menu_id)
+VALUES ($1, $2, $3)
+RETURNING id, name, selection_mode, owner_menu_id
 `
 
 type CreateOptionGroupParams struct {
-	Name          string `db:"name" json:"name"`
-	SelectionMode string `db:"selection_mode" json:"selection_mode"`
+	Name          string      `db:"name" json:"name"`
+	SelectionMode string      `db:"selection_mode" json:"selection_mode"`
+	OwnerMenuID   pgtype.Int4 `db:"owner_menu_id" json:"owner_menu_id"`
 }
 
+// owner_menu_id NULL = shared preset; set = private isolated copy for a menu.
 func (q *Queries) CreateOptionGroup(ctx context.Context, arg CreateOptionGroupParams) (OptionGroup, error) {
-	row := q.db.QueryRow(ctx, createOptionGroup, arg.Name, arg.SelectionMode)
+	row := q.db.QueryRow(ctx, createOptionGroup, arg.Name, arg.SelectionMode, arg.OwnerMenuID)
 	var i OptionGroup
-	err := row.Scan(&i.ID, &i.Name, &i.SelectionMode)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SelectionMode,
+		&i.OwnerMenuID,
+	)
 	return i, err
 }
 
@@ -36,10 +45,20 @@ func (q *Queries) DeleteOptionGroup(ctx context.Context, id int32) error {
 	return err
 }
 
+const deletePrivateGroupsForMenu = `-- name: DeletePrivateGroupsForMenu :exec
+DELETE FROM option_groups WHERE owner_menu_id = $1
+`
+
+// Drops every isolated group owned by the menu (options + menu links cascade).
+func (q *Queries) DeletePrivateGroupsForMenu(ctx context.Context, ownerMenuID pgtype.Int4) error {
+	_, err := q.db.Exec(ctx, deletePrivateGroupsForMenu, ownerMenuID)
+	return err
+}
+
 const updateOptionGroup = `-- name: UpdateOptionGroup :one
 UPDATE option_groups SET name = $2, selection_mode = $3
 WHERE id = $1
-RETURNING id, name, selection_mode
+RETURNING id, name, selection_mode, owner_menu_id
 `
 
 type UpdateOptionGroupParams struct {
@@ -51,6 +70,11 @@ type UpdateOptionGroupParams struct {
 func (q *Queries) UpdateOptionGroup(ctx context.Context, arg UpdateOptionGroupParams) (OptionGroup, error) {
 	row := q.db.QueryRow(ctx, updateOptionGroup, arg.ID, arg.Name, arg.SelectionMode)
 	var i OptionGroup
-	err := row.Scan(&i.ID, &i.Name, &i.SelectionMode)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SelectionMode,
+		&i.OwnerMenuID,
+	)
 	return i, err
 }

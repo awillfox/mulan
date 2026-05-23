@@ -26,6 +26,37 @@ func (q *Queries) CountTodayOrders(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getHeldOrder = `-- name: GetHeldOrder :one
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE code = $1 AND status = 'held'
+`
+
+type GetHeldOrderRow struct {
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+func (q *Queries) GetHeldOrder(ctx context.Context, code string) (GetHeldOrderRow, error) {
+	row := q.db.QueryRow(ctx, getHeldOrder, code)
+	var i GetHeldOrderRow
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+		&i.HeldAt,
+		&i.HeldLabel,
+		&i.HeldPayload,
+	)
+	return i, err
+}
+
 const getOrderByCode = `-- name: GetOrderByCode :one
 SELECT id, code, status, created_at FROM orders WHERE code = $1
 `
@@ -47,6 +78,51 @@ func (q *Queries) GetOrderByCode(ctx context.Context, code string) (GetOrderByCo
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listHeldOrders = `-- name: ListHeldOrders :many
+SELECT id, code, status, created_at, held_at, held_label, held_payload
+FROM orders
+WHERE status = 'held'
+ORDER BY held_at DESC NULLS LAST
+`
+
+type ListHeldOrdersRow struct {
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+func (q *Queries) ListHeldOrders(ctx context.Context) ([]ListHeldOrdersRow, error) {
+	rows, err := q.db.Query(ctx, listHeldOrders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHeldOrdersRow{}
+	for rows.Next() {
+		var i ListHeldOrdersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Status,
+			&i.CreatedAt,
+			&i.HeldAt,
+			&i.HeldLabel,
+			&i.HeldPayload,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const sumOrderItems = `-- name: SumOrderItems :one

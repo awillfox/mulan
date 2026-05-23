@@ -30,6 +30,10 @@ func (h *Handler) OptionGroups(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/option_groups.html")
 }
 
+func (h *Handler) Discounts(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "layouts/manager.html", "manager/discounts.html")
+}
+
 func (h *Handler) Members(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/members.html")
 }

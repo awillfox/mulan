@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{template "title" .}} - Mulan Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Display:wght@400;500;700&family=Roboto+Flex:opsz,wght@8..144,300;8..144,400;8..144,500;8..144,600;8..144,700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+    <style>
+      :root { font-family: 'Roboto Flex', system-ui, sans-serif; }
+      body { font-family: 'Roboto Flex', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .material-symbols-rounded { font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; vertical-align: middle; }
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <nav class="bg-white shadow">
@@ -17,6 +26,7 @@
                     <a href="/manager" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Report</a>
                     <a href="/manager/items" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Item Manager</a>
                     <a href="/manager/option-groups" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Option Groups</a>
+                    <a href="/manager/discounts" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Discounts</a>
                     <a href="/manager/members" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Members</a>
                     <a href="/manager/settings" class="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium">Settings</a>
                 </div>

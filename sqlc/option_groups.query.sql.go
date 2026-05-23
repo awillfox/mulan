@@ -10,18 +10,24 @@ import (
 )
 
 const getOptionGroup = `-- name: GetOptionGroup :one
-SELECT id, name, selection_mode FROM option_groups WHERE id = $1
+SELECT id, name, selection_mode, owner_menu_id
+FROM option_groups WHERE id = $1
 `
 
 func (q *Queries) GetOptionGroup(ctx context.Context, id int32) (OptionGroup, error) {
 	row := q.db.QueryRow(ctx, getOptionGroup, id)
 	var i OptionGroup
-	err := row.Scan(&i.ID, &i.Name, &i.SelectionMode)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SelectionMode,
+		&i.OwnerMenuID,
+	)
 	return i, err
 }
 
 const getOptionGroupsByIDs = `-- name: GetOptionGroupsByIDs :many
-SELECT id, name, selection_mode
+SELECT id, name, selection_mode, owner_menu_id
 FROM option_groups
 WHERE id = ANY($1::int[])
 ORDER BY id
@@ -36,7 +42,12 @@ func (q *Queries) GetOptionGroupsByIDs(ctx context.Context, ids []int32) ([]Opti
 	items := []OptionGroup{}
 	for rows.Next() {
 		var i OptionGroup
-		if err := rows.Scan(&i.ID, &i.Name, &i.SelectionMode); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SelectionMode,
+			&i.OwnerMenuID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -75,9 +86,14 @@ func (q *Queries) ListMenuOptionGroupLinks(ctx context.Context, menuIds []int32)
 }
 
 const listOptionGroups = `-- name: ListOptionGroups :many
-SELECT id, name, selection_mode FROM option_groups ORDER BY id
+SELECT id, name, selection_mode, owner_menu_id
+FROM option_groups
+WHERE owner_menu_id IS NULL
+ORDER BY id
 `
 
+// Shared preset groups only. Private isolated copies (owner_menu_id set)
+// belong to a single menu and must not show in the manager or item picker.
 func (q *Queries) ListOptionGroups(ctx context.Context) ([]OptionGroup, error) {
 	rows, err := q.db.Query(ctx, listOptionGroups)
 	if err != nil {
@@ -87,7 +103,12 @@ func (q *Queries) ListOptionGroups(ctx context.Context) ([]OptionGroup, error) {
 	items := []OptionGroup{}
 	for rows.Next() {
 		var i OptionGroup
-		if err := rows.Scan(&i.ID, &i.Name, &i.SelectionMode); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SelectionMode,
+			&i.OwnerMenuID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

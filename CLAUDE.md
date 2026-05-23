@@ -33,8 +33,7 @@ Claude will update CLAUDE.md a long the way
 - `/manager` — dashboard, responsive for modern devices **(served by mulan)**
 - `/manager/items` — item/category manager (also attaches option groups to menus)
 - `/manager/option-groups` — manage shared option groups + their options
-- `/manager/members` — member directory: search, CRUD, per-member points + order history
-- `/manager/settings` — shop name + VAT percent + loyalty earn rate (persisted in DB)
+- `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
 - `GET /api/menus` — returns list of menus (currently mock data)
@@ -57,10 +56,33 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/option-groups/{id}/options` — create option `{name, price_delta, sort_order}` (price_delta in THB)
 - `PATCH /api/options/{id}` — update option
 - `DELETE /api/options/{id}` — delete option
-- `PUT /api/menus/{id}/option-groups` — set attached groups `{group_ids: [..]}` (replaces all)
+- `PUT /api/menus/{id}/option-groups` — set the menu's option-group list `{groups: [..]}` (replaces all). Each entry is either shared `{isolated:false, id}` or isolated `{isolated:true, name, selection_mode, options:[{name, price_delta}]}` (price_delta in THB)
+- `GET /api/discounts` — list all preset discounts (manager)
+- `GET /api/discounts/active` — list active discounts only (POS picker)
+- `POST /api/discounts` — create `{name, discount_type, value, active}` (types: `fixed`/`percent`)
+- `PATCH /api/discounts/{id}` — update a discount
+- `DELETE /api/discounts/{id}` — delete a discount
 
 ## Option Groups
 Shared, reusable option groups attach to menus via `menu_option_groups`. Each group has a selection mode: `single_required` (must pick one), `single_optional` (zero or one), `multi` (any). Options carry a `price_delta` in satang. Order lines snapshot selected options into `order_item_options` (name + price_delta) so receipts stay stable when groups/options edit later. Menu API responses include `option_groups` populated with their options. POS opens a modal whenever a clicked menu has any attached group; selected options print as indented sub-lines on both the order bill (kitchen) and the receipt.
+
+### Isolated (per-menu) groups
+When attaching a group to a menu item, the manager can tick **Customize** to isolate it. An isolated group is a private clone: `option_groups.owner_menu_id` points at the owning menu (NULL = shared preset). It is hidden from the shared list (`ListOptionGroups` filters `owner_menu_id IS NULL`) so it never appears when editing other items, and its options/prices are editable inline in the item dialog without touching the source preset. `SetMenuGroups` fully replaces a menu's groups in one transaction — it clears links, drops the menu's old private groups (`DeletePrivateGroupsForMenu`), then re-attaches shared groups and recreates isolated ones. Deleting a menu cascades its private groups. Menu API `option_groups[]` entries carry an `isolated` bool.
+
+## Discounts
+Preset discounts created in `/manager/discounts`, applied by the cashier at POS.
+A discount is either `fixed` (flat THB off) or `percent` (% off). The `discounts.value`
+column stores both scaled by 100: satang for fixed, hundredths-of-percent for percent
+(10% = 1000). API JSON exposes `value` already divided by 100 (THB / percent).
+Discounts apply at two scopes: per cart line and whole order. Checkout computes
+authoritative totals — per-line discounts reduce each line, whole-order discounts
+reduce the net subtotal, then VAT is computed on the discounted subtotal (discount
+before VAT). Multiple discounts may stack; each is clamped so no line and no order
+total goes below zero. Every applied discount is snapshotted into `order_discounts`
+(name + type + computed satang amount; `order_item_id` null for whole-order) so
+receipts/reports stay stable when a preset is later edited or deleted. Checkout
+response includes `discount` (total THB off) and a `discounts` list. Inactive
+discounts are rejected at checkout.
 
 ## Settings (DB-backed)
 Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).

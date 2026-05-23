@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mulan/sqlc"
@@ -58,6 +59,7 @@ func (s *Service) ListGroups(ctx context.Context) ([]GroupWithOptions, error) {
 }
 
 func (s *Service) CreateGroup(ctx context.Context, name, mode string) (sqlc.OptionGroup, error) {
+	// Manager-created groups are shared presets — owner_menu_id stays NULL.
 	return s.q.CreateOptionGroup(ctx, sqlc.CreateOptionGroupParams{Name: name, SelectionMode: mode})
 }
 
@@ -91,27 +93,48 @@ func (s *Service) DeleteOption(ctx context.Context, id int32) error {
 	return s.q.DeleteOption(ctx, id)
 }
 
+// OptionSpec is one option inside an isolated group.
+type OptionSpec struct {
+	Name       string
+	PriceDelta int64 // satang
+}
+
+// MenuGroupSpec is one entry in a menu's option-group list. A shared entry
+// just references an existing preset by SharedID. An isolated entry is a
+// private per-menu group: the preset was cloned and its options/prices
+// edited, so the group is created fresh and owned by the menu.
+type MenuGroupSpec struct {
+	Isolated      bool
+	SharedID      int32 // when !Isolated
+	Name          string
+	SelectionMode string
+	Options       []OptionSpec
+}
+
 // SetMenuGroups replaces the menu's attached option groups. Runs in a
-// transaction so a failure during re-insert can't leave the menu with zero
-// attached groups. Validates every requested group exists before mutating
-// anything so an invalid ID rolls back without touching menu_option_groups.
-func (s *Service) SetMenuGroups(ctx context.Context, menuID int32, groupIDs []int32) error {
-	dedup := make([]int32, 0, len(groupIDs))
-	seen := make(map[int32]struct{}, len(groupIDs))
-	for _, id := range groupIDs {
-		if _, ok := seen[id]; ok {
+// transaction so a partial failure can't leave the menu half-wired. Shared
+// IDs are validated up front so an invalid ID rolls back cleanly. Every
+// isolated group the menu previously owned is dropped and the requested ones
+// recreated — full replace keeps the operation idempotent.
+func (s *Service) SetMenuGroups(ctx context.Context, menuID int32, specs []MenuGroupSpec) error {
+	sharedSeen := make(map[int32]struct{})
+	sharedIDs := make([]int32, 0, len(specs))
+	for _, sp := range specs {
+		if sp.Isolated {
 			continue
 		}
-		seen[id] = struct{}{}
-		dedup = append(dedup, id)
+		if _, ok := sharedSeen[sp.SharedID]; ok {
+			continue
+		}
+		sharedSeen[sp.SharedID] = struct{}{}
+		sharedIDs = append(sharedIDs, sp.SharedID)
 	}
-
-	if len(dedup) > 0 {
-		found, err := s.q.GetOptionGroupsByIDs(ctx, dedup)
+	if len(sharedIDs) > 0 {
+		found, err := s.q.GetOptionGroupsByIDs(ctx, sharedIDs)
 		if err != nil {
 			return fmt.Errorf("validate groups: %w", err)
 		}
-		if len(found) != len(dedup) {
+		if len(found) != len(sharedIDs) {
 			return ErrUnknownGroup
 		}
 	}
@@ -124,12 +147,38 @@ func (s *Service) SetMenuGroups(ctx context.Context, menuID int32, groupIDs []in
 	q := s.q.WithTx(tx)
 
 	if err := q.ClearMenuOptionGroups(ctx, menuID); err != nil {
-		return fmt.Errorf("clear: %w", err)
+		return fmt.Errorf("clear links: %w", err)
 	}
-	for i, gid := range dedup {
+	if err := q.DeletePrivateGroupsForMenu(ctx, pgtype.Int4{Int32: menuID, Valid: true}); err != nil {
+		return fmt.Errorf("clear private groups: %w", err)
+	}
+
+	for i, sp := range specs {
+		groupID := sp.SharedID
+		if sp.Isolated {
+			g, err := q.CreateOptionGroup(ctx, sqlc.CreateOptionGroupParams{
+				Name:          sp.Name,
+				SelectionMode: sp.SelectionMode,
+				OwnerMenuID:   pgtype.Int4{Int32: menuID, Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("create isolated group: %w", err)
+			}
+			groupID = g.ID
+			for j, o := range sp.Options {
+				if _, err := q.CreateOption(ctx, sqlc.CreateOptionParams{
+					OptionGroupID: groupID,
+					Name:          o.Name,
+					PriceDelta:    o.PriceDelta,
+					SortOrder:     int32(j),
+				}); err != nil {
+					return fmt.Errorf("create isolated option: %w", err)
+				}
+			}
+		}
 		if err := q.AttachMenuOptionGroup(ctx, sqlc.AttachMenuOptionGroupParams{
 			MenuID:        menuID,
-			OptionGroupID: gid,
+			OptionGroupID: groupID,
 			SortOrder:     int32(i),
 		}); err != nil {
 			return fmt.Errorf("attach: %w", err)

@@ -1,0 +1,159 @@
+{{template "title" .}}
+{{define "title"}}Discounts{{end}}
+
+{{define "content"}}
+<div class="bg-white rounded-lg shadow">
+    <div class="p-6 border-b flex items-center justify-between">
+        <div>
+            <h2 class="text-lg font-bold">Discounts</h2>
+            <p class="text-xs text-gray-400 mt-0.5">Preset discounts the cashier can apply at the POS — e.g. "Bring your own cup −฿10".</p>
+        </div>
+        <button onclick="openModal()" class="bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">+ Add Discount</button>
+    </div>
+    <div class="divide-y" id="list"></div>
+</div>
+
+<!-- Discount Modal -->
+<div id="modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-96 p-6">
+        <h3 class="font-bold text-lg mb-4" id="modal-title">Add Discount</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Name</label>
+                <input id="f-name" type="text" placeholder="Bring your own cup"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Type</label>
+                <select id="f-type" onchange="syncTypeUI()"
+                        class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="fixed">Fixed amount off (THB)</option>
+                    <option value="percent">Percentage off (%)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1" id="f-value-label">Amount (THB)</label>
+                <input id="f-value" type="number" step="0.01" min="0" value="0"
+                       class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <p class="text-xs text-gray-400 mt-1" id="f-value-hint">Flat THB taken off.</p>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input id="f-active" type="checkbox" checked class="rounded">
+                Active (available at POS)
+            </label>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+            <button onclick="closeModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
+            <button onclick="save()" class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const unwrap = r => r.json().then(d => d.data ?? d);
+
+let discounts = [];
+let editId = null;
+
+async function load() {
+    discounts = await fetch('/api/discounts').then(unwrap);
+    render();
+}
+
+function fmtValue(d) {
+    if (d.discount_type === 'percent') return d.value + '% off';
+    return '−฿' + Number(d.value).toFixed(2);
+}
+
+function render() {
+    const el = document.getElementById('list');
+    if (!discounts.length) {
+        el.innerHTML = '<p class="p-6 text-sm text-gray-400">No discounts yet.</p>';
+        return;
+    }
+    el.innerHTML = discounts.map(d => `
+        <div class="px-6 py-4 flex items-center justify-between">
+            <div>
+                <p class="text-sm font-bold">
+                    ${esc(d.name)}
+                    ${d.active ? '' : '<span class="ml-2 text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded">inactive</span>'}
+                </p>
+                <p class="text-xs text-gray-500 mt-0.5">${fmtValue(d)}</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="openModal(${d.id})" class="text-xs text-blue-600 hover:underline">Edit</button>
+                <button onclick="del(${d.id})" class="text-xs text-red-500 hover:underline">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function syncTypeUI() {
+    const type = document.getElementById('f-type').value;
+    const label = document.getElementById('f-value-label');
+    const hint = document.getElementById('f-value-hint');
+    if (type === 'percent') {
+        label.textContent = 'Percent (%)';
+        hint.textContent = 'Percentage taken off (0–100).';
+    } else {
+        label.textContent = 'Amount (THB)';
+        hint.textContent = 'Flat THB taken off.';
+    }
+}
+
+function openModal(id) {
+    editId = id || null;
+    const d = id ? discounts.find(x => x.id === id) : null;
+    document.getElementById('modal-title').textContent = id ? 'Edit Discount' : 'Add Discount';
+    document.getElementById('f-name').value = d ? d.name : '';
+    document.getElementById('f-type').value = d ? d.discount_type : 'fixed';
+    document.getElementById('f-value').value = d ? d.value : 0;
+    document.getElementById('f-active').checked = d ? d.active : true;
+    syncTypeUI();
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('f-name').focus();
+}
+function closeModal() {
+    document.getElementById('modal').classList.add('hidden');
+    editId = null;
+}
+
+async function save() {
+    const name = document.getElementById('f-name').value.trim();
+    const type = document.getElementById('f-type').value;
+    const value = parseFloat(document.getElementById('f-value').value) || 0;
+    const active = document.getElementById('f-active').checked;
+    if (!name) { alert('Name is required.'); return; }
+    if (value < 0) { alert('Value must not be negative.'); return; }
+    if (type === 'percent' && value > 100) { alert('Percent cannot exceed 100.'); return; }
+    const body = JSON.stringify({ name, discount_type: type, value, active });
+    const url = editId ? `/api/discounts/${editId}` : '/api/discounts';
+    const method = editId ? 'PATCH' : 'POST';
+    const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Failed to save discount.');
+        return;
+    }
+    closeModal();
+    await load();
+}
+
+async function del(id) {
+    if (!confirm('Delete this discount? Past orders that used it keep their record.')) return;
+    await fetch(`/api/discounts/${id}`, { method: 'DELETE' });
+    await load();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    else if (e.key === 'Enter' && !document.getElementById('modal').classList.contains('hidden')) save();
+});
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+load();
+</script>
+{{end}}
