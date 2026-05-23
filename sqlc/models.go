@@ -19,6 +19,16 @@ type CashDrawerAudit struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type Cashier struct {
+	ID        int32              `db:"id" json:"id"`
+	LoginID   string             `db:"login_id" json:"login_id"`
+	Name      string             `db:"name" json:"name"`
+	PinHash   string             `db:"pin_hash" json:"pin_hash"`
+	Active    bool               `db:"active" json:"active"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Discount struct {
 	ID           int32              `db:"id" json:"id"`
 	Name         string             `db:"name" json:"name"`

@@ -677,8 +677,72 @@
   .scrim.right { justify-content: flex-end; padding: 0; }
 </style>
 
+<!-- ── Cashier login overlay ─────────────────────────────────────── -->
+<div id="login-overlay" style="
+    position:fixed;inset:0;z-index:9999;
+    background:linear-gradient(135deg,#1a237e 0%,#283593 100%);
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:0">
+
+    <div style="color:#fff;text-align:center;margin-bottom:28px">
+        <div style="font-size:32px;font-weight:700;letter-spacing:-.02em">Mulan POS</div>
+        <div id="login-subtitle" style="font-size:15px;opacity:.75;margin-top:4px">Enter your cashier ID</div>
+    </div>
+
+    <!-- Display -->
+    <div style="background:rgba(255,255,255,.12);border-radius:16px;padding:14px 24px;min-width:260px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;min-height:62px">
+        <span id="login-display"
+              style="font-size:28px;font-family:'Roboto Mono',monospace;letter-spacing:3px;color:#fff;flex:1;min-height:1em">
+            <span id="login-display-placeholder" style="opacity:.4;font-size:15px;letter-spacing:normal;font-family:inherit">—</span>
+        </span>
+        <button onclick="loginKpBack()" style="background:transparent;border:none;cursor:pointer;color:rgba(255,255,255,.7);padding:4px;margin-left:8px">
+            <span class="material-symbols-rounded" style="font-size:24px;vertical-align:middle">backspace</span>
+        </button>
+    </div>
+
+    <!-- Error -->
+    <div id="login-err" style="color:#ff8a80;font-size:13px;min-height:20px;margin-bottom:8px;text-align:center"></div>
+
+    <!-- Numpad -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:260px">
+        <button class="lkp" onclick="loginKpDigit('1')">1</button>
+        <button class="lkp" onclick="loginKpDigit('2')">2</button>
+        <button class="lkp" onclick="loginKpDigit('3')">3</button>
+        <button class="lkp" onclick="loginKpDigit('4')">4</button>
+        <button class="lkp" onclick="loginKpDigit('5')">5</button>
+        <button class="lkp" onclick="loginKpDigit('6')">6</button>
+        <button class="lkp" onclick="loginKpDigit('7')">7</button>
+        <button class="lkp" onclick="loginKpDigit('8')">8</button>
+        <button class="lkp" onclick="loginKpDigit('9')">9</button>
+        <button class="lkp lkp-ghost" onclick="loginBack()" id="login-back-btn" style="display:none">
+            <span class="material-symbols-rounded" style="font-size:18px;vertical-align:-3px">arrow_back</span>
+        </button>
+        <button class="lkp lkp-ghost" onclick="loginKpClear()" id="login-clear-btn">Clear</button>
+        <button class="lkp" onclick="loginKpDigit('0')">0</button>
+    </div>
+
+    <!-- Next / Login button -->
+    <button onclick="loginNext()" id="login-next-btn"
+            style="margin-top:16px;width:260px;padding:14px;border:none;border-radius:12px;
+                   background:#fff;color:#1a237e;font-size:16px;font-weight:700;cursor:pointer;
+                   letter-spacing:.02em">
+        Next →
+    </button>
+</div>
+
+<style>
+.lkp {
+    padding:16px 0;border:1px solid rgba(255,255,255,.25);border-radius:10px;
+    background:rgba(255,255,255,.15);color:#fff;font-size:20px;font-weight:500;
+    cursor:pointer;transition:background .1s;
+}
+.lkp:hover  { background:rgba(255,255,255,.28); }
+.lkp:active { background:rgba(255,255,255,.4); transform:scale(.95); }
+.lkp.lkp-ghost { font-size:14px; }
+</style>
+
 <!-- ── Shell ─────────────────────────────────────────────────────── -->
-<div class="shell">
+<div class="shell" id="pos-shell" style="visibility:hidden">
 
     <!-- Top bar -->
     <header class="topbar">
@@ -702,6 +766,12 @@
         <button class="icon-btn" onclick="openSettings()" title="Settings">
             <span class="material-symbols-rounded">settings</span>
         </button>
+        <div id="cashier-badge"
+             style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.07);border-radius:8px;padding:4px 10px;margin-left:4px;cursor:pointer"
+             onclick="confirmLogout()" title="Click to log out">
+            <span class="material-symbols-rounded" style="font-size:18px;color:var(--on-surf-var)">badge</span>
+            <span id="cashier-badge-name" style="font-size:13px;font-weight:500;color:var(--on-surf)"></span>
+        </div>
     </header>
 
     <!-- Main split -->
@@ -832,35 +902,60 @@
 
 <!-- ── Member capture modal (shown before tender) ──────────────── -->
 <div id="member-modal" class="scrim">
-    <div class="dialog" style="max-width:360px">
+    <div class="dialog" style="max-width:340px">
         <div class="d-head">
             <h3>Member (optional)</h3>
             <button class="icon-btn" onclick="skipMember()"><span class="material-symbols-rounded">close</span></button>
         </div>
-        <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
-            <div>
-                <label style="font-size:13px;color:var(--on-surf-var);display:block;margin-bottom:6px">Phone number</label>
-                <input id="member-phone-input" type="tel" inputmode="numeric" placeholder="e.g. 0812345678"
-                       style="width:100%;box-sizing:border-box;border:1px solid var(--outline);border-radius:8px;padding:10px 12px;font-size:16px;outline:none"
-                       oninput="onMemberPhoneInput()" autocomplete="off">
+        <div style="padding:12px 16px 16px;display:flex;flex-direction:column;gap:10px">
+
+            <!-- Phone display -->
+            <div style="background:var(--surf-var,#f1f3f4);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;min-height:52px">
+                <span id="member-phone-display"
+                      style="font-size:22px;font-family:'Roboto Mono',monospace;letter-spacing:2px;color:var(--on-surf);flex:1">
+                    <span id="member-phone-placeholder" style="color:var(--on-surf-var);font-size:14px;font-family:inherit;letter-spacing:normal">Enter phone number</span>
+                </span>
+                <button onclick="memberKpBack()" style="background:transparent;border:none;cursor:pointer;padding:4px;color:var(--on-surf-var)">
+                    <span class="material-symbols-rounded" style="font-size:22px;vertical-align:middle">backspace</span>
+                </button>
             </div>
-            <div id="member-lookup-result" style="min-height:36px;font-size:13px;color:var(--on-surf-var)"></div>
+
+            <!-- Lookup result -->
+            <div id="member-lookup-result" style="min-height:20px;font-size:13px;padding:0 2px"></div>
+
+            <!-- Numpad -->
+            <div class="deno-pad" style="grid-template-columns:repeat(3,1fr);gap:8px">
+                <button onclick="memberKpDigit('1')">1</button>
+                <button onclick="memberKpDigit('2')">2</button>
+                <button onclick="memberKpDigit('3')">3</button>
+                <button onclick="memberKpDigit('4')">4</button>
+                <button onclick="memberKpDigit('5')">5</button>
+                <button onclick="memberKpDigit('6')">6</button>
+                <button onclick="memberKpDigit('7')">7</button>
+                <button onclick="memberKpDigit('8')">8</button>
+                <button onclick="memberKpDigit('9')">9</button>
+                <button class="clear" onclick="memberKpClear()">
+                    <span class="material-symbols-rounded" style="font-size:18px;vertical-align:-3px">delete_sweep</span> Clear
+                </button>
+                <button onclick="memberKpDigit('0')">0</button>
+                <button style="background:var(--p);color:var(--p-fg,#fff);border-color:var(--p)" onclick="nextMember()">
+                    <span class="material-symbols-rounded" style="font-size:18px;vertical-align:-3px">arrow_forward</span>
+                </button>
+            </div>
+
+            <!-- Name field -->
             <div>
-                <label style="font-size:13px;color:var(--on-surf-var);display:block;margin-bottom:6px">Name <span style="color:var(--on-surf-var);font-weight:400">(optional — for new members)</span></label>
+                <label style="font-size:12px;color:var(--on-surf-var);display:block;margin-bottom:5px">Name <span style="font-weight:400">(optional, new members only)</span></label>
                 <input id="member-name-input" type="text" placeholder="Customer name"
-                       style="width:100%;box-sizing:border-box;border:1px solid var(--outline);border-radius:8px;padding:10px 12px;font-size:16px;outline:none"
+                       style="width:100%;box-sizing:border-box;border:1px solid var(--outline);border-radius:8px;padding:9px 12px;font-size:15px;outline:none"
                        autocomplete="off">
             </div>
-            <div style="display:flex;gap:10px;margin-top:4px">
-                <button onclick="skipMember()"
-                        style="flex:1;padding:12px;border:1px solid var(--outline);border-radius:8px;background:transparent;font-size:14px;cursor:pointer;color:var(--on-surf-var)">
-                    Skip
-                </button>
-                <button onclick="nextMember()"
-                        style="flex:2;padding:12px;border:none;border-radius:8px;background:var(--p);color:#fff;font-size:14px;font-weight:500;cursor:pointer">
-                    Next →
-                </button>
-            </div>
+
+            <!-- Skip -->
+            <button onclick="skipMember()"
+                    style="width:100%;padding:10px;border:1px solid var(--outline);border-radius:8px;background:transparent;font-size:14px;cursor:pointer;color:var(--on-surf-var)">
+                Skip — no membership
+            </button>
         </div>
     </div>
 </div>
@@ -1053,6 +1148,133 @@
 <script>
 // ── Config / state ─────────────────────────────────────────────────
 const API_BASE = "{{.APIBase}}";
+
+// ── Cashier login ──────────────────────────────────────────────────
+let loggedInCashier = null; // {id, login_id, name}
+let loginStep = 'id';       // 'id' | 'pin'
+let loginIDDigits = '';
+let loginPINDigits = '';
+
+function loginKpDigit(d) {
+    if (loginStep === 'id') {
+        if (loginIDDigits.length >= 20) return;
+        loginIDDigits += d;
+    } else {
+        if (loginPINDigits.length >= 20) return;
+        loginPINDigits += d;
+    }
+    renderLoginDisplay();
+}
+
+function loginKpBack() {
+    if (loginStep === 'id') {
+        loginIDDigits = loginIDDigits.slice(0, -1);
+    } else {
+        loginPINDigits = loginPINDigits.slice(0, -1);
+    }
+    renderLoginDisplay();
+}
+
+function loginKpClear() {
+    if (loginStep === 'id') loginIDDigits = '';
+    else loginPINDigits = '';
+    renderLoginDisplay();
+    document.getElementById('login-err').textContent = '';
+}
+
+function loginBack() {
+    loginStep = 'id';
+    loginPINDigits = '';
+    document.getElementById('login-subtitle').textContent = 'Enter your cashier ID';
+    document.getElementById('login-next-btn').textContent = 'Next →';
+    document.getElementById('login-back-btn').style.display = 'none';
+    document.getElementById('login-clear-btn').style.display = '';
+    document.getElementById('login-err').textContent = '';
+    renderLoginDisplay();
+}
+
+function renderLoginDisplay() {
+    const display = document.getElementById('login-display');
+    const placeholder = document.getElementById('login-display-placeholder');
+    const digits = loginStep === 'id' ? loginIDDigits : loginPINDigits;
+    if (!digits.length) {
+        placeholder.style.display = '';
+        let t = display.querySelector('span.ld');
+        if (t) t.remove();
+    } else {
+        placeholder.style.display = 'none';
+        let t = display.querySelector('span.ld');
+        if (!t) { t = document.createElement('span'); t.className = 'ld'; display.insertBefore(t, placeholder); }
+        t.textContent = loginStep === 'id' ? digits : '●'.repeat(digits.length);
+    }
+}
+
+async function loginNext() {
+    if (loginStep === 'id') {
+        if (!loginIDDigits.length) { document.getElementById('login-err').textContent = 'Enter your ID'; return; }
+        loginStep = 'pin';
+        loginPINDigits = '';
+        document.getElementById('login-subtitle').textContent = `ID: ${loginIDDigits} — Enter PIN`;
+        document.getElementById('login-next-btn').textContent = 'Log in';
+        document.getElementById('login-back-btn').style.display = '';
+        document.getElementById('login-clear-btn').style.display = 'none';
+        document.getElementById('login-err').textContent = '';
+        renderLoginDisplay();
+        return;
+    }
+    // Step: pin — attempt login
+    if (!loginPINDigits.length) { document.getElementById('login-err').textContent = 'Enter your PIN'; return; }
+    const btn = document.getElementById('login-next-btn');
+    btn.disabled = true;
+    btn.textContent = 'Logging in…';
+    try {
+        const r = await fetch(API_BASE + '/api/cashiers/login', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ login_id: loginIDDigits, pin: loginPINDigits }),
+        });
+        if (!r.ok) {
+            document.getElementById('login-err').textContent = 'Invalid ID or PIN';
+            loginPINDigits = '';
+            renderLoginDisplay();
+            btn.disabled = false;
+            btn.textContent = 'Log in';
+            return;
+        }
+        const cashier = await r.json().then(d => d.data ?? d);
+        loggedInCashier = cashier;
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('pos-shell').style.visibility = '';
+        document.getElementById('cashier-badge-name').textContent = cashier.name;
+        loginIDDigits = '';
+        loginPINDigits = '';
+        loginStep = 'id';
+    } catch (e) {
+        document.getElementById('login-err').textContent = 'Connection error';
+        btn.disabled = false;
+        btn.textContent = 'Log in';
+    }
+}
+
+function confirmLogout() {
+    if (!confirm(`Log out ${loggedInCashier?.name}?`)) return;
+    doLogout();
+}
+
+function doLogout() {
+    loggedInCashier = null;
+    loginStep = 'id';
+    loginIDDigits = '';
+    loginPINDigits = '';
+    renderLoginDisplay();
+    document.getElementById('login-subtitle').textContent = 'Enter your cashier ID';
+    document.getElementById('login-next-btn').textContent = 'Next →';
+    document.getElementById('login-next-btn').disabled = false;
+    document.getElementById('login-back-btn').style.display = 'none';
+    document.getElementById('login-clear-btn').style.display = '';
+    document.getElementById('login-err').textContent = '';
+    document.getElementById('pos-shell').style.visibility = 'hidden';
+    document.getElementById('login-overlay').style.display = 'flex';
+}
 
 let menus = [];
 let categories = [];
@@ -1658,18 +1880,81 @@ let customerPhone = '';
 let customerName  = '';
 
 // ── Member capture modal ──────────────────────────────────────────
+let memberPhoneDigits = '';
 let memberLookupTimer = null;
 
 function openTender() {
     if (!order.length) return;
-    // Show member modal first; it will call openTenderDirect() on Skip/Next.
     customerPhone = '';
     customerName  = '';
-    document.getElementById('member-phone-input').value = '';
-    document.getElementById('member-name-input').value  = '';
-    document.getElementById('member-lookup-result').textContent = '';
+    memberPhoneDigits = '';
+    document.getElementById('member-name-input').value = '';
+    document.getElementById('member-lookup-result').innerHTML = '';
+    renderMemberPhone();
     document.getElementById('member-modal').classList.add('is-open');
-    setTimeout(() => document.getElementById('member-phone-input').focus(), 100);
+}
+
+function renderMemberPhone() {
+    const display = document.getElementById('member-phone-display');
+    const placeholder = document.getElementById('member-phone-placeholder');
+    if (memberPhoneDigits.length === 0) {
+        placeholder.style.display = '';
+        display.childNodes.forEach(n => { if (n !== placeholder) n.remove ? n.remove() : null; });
+    } else {
+        placeholder.style.display = 'none';
+        // Rebuild text node
+        let text = display.querySelector('span.phone-text');
+        if (!text) {
+            text = document.createElement('span');
+            text.className = 'phone-text';
+            display.insertBefore(text, placeholder);
+        }
+        text.textContent = memberPhoneDigits;
+    }
+}
+
+function memberKpDigit(d) {
+    if (memberPhoneDigits.length >= 20) return;
+    memberPhoneDigits += d;
+    renderMemberPhone();
+    scheduleMemberLookup();
+}
+
+function memberKpBack() {
+    if (!memberPhoneDigits.length) return;
+    memberPhoneDigits = memberPhoneDigits.slice(0, -1);
+    renderMemberPhone();
+    scheduleMemberLookup();
+}
+
+function memberKpClear() {
+    memberPhoneDigits = '';
+    renderMemberPhone();
+    document.getElementById('member-lookup-result').innerHTML = '';
+    clearTimeout(memberLookupTimer);
+}
+
+function scheduleMemberLookup() {
+    clearTimeout(memberLookupTimer);
+    const phone = memberPhoneDigits;
+    const resultEl = document.getElementById('member-lookup-result');
+    if (phone.length < 4) { resultEl.innerHTML = ''; return; }
+    memberLookupTimer = setTimeout(async () => {
+        try {
+            const r = await fetch(API_BASE + '/api/members/lookup?phone=' + encodeURIComponent(phone));
+            if (r.status === 404) {
+                resultEl.innerHTML = '<span style="color:var(--on-surf-var)">New member — will be created on checkout.</span>';
+                return;
+            }
+            if (!r.ok) { resultEl.innerHTML = ''; return; }
+            const m = await r.json().then(d => d.data ?? d);
+            const name = m.name ? ` · ${m.name}` : '';
+            resultEl.innerHTML = `<span style="color:#1e8e3e">✓ Member found${name} · ${m.points ?? 0} pts</span>`;
+            if (m.name && !document.getElementById('member-name-input').value) {
+                document.getElementById('member-name-input').value = m.name;
+            }
+        } catch { resultEl.innerHTML = ''; }
+    }, 350);
 }
 
 function openTenderDirect() {
@@ -1693,33 +1978,10 @@ function skipMember() {
 }
 
 function nextMember() {
-    customerPhone = (document.getElementById('member-phone-input').value || '').trim();
-    customerName  = (document.getElementById('member-name-input').value  || '').trim();
+    customerPhone = memberPhoneDigits.trim();
+    customerName  = (document.getElementById('member-name-input').value || '').trim();
     closeMember();
     openTenderDirect();
-}
-
-function onMemberPhoneInput() {
-    clearTimeout(memberLookupTimer);
-    const phone = (document.getElementById('member-phone-input').value || '').trim();
-    const resultEl = document.getElementById('member-lookup-result');
-    if (phone.length < 4) { resultEl.textContent = ''; return; }
-    memberLookupTimer = setTimeout(async () => {
-        try {
-            const r = await fetch(API_BASE + '/api/members/lookup?phone=' + encodeURIComponent(phone));
-            if (r.status === 404) {
-                resultEl.innerHTML = '<span style="color:var(--on-surf-var)">New member — will be created on checkout.</span>';
-                return;
-            }
-            if (!r.ok) { resultEl.textContent = ''; return; }
-            const m = await r.json().then(d => d.data ?? d);
-            const name = m.name ? ` · ${m.name}` : '';
-            resultEl.innerHTML = `<span style="color:#1e8e3e">✓ Member found${name} · ${m.points ?? 0} pts</span>`;
-            if (m.name && !document.getElementById('member-name-input').value) {
-                document.getElementById('member-name-input').value = m.name;
-            }
-        } catch { resultEl.textContent = ''; }
-    }, 350);
 }
 
 function closeTender() {
@@ -2135,7 +2397,7 @@ async function setFloat() {
         const res = await fetch(API_BASE + '/api/cash-drawer/float', {
             method: 'PUT',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ amount: v, terminal: getTerminalId() }),
+            body: JSON.stringify({ amount: v, terminal: getTerminalId(), actor: loggedInCashier?.name ?? null }),
         });
         if (!res.ok) throw new Error('set failed');
     } catch {
@@ -2155,7 +2417,7 @@ async function clearFloat() {
         const res = await fetch(API_BASE + '/api/cash-drawer/float', {
             method: 'DELETE',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ terminal: getTerminalId() }),
+            body: JSON.stringify({ terminal: getTerminalId(), actor: loggedInCashier?.name ?? null }),
         });
         if (!res.ok) throw new Error('clear failed');
     } catch {
@@ -2176,6 +2438,7 @@ function auditDrawerKick(reason, note) {
         body: JSON.stringify({
             reason: reason || 'manual',
             note: note || null,
+            actor: loggedInCashier ? loggedInCashier.name : null,
             terminal: getTerminalId(),
         }),
     }).catch(() => { /* audit failure must never block the cashier */ });

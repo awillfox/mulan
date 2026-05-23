@@ -111,6 +111,50 @@ table "orders" {
   }
 }
 
+table "cashiers" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "login_id" {
+    type = varchar(20)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "pin_hash" {
+    type = varchar(255)
+    null = false
+  }
+  column "active" {
+    type    = boolean
+    null    = false
+    default = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "cashiers_login_id_key" {
+    columns = [column.login_id]
+    unique  = true
+  }
+}
+
 table "members" {
   schema = schema.public
 

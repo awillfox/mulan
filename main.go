@@ -12,6 +12,8 @@ import (
 
 	cashdrawerhttp "mulan/internal/cashdrawer/http"
 	cashdrawerservice "mulan/internal/cashdrawer/service"
+	cashierhttp "mulan/internal/cashier/http"
+	cashierservice "mulan/internal/cashier/service"
 	"mulan/internal/config"
 	dashboardhttp "mulan/internal/dashboard/http"
 	dashboardservice "mulan/internal/dashboard/service"
@@ -76,6 +78,9 @@ func main() {
 	memberSvc := memberservice.NewService(queries)
 	memberHandler := memberhttp.NewHandler(memberSvc)
 
+	cashierSvc := cashierservice.NewService(queries)
+	cashierHandler := cashierhttp.NewHandler(cashierSvc)
+
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
 
@@ -101,6 +106,7 @@ func main() {
 	r.Get("/manager/option-groups", webHandler.OptionGroups)
 	r.Get("/manager/discounts", webHandler.Discounts)
 	r.Get("/manager/members", webHandler.Members)
+	r.Get("/manager/cashiers", webHandler.Cashiers)
 	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
 	// Logo lives in the settings table so it survives redeploys and is shared
@@ -120,6 +126,7 @@ func main() {
 		r.Route("/orders", orderHandler.Routes)
 		r.Route("/discounts", discountHandler.Routes)
 		r.Route("/members", memberHandler.Routes)
+		r.Route("/cashiers", cashierHandler.Routes)
 		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/dashboard", dashboardHandler.Routes)
 		r.Route("/cash-drawer", cashDrawerHandler.Routes)

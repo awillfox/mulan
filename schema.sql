@@ -2,19 +2,6 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 -- Set comment to schema: "public"
 COMMENT ON SCHEMA "public" IS 'standard public schema';
--- Create "settings" table
-CREATE TABLE "public"."settings" (
-  "id" integer NOT NULL DEFAULT 1,
-  "shop_name" character varying(255) NOT NULL DEFAULT 'My Shop',
-  "vat_percent" double precision NOT NULL DEFAULT 0,
-  "receipt_footer" character varying(255) NOT NULL DEFAULT 'Thank you! Come again!',
-  "logo" bytea NULL,
-  "logo_mime" character varying(60) NULL,
-  "updated_at" timestamptz NOT NULL DEFAULT now(),
-  "points_per_baht" double precision NOT NULL DEFAULT 1,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "settings_singleton" CHECK (id = 1)
-);
 -- Create "cash_drawer_audit" table
 CREATE TABLE "public"."cash_drawer_audit" (
   "id" bigserial NOT NULL,
@@ -32,6 +19,32 @@ CREATE TABLE "public"."cash_drawer_audit" (
 CREATE INDEX "cash_drawer_audit_created_at" ON "public"."cash_drawer_audit" ("created_at");
 -- Create index "cash_drawer_audit_event_type_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_event_type_created_at" ON "public"."cash_drawer_audit" ("event_type", "created_at");
+-- Create "cashiers" table
+CREATE TABLE "public"."cashiers" (
+  "id" serial NOT NULL,
+  "login_id" character varying(20) NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "pin_hash" character varying(255) NOT NULL,
+  "active" boolean NOT NULL DEFAULT true,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id")
+);
+-- Create index "cashiers_login_id_key" to table: "cashiers"
+CREATE UNIQUE INDEX "cashiers_login_id_key" ON "public"."cashiers" ("login_id");
+-- Create "settings" table
+CREATE TABLE "public"."settings" (
+  "id" integer NOT NULL DEFAULT 1,
+  "shop_name" character varying(255) NOT NULL DEFAULT 'My Shop',
+  "vat_percent" double precision NOT NULL DEFAULT 0,
+  "receipt_footer" character varying(255) NOT NULL DEFAULT 'Thank you! Come again!',
+  "logo" bytea NULL,
+  "logo_mime" character varying(60) NULL,
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  "points_per_baht" double precision NOT NULL DEFAULT 1,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "settings_singleton" CHECK (id = 1)
+);
 -- Create "menu_categories" table
 CREATE TABLE "public"."menu_categories" (
   "id" serial NOT NULL,
