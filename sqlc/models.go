@@ -38,6 +38,16 @@ type Discount struct {
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type GuestWifiUser struct {
+	ID         int32              `db:"id" json:"id"`
+	Username   string             `db:"username" json:"username"`
+	State      string             `db:"state" json:"state"`
+	OrderID    pgtype.Int4        `db:"order_id" json:"order_id"`
+	AssignedAt pgtype.Timestamptz `db:"assigned_at" json:"assigned_at"`
+	ExpiresAt  pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Member struct {
 	ID        int32              `db:"id" json:"id"`
 	Phone     string             `db:"phone" json:"phone"`

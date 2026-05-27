@@ -340,6 +340,7 @@ type checkoutResponse struct {
 	MemberPhone   string         `json:"member_phone"`
 	PointsEarned  int64          `json:"points_earned"`
 	PointsBalance int64          `json:"points_balance"`
+	WifiUsername  string         `json:"wifi_username,omitempty"`
 }
 
 type checkoutEnvelope struct {
@@ -397,7 +398,7 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 				Earned:  result.PointsEarned,
 				Balance: result.PointsBalance,
 			}
-			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.VAT, result.VATPercent, result.Total, pay, member); err != nil {
+			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.VAT, result.VATPercent, result.Total, pay, member, result.WifiUsername); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}

@@ -53,16 +53,21 @@ func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsserv
 	return &OrderService{pool: pool, q: q, settings: settings}
 }
 
-func (s *OrderService) Create(ctx context.Context) (string, error) {
+type CreatedOrder struct {
+	Code string
+	ID   int32
+}
+
+func (s *OrderService) Create(ctx context.Context) (CreatedOrder, error) {
 	code, err := generateCode()
 	if err != nil {
-		return "", fmt.Errorf("generate code: %w", err)
+		return CreatedOrder{}, fmt.Errorf("generate code: %w", err)
 	}
 	row, err := s.q.CreateOrder(ctx, code)
 	if err != nil {
-		return "", fmt.Errorf("create order: %w", err)
+		return CreatedOrder{}, fmt.Errorf("create order: %w", err)
 	}
-	return row.Code, nil
+	return CreatedOrder{Code: row.Code, ID: row.ID}, nil
 }
 
 // CheckoutItemInput is what the handler accepts from the client. The server
@@ -301,6 +306,7 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	}
 
 	return &domain.CheckoutResult{
+		OrderID:       order.ID,
 		Code:          code,
 		Subtotal:      float64(subtotalSatang) / 100,
 		Discount:      float64(discountSatang) / 100,

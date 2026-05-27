@@ -1280,6 +1280,7 @@ let menus = [];
 let categories = [];
 let order = [];
 let orderCode = null;
+let wifiUsername = null;
 let activeCategory = null;
 let menuPage = 0;          // current page in the paged menu grid
 let searchText = '';
@@ -1589,7 +1590,9 @@ async function ensureOrderCode() {
     if (orderCode) return orderCode;
     const res = await fetch(API_BASE + '/api/orders', { method: 'POST' });
     const data = await res.json();
-    orderCode = (data.data && data.data.code) || data.code;
+    const d = data.data ?? data;
+    orderCode = d.code;
+    wifiUsername = d.wifi_username || null;
     return orderCode;
 }
 
@@ -2153,6 +2156,7 @@ async function doCheckout(method, tendered, change) {
     }
     order = [];
     orderCode = null;
+    wifiUsername = null;
     orderDiscounts = [];
     renderOrder();
     // Surface change due as a modal that the cashier cannot dismiss for 30s.
@@ -2204,7 +2208,7 @@ async function holdOrder() {
         snack('Failed to hold order.', 'danger');
         return;
     }
-    order = []; orderCode = null; orderDiscounts = [];
+    order = []; orderCode = null; wifiUsername = null; orderDiscounts = [];
     renderOrder();
     await fetchHeld();
     snack('Order held.', 'success');

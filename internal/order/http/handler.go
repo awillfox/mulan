@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,13 @@ import (
 	"mulan/internal/order/service"
 	"mulan/internal/response"
 )
+
+// WifiService is the subset of guestwifi.Service used by this handler.
+type WifiService interface {
+	AssignToOrder(ctx context.Context, orderID int32) (string, error)
+	EnableForOrder(ctx context.Context, orderID int32) error
+	GetUsernameForOrder(ctx context.Context, orderID int32) string
+}
 
 type heldOrderResponse struct {
 	Code      string          `json:"code"`
@@ -39,11 +47,12 @@ func toHeldResponse(h service.HeldOrder) heldOrderResponse {
 }
 
 type Handler struct {
-	svc *service.OrderService
+	svc  *service.OrderService
+	wifi WifiService // nil when WiFi feature is disabled
 }
 
-func NewHandler(svc *service.OrderService) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *service.OrderService, wifi WifiService) *Handler {
+	return &Handler{svc: svc, wifi: wifi}
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -129,12 +138,17 @@ func (h *Handler) listHeld(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	code, err := h.svc.Create(r.Context())
+	order, err := h.svc.Create(r.Context())
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to create order", err)
 		return
 	}
-	response.Created(w, r, map[string]string{"code": code})
+	out := map[string]any{"code": order.Code}
+	if h.wifi != nil {
+		username, _ := h.wifi.AssignToOrder(r.Context(), order.ID)
+		out["wifi_username"] = username
+	}
+	response.Created(w, r, out)
 }
 
 type checkoutItemRequest struct {
@@ -185,6 +199,7 @@ type checkoutResponse struct {
 	MemberPhone   string                     `json:"member_phone,omitempty"`
 	PointsEarned  int64                      `json:"points_earned"`
 	PointsBalance int64                      `json:"points_balance"`
+	WifiUsername  string                     `json:"wifi_username,omitempty"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +261,15 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var wifiUsername string
+	if h.wifi != nil {
+		if err := h.wifi.EnableForOrder(r.Context(), result.OrderID); err != nil {
+			// log but don't fail — payment already committed
+			_ = err
+		}
+		wifiUsername = h.wifi.GetUsernameForOrder(r.Context(), result.OrderID)
+	}
+
 	response.OK(w, r, checkoutResponse{
 		Code:          result.Code,
 		Subtotal:      result.Subtotal,
@@ -262,6 +286,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		MemberPhone:   result.MemberPhone,
 		PointsEarned:  result.PointsEarned,
 		PointsBalance: result.PointsBalance,
+		WifiUsername:  wifiUsername,
 	})
 }
 

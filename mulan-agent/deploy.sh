@@ -2,7 +2,7 @@
 # Deploy mulan-agent to the Windows POS terminal.
 #
 # Prereq (one-time):
-#   - SSH key auth working: `ssh coffee@192.168.88.100 whoami` returns without prompt.
+#   - SSH key auth working: `ssh coffee@100.115.144.52 whoami` returns without prompt.
 #   - MulanAgent service already registered via NSSM on remote.
 #
 # Usage:
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────
-REMOTE="coffee@192.168.88.100"
+REMOTE="coffee@100.115.144.52"
 REMOTE_DIR="mulan-agent"                 # relative to %USERPROFILE% on Windows
 SERVICE="MulanAgent"
 LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -124,8 +124,8 @@ else
 fi
 
 # Hit /pos to confirm port is actually serving.
-if HTTP=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://192.168.88.100:8090/pos" 2>/dev/null) && [[ "$HTTP" == "200" ]]; then
-    ok "http://192.168.88.100:8090/pos → 200"
+if HTTP=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://100.115.144.52:8090/pos" 2>/dev/null) && [[ "$HTTP" == "200" ]]; then
+    ok "http://100.115.144.52:8090/pos → 200"
 else
     warn "/pos probe returned: ${HTTP:-no response}"
 fi

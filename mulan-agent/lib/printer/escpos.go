@@ -201,7 +201,7 @@ func (pm Payment) label() string {
 // PrintReceipt prints a full receipt. subtotal is the pre-discount total,
 // discount is the combined THB taken off (0 when no discount applied), vat is
 // computed on the discounted subtotal, and total is the final amount due.
-func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, vat, vatPercent, total float64, pay Payment, member MemberInfo) error {
+func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, vat, vatPercent, total float64, pay Payment, member MemberInfo, wifiUsername string) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -322,6 +322,15 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 		}
 		writeRow("Points earned", fmt.Sprintf("%d pts", member.Earned))
 		writeRow("Points balance", fmt.Sprintf("%d pts", member.Balance))
+	}
+
+	// Guest WiFi block — only when an account was assigned.
+	if wifiUsername != "" {
+		divider()
+		writeCenter("Free WiFi")
+		writeCenter("SSID: THCoffee_Guest")
+		writeRow("Username", wifiUsername)
+		writeCenter("(valid 2 hours)")
 	}
 
 	// Footer — configurable in manager settings. Falls back to a default

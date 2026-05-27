@@ -16,6 +16,8 @@ import (
 	cashierservice "mulan/internal/cashier/service"
 	"mulan/internal/config"
 	dashboardhttp "mulan/internal/dashboard/http"
+	guestwifihttp "mulan/internal/guestwifi/http"
+	guestwifiservice "mulan/internal/guestwifi/service"
 	dashboardservice "mulan/internal/dashboard/service"
 	discounthttp "mulan/internal/discount/http"
 	discountservice "mulan/internal/discount/service"
@@ -72,8 +74,27 @@ func main() {
 	}
 	settingsHandler := settingshttp.NewHandler(settingsSvc)
 
+	wifiSvc := guestwifiservice.New(pool, guestwifiservice.Config{
+		Host:          cfg.MikrotikHost,
+		Port:          cfg.MikrotikPort,
+		User:          cfg.MikrotikUser,
+		Password:      cfg.MikrotikPassword,
+		HotspotServer: cfg.MikrotikHotspotServer,
+	})
+	if cfg.MikrotikHost != "" {
+		if err := wifiSvc.FillPool(ctx); err != nil {
+			log.Printf("guestwifi: initial pool fill: %v", err)
+		}
+		wifiSvc.ExpireLoop(ctx)
+	}
+	wifiHandler := guestwifihttp.New(wifiSvc)
+
 	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc)
-	orderHandler := orderhttp.NewHandler(orderSvc)
+	var wifiDep orderhttp.WifiService
+	if cfg.MikrotikHost != "" {
+		wifiDep = wifiSvc
+	}
+	orderHandler := orderhttp.NewHandler(orderSvc, wifiDep)
 
 	memberSvc := memberservice.NewService(queries)
 	memberHandler := memberhttp.NewHandler(memberSvc)
@@ -130,6 +151,7 @@ func main() {
 		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/dashboard", dashboardHandler.Routes)
 		r.Route("/cash-drawer", cashDrawerHandler.Routes)
+		r.Mount("/wifi", wifiHandler.Routes())
 	})
 
 	log.Println("server starting on :" + cfg.Port)

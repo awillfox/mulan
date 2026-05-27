@@ -195,6 +195,60 @@ table "members" {
   }
 }
 
+table "guest_wifi_users" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "username" {
+    type = varchar(40)
+    null = false
+  }
+  column "state" {
+    type    = varchar(20)
+    null    = false
+    default = "pending"
+  }
+  column "order_id" {
+    type = int
+    null = true
+  }
+  column "assigned_at" {
+    type = timestamptz
+    null = true
+  }
+  column "expires_at" {
+    type = timestamptz
+    null = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "guest_wifi_users_username_key" {
+    columns = [column.username]
+    unique  = true
+  }
+  index "guest_wifi_users_state" {
+    columns = [column.state]
+  }
+  foreign_key "fk_guest_wifi_order" {
+    columns     = [column.order_id]
+    ref_columns = [table.orders.column.id]
+    on_delete   = SET_NULL
+  }
+  check "guest_wifi_users_state_check" {
+    expr = "state IN ('pending','assigned','active','expired')"
+  }
+}
+
 table "cash_drawer_audit" {
   schema = schema.public
 

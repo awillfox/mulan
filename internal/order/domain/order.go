@@ -31,6 +31,7 @@ type AppliedDiscount struct {
 }
 
 type CheckoutResult struct {
+	OrderID       int32
 	Code          string
 	Subtotal      float64 // THB, before discounts
 	Discount      float64 // THB, total of all discounts applied
