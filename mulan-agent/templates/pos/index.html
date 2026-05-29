@@ -824,6 +824,13 @@
                     </span>
                     <span class="v mono" id="t-disc" style="color:var(--pay)">−฿0.00</span>
                 </div>
+                <div class="total-row" id="subsidy-row" style="display:none;color:var(--pay)">
+                    <span style="display:inline-flex;align-items:center;gap:4px">
+                        <span class="material-symbols-rounded" style="font-size:16px">volunteer_activism</span>
+                        Subsidy
+                    </span>
+                    <span class="v mono" id="t-subsidy" style="color:var(--pay)">−฿0.00</span>
+                </div>
                 <div class="total-row" id="vat-row" style="display:none"><span id="vat-label">VAT</span><span class="v mono" id="t-vat">฿0.00</span></div>
                 <div class="total-row grand"><span>Total</span><span class="v mono" id="t-grand">฿0.00</span></div>
             </div>
@@ -1548,42 +1555,51 @@ function discAmountFor(d, base) {
         : (d.value || 0);
     return Math.ceil(raw - 1e-9);
 }
-// lineDiscount sums the per-line discounts on one cart line, clamped so the
-// line can't go below zero. Percentage discounts use the line's full total
-// as their base so stacking order doesn't matter (matches the server).
-function lineDiscount(line) {
+// lineDiscountSplit returns {normal, subsidy} THB removed from one cart line,
+// clamped so the line can't go below zero. Each discount is wholly normal or
+// wholly subsidy (its is_subsidy flag), so its clamped amount lands in one
+// bucket. Mirrors the server (order.go).
+function lineDiscountSplit(line) {
     const base = unitPrice(line) * line.qty;
-    let rem = base, sum = 0;
+    let rem = base, normal = 0, subsidy = 0;
     for (const d of (line.discounts || [])) {
         let amt = discAmountFor(d, base);
         if (amt > rem) amt = rem;
         if (amt < 0) amt = 0;
-        rem -= amt; sum += amt;
+        rem -= amt;
+        if (d.is_subsidy) subsidy += amt; else normal += amt;
     }
-    return sum;
+    return { normal, subsidy };
 }
 function orderTotals() {
     const sub = orderSubtotal();
-    const itemDisc = order.reduce((s, l) => s + lineDiscount(l), 0);
+    let normalDisc = 0, subsidy = 0, itemDisc = 0;
+    for (const l of order) {
+        const s = lineDiscountSplit(l);
+        normalDisc += s.normal;
+        subsidy += s.subsidy;
+        itemDisc += s.normal + s.subsidy;
+    }
+    // Whole-order discounts apply against the subtotal net of ALL per-line
+    // discounts (incl. subsidy), clamped so the order can't go negative.
     const afterItem = sub - itemDisc;
-    // Whole-order discounts apply against the subtotal net of per-line
-    // discounts, clamped so the order can't go negative.
-    let rem = afterItem, orderDisc = 0;
+    let rem = afterItem;
     for (const d of orderDiscounts) {
         let amt = discAmountFor(d, afterItem);
         if (amt > rem) amt = rem;
         if (amt < 0) amt = 0;
-        rem -= amt; orderDisc += amt;
+        rem -= amt;
+        if (d.is_subsidy) subsidy += amt; else normalDisc += amt;
     }
-    const discount = itemDisc + orderDisc;
-    const grand = sub - discount;
+    const shopReceives = sub - normalDisc;   // VAT base (full pre-subsidy)
+    const grand = shopReceives - subsidy;    // what the customer pays
     let vat = 0;
     if (vatPercent > 0) {
-        // tax-inclusive pricing (common in TH POS): VAT portion derived
-        // from the discounted total for display.
-        vat = grand - (grand / (1 + vatPercent / 100));
+        // VAT-inclusive: the portion within the amount the shop receives
+        // (full pre-subsidy). Subsidies do not reduce the VAT base.
+        vat = shopReceives - (shopReceives / (1 + vatPercent / 100));
     }
-    return { sub, discount, vat, grand };
+    return { sub, discount: normalDisc, subsidy, vat, grand };
 }
 
 async function ensureOrderCode() {
@@ -1735,6 +1751,12 @@ function renderOrder(opts = {}) {
     } else {
         document.getElementById('disc-row').style.display = 'none';
     }
+    if (totalsObj.subsidy > 0) {
+        document.getElementById('subsidy-row').style.display = '';
+        document.getElementById('t-subsidy').textContent = '−' + fmt(totalsObj.subsidy);
+    } else {
+        document.getElementById('subsidy-row').style.display = 'none';
+    }
     if (vatPercent > 0) {
         document.getElementById('vat-row').style.display = '';
         document.getElementById('vat-label').textContent = `VAT (${vatPercent}% incl.)`;
@@ -1849,10 +1871,11 @@ function openDiscountModal(lineKey) {
     body.innerHTML = `<div class="opt-list">${discounts.map(d => {
         const on = current.includes(d.id);
         const label = d.discount_type === 'percent' ? d.value + '%' : '−' + fmt(d.value);
+        const tag = d.is_subsidy ? ' <span style="font-size:11px;color:var(--pay)">(subsidy)</span>' : '';
         return `<label class="opt-row ${on ? 'is-selected' : ''}">
             <input type="checkbox" value="${d.id}" ${on ? 'checked' : ''}
                    onchange="this.closest('.opt-row').classList.toggle('is-selected', this.checked)">
-            <span class="o-name">${esc(d.name)}</span>
+            <span class="o-name">${esc(d.name)}${tag}</span>
             <span class="o-price">${label}</span>
         </label>`;
     }).join('')}</div>`;
