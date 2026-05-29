@@ -41,6 +41,10 @@
                 <input id="f-active" type="checkbox" checked class="rounded">
                 Active (available at POS)
             </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input id="f-subsidy" type="checkbox" class="rounded">
+                Subsidise (sponsor covers the gap — shop still earns full price)
+            </label>
         </div>
         <div class="flex justify-end gap-2 mt-5">
             <button onclick="closeModal()" class="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
@@ -76,6 +80,7 @@ function render() {
             <div>
                 <p class="text-sm font-bold">
                     ${esc(d.name)}
+                    ${d.is_subsidy ? '<span class="ml-2 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">subsidy</span>' : ''}
                     ${d.active ? '' : '<span class="ml-2 text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded">inactive</span>'}
                 </p>
                 <p class="text-xs text-gray-500 mt-0.5">${fmtValue(d)}</p>
@@ -109,6 +114,7 @@ function openModal(id) {
     document.getElementById('f-type').value = d ? d.discount_type : 'fixed';
     document.getElementById('f-value').value = d ? d.value : 0;
     document.getElementById('f-active').checked = d ? d.active : true;
+    document.getElementById('f-subsidy').checked = d ? !!d.is_subsidy : false;
     syncTypeUI();
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('f-name').focus();
@@ -123,10 +129,11 @@ async function save() {
     const type = document.getElementById('f-type').value;
     const value = parseFloat(document.getElementById('f-value').value) || 0;
     const active = document.getElementById('f-active').checked;
+    const is_subsidy = document.getElementById('f-subsidy').checked;
     if (!name) { alert('Name is required.'); return; }
     if (value < 0) { alert('Value must not be negative.'); return; }
     if (type === 'percent' && value > 100) { alert('Percent cannot exceed 100.'); return; }
-    const body = JSON.stringify({ name, discount_type: type, value, active });
+    const body = JSON.stringify({ name, discount_type: type, value, active, is_subsidy });
     const url = editId ? `/api/discounts/${editId}` : '/api/discounts';
     const method = editId ? 'PATCH' : 'POST';
     const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body });
