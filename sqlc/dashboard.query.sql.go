@@ -13,8 +13,8 @@ import (
 
 const discountSummary = `-- name: DiscountSummary :one
 SELECT
-  COALESCE(SUM(amount) FILTER (WHERE NOT is_subsidy), 0)::bigint AS discount,
-  COALESCE(SUM(amount) FILTER (WHERE     is_subsidy), 0)::bigint AS subsidy
+  COALESCE(SUM(od.amount) FILTER (WHERE NOT od.is_subsidy), 0)::bigint AS discount,
+  COALESCE(SUM(od.amount) FILTER (WHERE     od.is_subsidy), 0)::bigint AS subsidy
 FROM order_discounts od
 JOIN orders o ON o.id = od.order_id
 WHERE o.status = 'paid'
@@ -182,13 +182,13 @@ func (q *Queries) SalesByHourDOW(ctx context.Context, arg SalesByHourDOWParams) 
 }
 
 const subsidyByProgram = `-- name: SubsidyByProgram :many
-SELECT name, SUM(amount)::bigint AS amount
+SELECT od.name, SUM(od.amount)::bigint AS amount
 FROM order_discounts od
 JOIN orders o ON o.id = od.order_id
 WHERE o.status = 'paid' AND od.is_subsidy
   AND o.created_at >= $1::timestamptz
   AND o.created_at <  $2::timestamptz
-GROUP BY name
+GROUP BY od.name
 ORDER BY amount DESC
 `
 

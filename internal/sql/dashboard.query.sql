@@ -58,8 +58,8 @@ WHERE o.status = 'paid'
 -- its own (NOT joined into the order_items revenue sum) so revenue is never
 -- cartesian-multiplied.
 SELECT
-  COALESCE(SUM(amount) FILTER (WHERE NOT is_subsidy), 0)::bigint AS discount,
-  COALESCE(SUM(amount) FILTER (WHERE     is_subsidy), 0)::bigint AS subsidy
+  COALESCE(SUM(od.amount) FILTER (WHERE NOT od.is_subsidy), 0)::bigint AS discount,
+  COALESCE(SUM(od.amount) FILTER (WHERE     od.is_subsidy), 0)::bigint AS subsidy
 FROM order_discounts od
 JOIN orders o ON o.id = od.order_id
 WHERE o.status = 'paid'
@@ -68,11 +68,11 @@ WHERE o.status = 'paid'
 
 -- name: SubsidyByProgram :many
 -- Per-program subsidy spend for a period (the "subsidy by program" breakdown).
-SELECT name, SUM(amount)::bigint AS amount
+SELECT od.name, SUM(od.amount)::bigint AS amount
 FROM order_discounts od
 JOIN orders o ON o.id = od.order_id
 WHERE o.status = 'paid' AND od.is_subsidy
   AND o.created_at >= sqlc.arg('from_at')::timestamptz
   AND o.created_at <  sqlc.arg('to_at')::timestamptz
-GROUP BY name
+GROUP BY od.name
 ORDER BY amount DESC;
