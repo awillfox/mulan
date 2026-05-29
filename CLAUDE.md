@@ -84,6 +84,18 @@ receipts/reports stay stable when a preset is later edited or deleted. Checkout
 response includes `discount` (total THB off) and a `discounts` list. Inactive
 discounts are rejected at checkout.
 
+### Subsidise discounts
+A discount can be flagged `is_subsidy` (checkbox in `/manager/discounts`,
+orthogonal to fixed/percent). A subsidise discount means a sponsor covers the
+gap: the customer pays less but the shop is made whole (full item revenue). It
+does NOT reduce reported revenue, and VAT is reckoned on the full pre-subsidy
+amount. `is_subsidy` is snapshotted into `order_discounts` so reports stay
+stable. Checkout response adds `subsidy` (THB). Prices are VAT-inclusive and the
+backend computes VAT as the inclusive portion of the shop-received amount
+(`computeOrderTotals` in `internal/order/service/totals.go`) — this replaced an
+earlier bug that added VAT on top. Reports show a waterfall: Gross − Discounts =
+Net sales, + Subsidy; `/api/dashboard/subsidies` lists subsidy spend by program.
+
 ## Settings (DB-backed)
 Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
 
