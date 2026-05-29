@@ -13,7 +13,11 @@ INSERT INTO order_item_options (order_item_id, option_id, name, price_delta)
 VALUES ($1, $2, $3, $4);
 
 -- name: PayOrder :exec
-UPDATE orders SET status = 'paid' WHERE code = $1;
+UPDATE orders
+SET status = 'paid',
+    member_id = sqlc.narg('member_id'),
+    points_earned = sqlc.arg('points_earned')
+WHERE code = sqlc.arg('code');
 
 -- name: HoldOrder :one
 UPDATE orders

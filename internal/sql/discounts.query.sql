@@ -1,16 +1,16 @@
 -- name: ListDiscounts :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 ORDER BY id;
 
 -- name: ListActiveDiscounts :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 WHERE active = true
 ORDER BY id;
 
 -- name: GetDiscountsByIDs :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 WHERE id = ANY(@ids::int[])
 ORDER BY id;

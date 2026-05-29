@@ -3,12 +3,13 @@ INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 -- name: UpdateSettings :one
 UPDATE settings
-SET shop_name      = $1,
-    vat_percent    = $2,
-    receipt_footer = $3,
-    updated_at     = now()
+SET shop_name       = $1,
+    vat_percent     = $2,
+    receipt_footer  = $3,
+    points_per_baht = $4,
+    updated_at      = now()
 WHERE id = 1
-RETURNING id, shop_name, vat_percent, receipt_footer, updated_at;
+RETURNING id, shop_name, vat_percent, receipt_footer, points_per_baht, updated_at;
 
 -- name: SetSettingsLogo :exec
 UPDATE settings

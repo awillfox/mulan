@@ -2,7 +2,7 @@
 # Deploy mulan (backend) to the Linux server.
 #
 # Prereq (one-time):
-#   - SSH key auth working: `ssh coffee@192.168.1.100 whoami` returns without prompt.
+#   - SSH key auth working: `ssh coffee@100.86.43.70 whoami` returns without prompt.
 #   - mulan.service registered as a systemd unit on remote.
 #   - Passwordless sudo for systemctl (or run sudo password agent on remote).
 #
@@ -21,13 +21,13 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────
-REMOTE="coffee@192.168.1.100"
+REMOTE="coffee@100.86.43.70"
 REMOTE_DIR="mulan"                       # under $HOME on remote
 SERVICE="mulan"
 LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$LOCAL_DIR/build"
 BIN_NAME="mulan-linux-amd64"
-HEALTH_URL="http://192.168.1.100:8085/api/menus"
+HEALTH_URL="http://100.86.43.70:8085/api/menus"
 
 # ── Flag parsing ──────────────────────────────────────────────────────────
 SHIP_ASSETS=0

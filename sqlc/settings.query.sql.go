@@ -12,7 +12,7 @@ import (
 )
 
 const getSettings = `-- name: GetSettings :one
-SELECT id, shop_name, vat_percent, receipt_footer, updated_at FROM settings WHERE id = 1
+SELECT id, shop_name, vat_percent, receipt_footer, points_per_baht, updated_at FROM settings WHERE id = 1
 `
 
 type GetSettingsRow struct {
@@ -20,6 +20,7 @@ type GetSettingsRow struct {
 	ShopName      string             `db:"shop_name" json:"shop_name"`
 	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
 	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
+	PointsPerBaht float64            `db:"points_per_baht" json:"points_per_baht"`
 	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
@@ -31,6 +32,7 @@ func (q *Queries) GetSettings(ctx context.Context) (GetSettingsRow, error) {
 		&i.ShopName,
 		&i.VatPercent,
 		&i.ReceiptFooter,
+		&i.PointsPerBaht,
 		&i.UpdatedAt,
 	)
 	return i, err

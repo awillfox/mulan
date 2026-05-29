@@ -34,6 +34,14 @@ func (h *Handler) Discounts(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/discounts.html")
 }
 
+func (h *Handler) Members(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "layouts/manager.html", "manager/members.html")
+}
+
+func (h *Handler) Cashiers(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "layouts/manager.html", "manager/cashiers.html")
+}
+
 func (h *Handler) render(w http.ResponseWriter, files ...string) {
 	paths := make([]string, len(files))
 	for i, f := range files {

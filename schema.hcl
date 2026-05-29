@@ -23,6 +23,11 @@ table "settings" {
     null    = false
     default = "Thank you! Come again!"
   }
+  column "points_per_baht" {
+    type    = double_precision
+    null    = false
+    default = 1
+  }
   column "logo" {
     type = bytea
     null = true
@@ -61,6 +66,15 @@ table "orders" {
     null = false
     default = "open"
   }
+  column "member_id" {
+    type = int
+    null = true
+  }
+  column "points_earned" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -89,6 +103,149 @@ table "orders" {
   }
   index "orders_status_held_at" {
     columns = [column.status, column.held_at]
+  }
+  foreign_key "fk_orders_member" {
+    columns     = [column.member_id]
+    ref_columns = [table.members.column.id]
+    on_delete   = SET_NULL
+  }
+}
+
+table "cashiers" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "login_id" {
+    type = varchar(20)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "pin_hash" {
+    type = varchar(255)
+    null = false
+  }
+  column "active" {
+    type    = boolean
+    null    = false
+    default = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "cashiers_login_id_key" {
+    columns = [column.login_id]
+    unique  = true
+  }
+}
+
+table "members" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "phone" {
+    type = varchar(20)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = true
+  }
+  column "points" {
+    type    = bigint
+    null    = false
+    default = 0
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "members_phone_key" {
+    columns = [column.phone]
+    unique  = true
+  }
+}
+
+table "guest_wifi_users" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "username" {
+    type = varchar(40)
+    null = false
+  }
+  column "state" {
+    type    = varchar(20)
+    null    = false
+    default = "pending"
+  }
+  column "order_id" {
+    type = int
+    null = true
+  }
+  column "assigned_at" {
+    type = timestamptz
+    null = true
+  }
+  column "expires_at" {
+    type = timestamptz
+    null = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "guest_wifi_users_username_key" {
+    columns = [column.username]
+    unique  = true
+  }
+  index "guest_wifi_users_state" {
+    columns = [column.state]
+  }
+  foreign_key "fk_guest_wifi_order" {
+    columns     = [column.order_id]
+    ref_columns = [table.orders.column.id]
+    on_delete   = SET_NULL
+  }
+  check "guest_wifi_users_state_check" {
+    expr = "state IN ('pending','assigned','active','expired')"
   }
 }
 
@@ -429,6 +586,14 @@ table "discounts" {
     null    = false
     default = sql("now()")
   }
+  # Added after created_at to match Postgres ALTER ADD COLUMN (appends last),
+  # so the physical column order matches a fresh CREATE and sqlc reuses the
+  # Discount model. Keep is_subsidy last in the discount query column lists.
+  column "is_subsidy" {
+    type    = boolean
+    null    = false
+    default = false
+  }
 
   primary_key {
     columns = [column.id]
@@ -472,6 +637,11 @@ table "order_discounts" {
   column "amount" {
     type = bigint
     null = false
+  }
+  column "is_subsidy" {
+    type    = boolean
+    null    = false
+    default = false
   }
 
   primary_key {

@@ -147,6 +147,7 @@ type settingsResponse struct {
 	ShopName      string  `json:"shop_name"`
 	VATPercent    float64 `json:"vat_percent"`
 	ReceiptFooter string  `json:"receipt_footer"`
+	PointsPerBaht float64 `json:"points_per_baht"`
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +156,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		ShopName:      row.ShopName,
 		VATPercent:    row.VatPercent,
 		ReceiptFooter: row.ReceiptFooter,
+		PointsPerBaht: row.PointsPerBaht,
 	})
 }
 
@@ -162,6 +164,7 @@ type updateRequest struct {
 	ShopName      string  `json:"shop_name"`
 	VATPercent    float64 `json:"vat_percent"`
 	ReceiptFooter string  `json:"receipt_footer"`
+	PointsPerBaht float64 `json:"points_per_baht"`
 }
 
 func (req updateRequest) validate() error {
@@ -173,6 +176,9 @@ func (req updateRequest) validate() error {
 	}
 	if len(req.ReceiptFooter) > 255 {
 		return errors.New("receipt_footer must be 255 chars or fewer")
+	}
+	if req.PointsPerBaht < 0 {
+		return errors.New("points_per_baht must be >= 0")
 	}
 	return nil
 }
@@ -188,7 +194,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent, req.ReceiptFooter)
+	row, err := h.svc.Update(r.Context(), req.ShopName, req.VATPercent, req.ReceiptFooter, req.PointsPerBaht)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to update settings", err)
 		return
@@ -198,5 +204,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		ShopName:      row.ShopName,
 		VATPercent:    row.VatPercent,
 		ReceiptFooter: row.ReceiptFooter,
+		PointsPerBaht: row.PointsPerBaht,
 	})
 }

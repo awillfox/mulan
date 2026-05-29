@@ -96,11 +96,16 @@ func (s *SettingsService) VATPercent() float64 {
 	return s.Get().VatPercent
 }
 
-func (s *SettingsService) Update(ctx context.Context, shopName string, vatPercent float64, receiptFooter string) (sqlc.GetSettingsRow, error) {
+func (s *SettingsService) PointsPerBaht() float64 {
+	return s.Get().PointsPerBaht
+}
+
+func (s *SettingsService) Update(ctx context.Context, shopName string, vatPercent float64, receiptFooter string, pointsPerBaht float64) (sqlc.GetSettingsRow, error) {
 	row, err := s.q.UpdateSettings(ctx, sqlc.UpdateSettingsParams{
 		ShopName:      shopName,
 		VatPercent:    vatPercent,
 		ReceiptFooter: receiptFooter,
+		PointsPerBaht: pointsPerBaht,
 	})
 	if err != nil {
 		return sqlc.GetSettingsRow{}, err
@@ -110,6 +115,7 @@ func (s *SettingsService) Update(ctx context.Context, shopName string, vatPercen
 		ShopName:      row.ShopName,
 		VatPercent:    row.VatPercent,
 		ReceiptFooter: row.ReceiptFooter,
+		PointsPerBaht: row.PointsPerBaht,
 		UpdatedAt:     row.UpdatedAt,
 	}
 	s.mu.Lock()

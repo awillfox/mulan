@@ -33,7 +33,6 @@ Claude will update CLAUDE.md a long the way
 - `/manager` — dashboard, responsive for modern devices **(served by mulan)**
 - `/manager/items` — item/category manager (also attaches option groups to menus)
 - `/manager/option-groups` — manage shared option groups + their options
-- `/manager/discounts` — manage preset discounts (fixed THB or percent)
 - `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
@@ -42,8 +41,14 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/menu-categories` — create a menu category `{name}`
 - `PATCH /api/menu-categories/{id}` — update a menu category `{name}`
 - `DELETE /api/menu-categories/{id}` — delete a menu category
-- `GET /api/settings` — returns `{shop_name, vat_percent}`
-- `PATCH /api/settings` — updates `{shop_name, vat_percent}`
+- `GET /api/settings` — returns `{shop_name, vat_percent, points_per_baht}`
+- `PATCH /api/settings` — updates `{shop_name, vat_percent, points_per_baht}`
+- `GET /api/members` — list members (optional `?q=` search on phone/name)
+- `POST /api/members` — create member `{phone, name?}` (409 on duplicate phone)
+- `PATCH /api/members/{id}` — update member `{phone, name?}`
+- `DELETE /api/members/{id}` — delete member (past orders kept, member_id set null)
+- `GET /api/members/{id}/orders` — member's paid order history (code, date, subtotal, points_earned)
+- `GET /api/members/lookup?phone=` — find one member by exact phone (404 if none)
 - `GET /api/option-groups` — list groups with their options
 - `POST /api/option-groups` — create group `{name, selection_mode}` (modes: `single_required`/`single_optional`/`multi`)
 - `PATCH /api/option-groups/{id}` — update group
@@ -54,7 +59,7 @@ Claude will update CLAUDE.md a long the way
 - `PUT /api/menus/{id}/option-groups` — set the menu's option-group list `{groups: [..]}` (replaces all). Each entry is either shared `{isolated:false, id}` or isolated `{isolated:true, name, selection_mode, options:[{name, price_delta}]}` (price_delta in THB)
 - `GET /api/discounts` — list all preset discounts (manager)
 - `GET /api/discounts/active` — list active discounts only (POS picker)
-- `POST /api/discounts` — create `{name, discount_type, value, active}` (types: `fixed`/`percent`)
+- `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
 
@@ -79,8 +84,23 @@ receipts/reports stay stable when a preset is later edited or deleted. Checkout
 response includes `discount` (total THB off) and a `discounts` list. Inactive
 discounts are rejected at checkout.
 
+### Subsidise discounts
+A discount can be flagged `is_subsidy` (checkbox in `/manager/discounts`,
+orthogonal to fixed/percent). A subsidise discount means a sponsor covers the
+gap: the customer pays less but the shop is made whole (full item revenue). It
+does NOT reduce reported revenue, and VAT is reckoned on the full pre-subsidy
+amount. `is_subsidy` is snapshotted into `order_discounts` so reports stay
+stable. Checkout response adds `subsidy` (THB). Prices are VAT-inclusive and the
+backend computes VAT as the inclusive portion of the shop-received amount
+(`computeOrderTotals` in `internal/order/service/totals.go`) — this replaced an
+earlier bug that added VAT on top. Reports show a waterfall: Gross − Discounts =
+Net sales, + Subsidy; `/api/dashboard/subsidies` lists subsidy spend by program.
+
 ## Settings (DB-backed)
-Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name` and `vat_percent` (double precision, 0 disables VAT). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
+Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
+
+## Membership / Loyalty
+Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router

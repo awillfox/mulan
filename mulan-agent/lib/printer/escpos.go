@@ -100,6 +100,15 @@ func (it OrderItem) UnitPrice() float64 {
 	return p
 }
 
+// MemberInfo is the optional loyalty block printed on the receipt footer.
+type MemberInfo struct {
+	Present bool
+	Name    string
+	Phone   string
+	Earned  int64 // points earned this order
+	Balance int64 // running total after this order
+}
+
 // PrintOrderBill opens a fresh TCP connection, prints a kitchen-style order
 // bill (item list, no prices), and cuts.
 func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
@@ -189,10 +198,12 @@ func (pm Payment) label() string {
 	}
 }
 
-// PrintReceipt prints a full receipt. subtotal is the pre-discount total,
-// discount is the combined THB taken off (0 when no discount applied), vat is
-// computed on the discounted subtotal, and total is the final amount due.
-func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, vat, vatPercent, total float64, pay Payment) error {
+// PrintReceipt prints a full receipt. subtotal is the gross (VAT-inclusive)
+// total, discount is the combined normal THB taken off, subsidy is the
+// sponsor-covered THB (customer pays less but the shop is made whole), vat is
+// the inclusive VAT portion of the shop-received amount, and total is what the
+// customer actually pays.
+func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, subsidy, vat, vatPercent, total float64, pay Payment, member MemberInfo, wifiUsername string) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -275,13 +286,16 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 	// Subtotal, Discount, VAT, Total. Subtotal/VAT lines print when there's
 	// VAT or a discount to break down; otherwise just the TOTAL.
 	divider()
-	if vat > 0 || discount > 0 {
+	if vat > 0 || discount > 0 || subsidy > 0 {
 		writeRow("Subtotal", fmt.Sprintf("%9.2f ฿", subtotal))
 		if discount > 0 {
 			writeRow("Discount", fmt.Sprintf("-%9.2f ฿", discount))
 		}
+		if subsidy > 0 {
+			writeRow("Subsidy", fmt.Sprintf("-%9.2f ฿", subsidy))
+		}
 		if vat > 0 {
-			writeRow(fmt.Sprintf("VAT %g%%", vatPercent), fmt.Sprintf("%9.2f ฿", vat))
+			writeRow(fmt.Sprintf("VAT %g%% incl", vatPercent), fmt.Sprintf("%9.2f ฿", vat))
 		}
 		divider()
 	}
@@ -300,12 +314,37 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 	}
 	divider()
 
+	// Member loyalty footer — only shown when a member was identified.
+	if member.Present {
+		divider()
+		name := member.Name
+		if name == "" {
+			name = member.Phone
+		}
+		writeRow("Member", name)
+		if member.Name != "" {
+			writeln("  " + member.Phone)
+		}
+		writeRow("Points earned", fmt.Sprintf("%d pts", member.Earned))
+		writeRow("Points balance", fmt.Sprintf("%d pts", member.Balance))
+	}
+
+	// Guest WiFi block — only when an account was assigned.
+	if wifiUsername != "" {
+		divider()
+		writeCenter("Free WiFi")
+		writeCenter("SSID: THCoffee_Guest")
+		writeRow("Username", wifiUsername)
+		writeCenter("(valid 2 hours)")
+	}
+
 	// Footer — configurable in manager settings. Falls back to a default
 	// when the shop hasn't set one.
 	footerText := footer
 	if footerText == "" {
 		footerText = "Thank you! Come again!"
 	}
+	divider()
 	writeCenter(footerText)
 	writeln("")
 	writeln("")
@@ -313,7 +352,7 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 	// Cut
 	write(cmdCut)
 
-	log.Printf("receipt printed: %d items, subtotal %.2f, discount %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, discount, vat, total)
+	log.Printf("receipt printed: %d items, subtotal %.2f, discount %.2f, subsidy %.2f, VAT %.2f, total %.2f THB", len(items), subtotal, discount, subsidy, vat, total)
 	return nil
 }
 

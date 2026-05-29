@@ -32,9 +32,19 @@ FROM orders
 WHERE code = $1 AND status = 'held'
 `
 
-func (q *Queries) GetHeldOrder(ctx context.Context, code string) (Order, error) {
+type GetHeldOrderRow struct {
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+func (q *Queries) GetHeldOrder(ctx context.Context, code string) (GetHeldOrderRow, error) {
 	row := q.db.QueryRow(ctx, getHeldOrder, code)
-	var i Order
+	var i GetHeldOrderRow
 	err := row.Scan(
 		&i.ID,
 		&i.Code,
@@ -77,15 +87,25 @@ WHERE status = 'held'
 ORDER BY held_at DESC NULLS LAST
 `
 
-func (q *Queries) ListHeldOrders(ctx context.Context) ([]Order, error) {
+type ListHeldOrdersRow struct {
+	ID          int32              `db:"id" json:"id"`
+	Code        string             `db:"code" json:"code"`
+	Status      string             `db:"status" json:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+}
+
+func (q *Queries) ListHeldOrders(ctx context.Context) ([]ListHeldOrdersRow, error) {
 	rows, err := q.db.Query(ctx, listHeldOrders)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Order{}
+	items := []ListHeldOrdersRow{}
 	for rows.Next() {
-		var i Order
+		var i ListHeldOrdersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Code,

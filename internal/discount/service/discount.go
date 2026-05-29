@@ -40,22 +40,26 @@ func (s *Service) ListActive(ctx context.Context) ([]sqlc.Discount, error) {
 
 // Create inserts a new preset discount. value is satang for fixed discounts
 // and hundredths-of-a-percent for percentage discounts (see schema.hcl).
-func (s *Service) Create(ctx context.Context, name, dType string, value int64, active bool) (sqlc.Discount, error) {
+// isSubsidy marks a discount where a sponsor covers the gap (customer pays
+// less but the shop is made whole).
+func (s *Service) Create(ctx context.Context, name, dType string, value int64, active, isSubsidy bool) (sqlc.Discount, error) {
 	return s.q.CreateDiscount(ctx, sqlc.CreateDiscountParams{
 		Name:         name,
 		DiscountType: dType,
 		Value:        value,
 		Active:       active,
+		IsSubsidy:    isSubsidy,
 	})
 }
 
-func (s *Service) Update(ctx context.Context, id int32, name, dType string, value int64, active bool) (sqlc.Discount, error) {
+func (s *Service) Update(ctx context.Context, id int32, name, dType string, value int64, active, isSubsidy bool) (sqlc.Discount, error) {
 	return s.q.UpdateDiscount(ctx, sqlc.UpdateDiscountParams{
 		ID:           id,
 		Name:         name,
 		DiscountType: dType,
 		Value:        value,
 		Active:       active,
+		IsSubsidy:    isSubsidy,
 	})
 }
 

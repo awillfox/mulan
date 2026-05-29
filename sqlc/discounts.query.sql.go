@@ -10,7 +10,7 @@ import (
 )
 
 const getDiscountsByIDs = `-- name: GetDiscountsByIDs :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 WHERE id = ANY($1::int[])
 ORDER BY id
@@ -32,6 +32,7 @@ func (q *Queries) GetDiscountsByIDs(ctx context.Context, ids []int32) ([]Discoun
 			&i.Value,
 			&i.Active,
 			&i.CreatedAt,
+			&i.IsSubsidy,
 		); err != nil {
 			return nil, err
 		}
@@ -44,7 +45,7 @@ func (q *Queries) GetDiscountsByIDs(ctx context.Context, ids []int32) ([]Discoun
 }
 
 const listActiveDiscounts = `-- name: ListActiveDiscounts :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 WHERE active = true
 ORDER BY id
@@ -66,6 +67,7 @@ func (q *Queries) ListActiveDiscounts(ctx context.Context) ([]Discount, error) {
 			&i.Value,
 			&i.Active,
 			&i.CreatedAt,
+			&i.IsSubsidy,
 		); err != nil {
 			return nil, err
 		}
@@ -78,7 +80,7 @@ func (q *Queries) ListActiveDiscounts(ctx context.Context) ([]Discount, error) {
 }
 
 const listDiscounts = `-- name: ListDiscounts :many
-SELECT id, name, discount_type, value, active, created_at
+SELECT id, name, discount_type, value, active, created_at, is_subsidy
 FROM discounts
 ORDER BY id
 `
@@ -99,6 +101,7 @@ func (q *Queries) ListDiscounts(ctx context.Context) ([]Discount, error) {
 			&i.Value,
 			&i.Active,
 			&i.CreatedAt,
+			&i.IsSubsidy,
 		); err != nil {
 			return nil, err
 		}

@@ -52,6 +52,7 @@ type discountResponse struct {
 	DiscountType string  `json:"discount_type"`
 	Value        float64 `json:"value"`
 	Active       bool    `json:"active"`
+	IsSubsidy    bool    `json:"is_subsidy"`
 }
 
 func toResponse(d sqlc.Discount) discountResponse {
@@ -61,6 +62,7 @@ func toResponse(d sqlc.Discount) discountResponse {
 		DiscountType: d.DiscountType,
 		Value:        float64(d.Value) / 100,
 		Active:       d.Active,
+		IsSubsidy:    d.IsSubsidy,
 	}
 }
 
@@ -95,6 +97,7 @@ type discountRequest struct {
 	DiscountType string  `json:"discount_type"`
 	Value        float64 `json:"value"`
 	Active       *bool   `json:"active"`
+	IsSubsidy    bool    `json:"is_subsidy"`
 }
 
 func (req discountRequest) validate() error {
@@ -134,7 +137,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Active != nil {
 		active = *req.Active
 	}
-	d, err := h.svc.Create(r.Context(), req.Name, req.DiscountType, scaledValue(req.Value), active)
+	d, err := h.svc.Create(r.Context(), req.Name, req.DiscountType, scaledValue(req.Value), active, req.IsSubsidy)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to create discount", err)
 		return
@@ -162,7 +165,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Active != nil {
 		active = *req.Active
 	}
-	d, err := h.svc.Update(r.Context(), id, req.Name, req.DiscountType, scaledValue(req.Value), active)
+	d, err := h.svc.Update(r.Context(), id, req.Name, req.DiscountType, scaledValue(req.Value), active, req.IsSubsidy)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to update discount", err)
 		return

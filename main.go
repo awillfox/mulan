@@ -12,12 +12,18 @@ import (
 
 	cashdrawerhttp "mulan/internal/cashdrawer/http"
 	cashdrawerservice "mulan/internal/cashdrawer/service"
+	cashierhttp "mulan/internal/cashier/http"
+	cashierservice "mulan/internal/cashier/service"
 	"mulan/internal/config"
 	dashboardhttp "mulan/internal/dashboard/http"
+	guestwifihttp "mulan/internal/guestwifi/http"
+	guestwifiservice "mulan/internal/guestwifi/service"
 	dashboardservice "mulan/internal/dashboard/service"
 	discounthttp "mulan/internal/discount/http"
 	discountservice "mulan/internal/discount/service"
 	"mulan/internal/hub"
+	memberhttp "mulan/internal/member/http"
+	memberservice "mulan/internal/member/service"
 	menuhttp "mulan/internal/menu/http"
 	menuservice "mulan/internal/menu/service"
 	menucategoryhttp "mulan/internal/menucategory/http"
@@ -68,8 +74,33 @@ func main() {
 	}
 	settingsHandler := settingshttp.NewHandler(settingsSvc)
 
+	wifiSvc := guestwifiservice.New(pool, guestwifiservice.Config{
+		Host:          cfg.MikrotikHost,
+		Port:          cfg.MikrotikPort,
+		User:          cfg.MikrotikUser,
+		Password:      cfg.MikrotikPassword,
+		HotspotServer: cfg.MikrotikHotspotServer,
+	})
+	if cfg.MikrotikHost != "" {
+		if err := wifiSvc.FillPool(ctx); err != nil {
+			log.Printf("guestwifi: initial pool fill: %v", err)
+		}
+		wifiSvc.ExpireLoop(ctx)
+	}
+	wifiHandler := guestwifihttp.New(wifiSvc)
+
 	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc)
-	orderHandler := orderhttp.NewHandler(orderSvc)
+	var wifiDep orderhttp.WifiService
+	if cfg.MikrotikHost != "" {
+		wifiDep = wifiSvc
+	}
+	orderHandler := orderhttp.NewHandler(orderSvc, wifiDep)
+
+	memberSvc := memberservice.NewService(queries)
+	memberHandler := memberhttp.NewHandler(memberSvc)
+
+	cashierSvc := cashierservice.NewService(queries)
+	cashierHandler := cashierhttp.NewHandler(cashierSvc)
 
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
@@ -95,6 +126,8 @@ func main() {
 	r.Get("/manager/items", webHandler.Items)
 	r.Get("/manager/option-groups", webHandler.OptionGroups)
 	r.Get("/manager/discounts", webHandler.Discounts)
+	r.Get("/manager/members", webHandler.Members)
+	r.Get("/manager/cashiers", webHandler.Cashiers)
 	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
 	// Logo lives in the settings table so it survives redeploys and is shared
@@ -113,9 +146,12 @@ func main() {
 		r.Route("/options", optionGroupHandler.OptionRoutes)
 		r.Route("/orders", orderHandler.Routes)
 		r.Route("/discounts", discountHandler.Routes)
+		r.Route("/members", memberHandler.Routes)
+		r.Route("/cashiers", cashierHandler.Routes)
 		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/dashboard", dashboardHandler.Routes)
 		r.Route("/cash-drawer", cashDrawerHandler.Routes)
+		r.Mount("/wifi", wifiHandler.Routes())
 	})
 
 	log.Println("server starting on :" + cfg.Port)

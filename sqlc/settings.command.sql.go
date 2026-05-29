@@ -49,18 +49,20 @@ func (q *Queries) SetSettingsLogo(ctx context.Context, arg SetSettingsLogoParams
 
 const updateSettings = `-- name: UpdateSettings :one
 UPDATE settings
-SET shop_name      = $1,
-    vat_percent    = $2,
-    receipt_footer = $3,
-    updated_at     = now()
+SET shop_name       = $1,
+    vat_percent     = $2,
+    receipt_footer  = $3,
+    points_per_baht = $4,
+    updated_at      = now()
 WHERE id = 1
-RETURNING id, shop_name, vat_percent, receipt_footer, updated_at
+RETURNING id, shop_name, vat_percent, receipt_footer, points_per_baht, updated_at
 `
 
 type UpdateSettingsParams struct {
 	ShopName      string  `db:"shop_name" json:"shop_name"`
 	VatPercent    float64 `db:"vat_percent" json:"vat_percent"`
 	ReceiptFooter string  `db:"receipt_footer" json:"receipt_footer"`
+	PointsPerBaht float64 `db:"points_per_baht" json:"points_per_baht"`
 }
 
 type UpdateSettingsRow struct {
@@ -68,17 +70,24 @@ type UpdateSettingsRow struct {
 	ShopName      string             `db:"shop_name" json:"shop_name"`
 	VatPercent    float64            `db:"vat_percent" json:"vat_percent"`
 	ReceiptFooter string             `db:"receipt_footer" json:"receipt_footer"`
+	PointsPerBaht float64            `db:"points_per_baht" json:"points_per_baht"`
 	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (UpdateSettingsRow, error) {
-	row := q.db.QueryRow(ctx, updateSettings, arg.ShopName, arg.VatPercent, arg.ReceiptFooter)
+	row := q.db.QueryRow(ctx, updateSettings,
+		arg.ShopName,
+		arg.VatPercent,
+		arg.ReceiptFooter,
+		arg.PointsPerBaht,
+	)
 	var i UpdateSettingsRow
 	err := row.Scan(
 		&i.ID,
 		&i.ShopName,
 		&i.VatPercent,
 		&i.ReceiptFooter,
+		&i.PointsPerBaht,
 		&i.UpdatedAt,
 	)
 	return i, err

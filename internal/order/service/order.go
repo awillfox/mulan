@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -52,16 +53,21 @@ func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsserv
 	return &OrderService{pool: pool, q: q, settings: settings}
 }
 
-func (s *OrderService) Create(ctx context.Context) (string, error) {
+type CreatedOrder struct {
+	Code string
+	ID   int32
+}
+
+func (s *OrderService) Create(ctx context.Context) (CreatedOrder, error) {
 	code, err := generateCode()
 	if err != nil {
-		return "", fmt.Errorf("generate code: %w", err)
+		return CreatedOrder{}, fmt.Errorf("generate code: %w", err)
 	}
 	row, err := s.q.CreateOrder(ctx, code)
 	if err != nil {
-		return "", fmt.Errorf("create order: %w", err)
+		return CreatedOrder{}, fmt.Errorf("create order: %w", err)
 	}
-	return row.Code, nil
+	return CreatedOrder{Code: row.Code, ID: row.ID}, nil
 }
 
 // CheckoutItemInput is what the handler accepts from the client. The server
@@ -72,6 +78,13 @@ type CheckoutItemInput struct {
 	Qty         int32
 	OptionIDs   []int32
 	DiscountIDs []int32 // per-line discounts applied to this line
+}
+
+// CustomerInput is the optional membership capture at checkout. An empty Phone
+// means "no member" and the whole loyalty path is skipped.
+type CustomerInput struct {
+	Phone string
+	Name  string
 }
 
 // Checkout finalises an open order: it validates every line against the
@@ -85,7 +98,7 @@ type CheckoutItemInput struct {
 // whole-order discounts reduce the net subtotal, then VAT is computed on the
 // discounted subtotal. Every applied discount is clamped so no line — and the
 // order total — can never go below zero.
-func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32) (*domain.CheckoutResult, error) {
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32, customer CustomerInput) (*domain.CheckoutResult, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -128,6 +141,7 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	resultItems := make([]domain.CheckoutResultItem, 0, len(items))
 	applied := make([]domain.AppliedDiscount, 0)
 	var subtotalSatang, itemDiscountSatang int64
+	var normalItemSatang, subsidyItemSatang int64
 
 	for _, in := range items {
 		m, ok := menuByID[in.MenuID]
@@ -183,6 +197,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			}
 			lineRemaining -= amt
 			itemDiscountSatang += amt
+			if d.IsSubsidy {
+				subsidyItemSatang += amt
+			} else {
+				normalItemSatang += amt
+			}
 			if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
 				OrderID:      order.ID,
 				OrderItemID:  pgtype.Int4{Int32: itemID, Valid: true},
@@ -190,10 +209,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 				Name:         d.Name,
 				DiscountType: d.DiscountType,
 				Amount:       amt,
+				IsSubsidy:    d.IsSubsidy,
 			}); err != nil {
 				return nil, fmt.Errorf("insert order discount: %w", err)
 			}
-			applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
+			applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt, IsSubsidy: d.IsSubsidy})
 		}
 
 		resultItems = append(resultItems, domain.CheckoutResultItem{
@@ -209,7 +229,7 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	// clamp keeps the order total from going below zero.
 	subtotalAfterItem := subtotalSatang - itemDiscountSatang
 	orderRemaining := subtotalAfterItem
-	var orderDiscountSatang int64
+	var normalOrderSatang, subsidyOrderSatang int64
 	for _, did := range dedupIDs(orderDiscountIDs) {
 		d := discByID[did]
 		amt := computeDiscountAmount(d, subtotalAfterItem)
@@ -220,7 +240,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			continue
 		}
 		orderRemaining -= amt
-		orderDiscountSatang += amt
+		if d.IsSubsidy {
+			subsidyOrderSatang += amt
+		} else {
+			normalOrderSatang += amt
+		}
 		if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
 			OrderID:      order.ID,
 			OrderItemID:  pgtype.Int4{Valid: false},
@@ -228,36 +252,92 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			Name:         d.Name,
 			DiscountType: d.DiscountType,
 			Amount:       amt,
+			IsSubsidy:    d.IsSubsidy,
 		}); err != nil {
 			return nil, fmt.Errorf("insert order discount: %w", err)
 		}
-		applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
+		applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt, IsSubsidy: d.IsSubsidy})
 	}
 
-	if err := q.PayOrder(ctx, code); err != nil {
+	cfg := s.settings.Get()
+	t := computeOrderTotals(
+		subtotalSatang,
+		normalItemSatang+normalOrderSatang,
+		subsidyItemSatang+subsidyOrderSatang,
+		cfg.VatPercent,
+	)
+	totalSatang := t.CustomerPays
+
+	var memberID pgtype.Int4
+	var pointsEarned int64
+	var hasMember bool
+	var memberName, memberPhone string
+	var pointsBalance int64
+
+	if p := strings.TrimSpace(customer.Phone); p != "" {
+		member, err := q.FindMemberByPhone(ctx, p)
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("find member: %w", err)
+			}
+			var nameArg pgtype.Text
+			if n := strings.TrimSpace(customer.Name); n != "" {
+				nameArg = pgtype.Text{String: n, Valid: true}
+			}
+			member, err = q.CreateMember(ctx, sqlc.CreateMemberParams{
+				Phone: p,
+				Name:  nameArg,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("create member: %w", err)
+			}
+		}
+		pointsEarned = int64(float64(totalSatang) / 100 * cfg.PointsPerBaht)
+		updated, err := q.AddMemberPoints(ctx, sqlc.AddMemberPointsParams{
+			Delta: pointsEarned,
+			ID:    member.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("add member points: %w", err)
+		}
+		memberID = pgtype.Int4{Int32: member.ID, Valid: true}
+		hasMember = true
+		memberPhone = member.Phone
+		if member.Name.Valid {
+			memberName = member.Name.String
+		}
+		pointsBalance = updated.Points
+	}
+
+	if err := q.PayOrder(ctx, sqlc.PayOrderParams{
+		MemberID:     memberID,
+		PointsEarned: pointsEarned,
+		Code:         code,
+	}); err != nil {
 		return nil, fmt.Errorf("pay order: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	cfg := s.settings.Get()
-	discountSatang := itemDiscountSatang + orderDiscountSatang
-	discountedSubtotal := subtotalSatang - discountSatang
-	vatSatang := discountedSubtotal * int64(cfg.VatPercent*100) / 10000
-	totalSatang := discountedSubtotal + vatSatang
-
 	return &domain.CheckoutResult{
+		OrderID:       order.ID,
 		Code:          code,
-		Subtotal:      float64(subtotalSatang) / 100,
-		Discount:      float64(discountSatang) / 100,
-		VAT:           float64(vatSatang) / 100,
+		Subtotal:      float64(t.Gross) / 100,
+		Discount:      float64(t.NormalDisc) / 100,
+		Subsidy:       float64(t.Subsidy) / 100,
+		VAT:           float64(t.VAT) / 100,
 		VATPercent:    cfg.VatPercent,
 		ShopName:      cfg.ShopName,
 		ReceiptFooter: cfg.ReceiptFooter,
-		Total:         float64(totalSatang) / 100,
+		Total:         float64(t.CustomerPays) / 100,
 		Items:         resultItems,
 		Discounts:     applied,
+		HasMember:     hasMember,
+		MemberName:    memberName,
+		MemberPhone:   memberPhone,
+		PointsEarned:  pointsEarned,
+		PointsBalance: pointsBalance,
 	}, nil
 }
 

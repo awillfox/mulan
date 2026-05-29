@@ -19,6 +19,16 @@ type CashDrawerAudit struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type Cashier struct {
+	ID        int32              `db:"id" json:"id"`
+	LoginID   string             `db:"login_id" json:"login_id"`
+	Name      string             `db:"name" json:"name"`
+	PinHash   string             `db:"pin_hash" json:"pin_hash"`
+	Active    bool               `db:"active" json:"active"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Discount struct {
 	ID           int32              `db:"id" json:"id"`
 	Name         string             `db:"name" json:"name"`
@@ -26,6 +36,26 @@ type Discount struct {
 	Value        int64              `db:"value" json:"value"`
 	Active       bool               `db:"active" json:"active"`
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	IsSubsidy    bool               `db:"is_subsidy" json:"is_subsidy"`
+}
+
+type GuestWifiUser struct {
+	ID         int32              `db:"id" json:"id"`
+	Username   string             `db:"username" json:"username"`
+	State      string             `db:"state" json:"state"`
+	OrderID    pgtype.Int4        `db:"order_id" json:"order_id"`
+	AssignedAt pgtype.Timestamptz `db:"assigned_at" json:"assigned_at"`
+	ExpiresAt  pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+type Member struct {
+	ID        int32              `db:"id" json:"id"`
+	Phone     string             `db:"phone" json:"phone"`
+	Name      pgtype.Text        `db:"name" json:"name"`
+	Points    int64              `db:"points" json:"points"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 type Menu struct {
@@ -64,13 +94,15 @@ type OptionGroup struct {
 }
 
 type Order struct {
-	ID          int32              `db:"id" json:"id"`
-	Code        string             `db:"code" json:"code"`
-	Status      string             `db:"status" json:"status"`
-	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	HeldAt      pgtype.Timestamptz `db:"held_at" json:"held_at"`
-	HeldLabel   pgtype.Text        `db:"held_label" json:"held_label"`
-	HeldPayload []byte             `db:"held_payload" json:"held_payload"`
+	ID           int32              `db:"id" json:"id"`
+	Code         string             `db:"code" json:"code"`
+	Status       string             `db:"status" json:"status"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	HeldAt       pgtype.Timestamptz `db:"held_at" json:"held_at"`
+	HeldLabel    pgtype.Text        `db:"held_label" json:"held_label"`
+	HeldPayload  []byte             `db:"held_payload" json:"held_payload"`
+	MemberID     pgtype.Int4        `db:"member_id" json:"member_id"`
+	PointsEarned int64              `db:"points_earned" json:"points_earned"`
 }
 
 type OrderDiscount struct {
@@ -81,6 +113,7 @@ type OrderDiscount struct {
 	Name         string      `db:"name" json:"name"`
 	DiscountType string      `db:"discount_type" json:"discount_type"`
 	Amount       int64       `db:"amount" json:"amount"`
+	IsSubsidy    bool        `db:"is_subsidy" json:"is_subsidy"`
 }
 
 type OrderItem struct {
@@ -108,4 +141,5 @@ type Setting struct {
 	Logo          []byte             `db:"logo" json:"logo"`
 	LogoMime      pgtype.Text        `db:"logo_mime" json:"logo_mime"`
 	UpdatedAt     pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	PointsPerBaht float64            `db:"points_per_baht" json:"points_per_baht"`
 }

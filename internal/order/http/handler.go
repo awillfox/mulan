@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,13 @@ import (
 	"mulan/internal/order/service"
 	"mulan/internal/response"
 )
+
+// WifiService is the subset of guestwifi.Service used by this handler.
+type WifiService interface {
+	AssignToOrder(ctx context.Context, orderID int32) (string, error)
+	EnableForOrder(ctx context.Context, orderID int32) error
+	GetUsernameForOrder(ctx context.Context, orderID int32) string
+}
 
 type heldOrderResponse struct {
 	Code      string          `json:"code"`
@@ -39,11 +47,12 @@ func toHeldResponse(h service.HeldOrder) heldOrderResponse {
 }
 
 type Handler struct {
-	svc *service.OrderService
+	svc  *service.OrderService
+	wifi WifiService // nil when WiFi feature is disabled
 }
 
-func NewHandler(svc *service.OrderService) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *service.OrderService, wifi WifiService) *Handler {
+	return &Handler{svc: svc, wifi: wifi}
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -129,12 +138,17 @@ func (h *Handler) listHeld(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	code, err := h.svc.Create(r.Context())
+	order, err := h.svc.Create(r.Context())
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to create order", err)
 		return
 	}
-	response.Created(w, r, map[string]string{"code": code})
+	out := map[string]any{"code": order.Code}
+	if h.wifi != nil {
+		username, _ := h.wifi.AssignToOrder(r.Context(), order.ID)
+		out["wifi_username"] = username
+	}
+	response.Created(w, r, out)
 }
 
 type checkoutItemRequest struct {
@@ -145,8 +159,10 @@ type checkoutItemRequest struct {
 }
 
 type checkoutRequest struct {
-	Items       []checkoutItemRequest `json:"items"`
-	DiscountIDs []int32               `json:"discount_ids"` // whole-order discounts
+	Items         []checkoutItemRequest `json:"items"`
+	DiscountIDs   []int32               `json:"discount_ids"` // whole-order discounts
+	CustomerPhone string                `json:"customer_phone"`
+	CustomerName  string                `json:"customer_name"`
 }
 
 type checkoutOptionResponse struct {
@@ -162,15 +178,17 @@ type checkoutItemResponse struct {
 }
 
 type checkoutDiscountResponse struct {
-	Name   string  `json:"name"`
-	Type   string  `json:"type"`
-	Amount float64 `json:"amount"`
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Amount    float64 `json:"amount"`
+	IsSubsidy bool    `json:"is_subsidy"`
 }
 
 type checkoutResponse struct {
 	Code          string                     `json:"code"`
 	Subtotal      float64                    `json:"subtotal"`
 	Discount      float64                    `json:"discount"`
+	Subsidy       float64                    `json:"subsidy"`
 	VAT           float64                    `json:"vat"`
 	VATPercent    float64                    `json:"vat_percent"`
 	ShopName      string                     `json:"shop_name"`
@@ -178,6 +196,12 @@ type checkoutResponse struct {
 	Total         float64                    `json:"total"`
 	Items         []checkoutItemResponse     `json:"items"`
 	Discounts     []checkoutDiscountResponse `json:"discounts"`
+	HasMember     bool                       `json:"has_member"`
+	MemberName    string                     `json:"member_name,omitempty"`
+	MemberPhone   string                     `json:"member_phone,omitempty"`
+	PointsEarned  int64                      `json:"points_earned"`
+	PointsBalance int64                      `json:"points_balance"`
+	WifiUsername  string                     `json:"wifi_username,omitempty"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +227,10 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.svc.Checkout(r.Context(), code, items, req.DiscountIDs)
+	result, err := h.svc.Checkout(r.Context(), code, items, req.DiscountIDs, service.CustomerInput{
+		Phone: req.CustomerPhone,
+		Name:  req.CustomerName,
+	})
 	if err != nil {
 		status, msg := classifyCheckoutError(err)
 		response.Error(w, r, status, msg, err)
@@ -230,16 +257,27 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	respDiscounts := make([]checkoutDiscountResponse, len(result.Discounts))
 	for i, d := range result.Discounts {
 		respDiscounts[i] = checkoutDiscountResponse{
-			Name:   d.Name,
-			Type:   d.Type,
-			Amount: money.New(d.Amount, money.THB).AsMajorUnits(),
+			Name:      d.Name,
+			Type:      d.Type,
+			Amount:    money.New(d.Amount, money.THB).AsMajorUnits(),
+			IsSubsidy: d.IsSubsidy,
 		}
+	}
+
+	var wifiUsername string
+	if h.wifi != nil {
+		if err := h.wifi.EnableForOrder(r.Context(), result.OrderID); err != nil {
+			// log but don't fail — payment already committed
+			_ = err
+		}
+		wifiUsername = h.wifi.GetUsernameForOrder(r.Context(), result.OrderID)
 	}
 
 	response.OK(w, r, checkoutResponse{
 		Code:          result.Code,
 		Subtotal:      result.Subtotal,
 		Discount:      result.Discount,
+		Subsidy:       result.Subsidy,
 		VAT:           result.VAT,
 		VATPercent:    result.VATPercent,
 		ShopName:      result.ShopName,
@@ -247,6 +285,12 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		Total:         result.Total,
 		Items:         respItems,
 		Discounts:     respDiscounts,
+		HasMember:     result.HasMember,
+		MemberName:    result.MemberName,
+		MemberPhone:   result.MemberPhone,
+		PointsEarned:  result.PointsEarned,
+		PointsBalance: result.PointsBalance,
+		WifiUsername:  wifiUsername,
 	})
 }
 

@@ -11,12 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const discountSummary = `-- name: DiscountSummary :one
+SELECT
+  COALESCE(SUM(od.amount) FILTER (WHERE NOT od.is_subsidy), 0)::bigint AS discount,
+  COALESCE(SUM(od.amount) FILTER (WHERE     od.is_subsidy), 0)::bigint AS subsidy
+FROM order_discounts od
+JOIN orders o ON o.id = od.order_id
+WHERE o.status = 'paid'
+  AND o.created_at >= $1::timestamptz
+  AND o.created_at <  $2::timestamptz
+`
+
+type DiscountSummaryParams struct {
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+}
+
+type DiscountSummaryRow struct {
+	Discount int64 `db:"discount" json:"discount"`
+	Subsidy  int64 `db:"subsidy" json:"subsidy"`
+}
+
+// Totals applied discounts for a period, split by subsidy flag. Aggregated on
+// its own (NOT joined into the order_items revenue sum) so revenue is never
+// cartesian-multiplied.
+func (q *Queries) DiscountSummary(ctx context.Context, arg DiscountSummaryParams) (DiscountSummaryRow, error) {
+	row := q.db.QueryRow(ctx, discountSummary, arg.FromAt, arg.ToAt)
+	var i DiscountSummaryRow
+	err := row.Scan(&i.Discount, &i.Subsidy)
+	return i, err
+}
+
 const periodSummary = `-- name: PeriodSummary :one
-SELECT COALESCE(SUM(oi.price * oi.qty), 0)::bigint AS revenue,
-       COUNT(DISTINCT o.id)::bigint                AS orders,
-       COALESCE(SUM(oi.qty), 0)::bigint            AS items
+SELECT
+  COALESCE(SUM((oi.price + COALESCE(opt.delta, 0)) * oi.qty), 0)::bigint AS revenue,
+  COUNT(DISTINCT o.id)::bigint                                           AS orders,
+  COALESCE(SUM(oi.qty), 0)::bigint                                       AS items
 FROM orders o
 LEFT JOIN order_items oi ON oi.order_id = o.id
+LEFT JOIN (
+  SELECT order_item_id, SUM(price_delta) AS delta
+  FROM order_item_options
+  GROUP BY order_item_id
+) opt ON opt.order_item_id = oi.id
 WHERE o.status = 'paid'
   AND o.created_at >= $1::timestamptz
   AND o.created_at <  $2::timestamptz
@@ -134,6 +171,48 @@ func (q *Queries) SalesByHourDOW(ctx context.Context, arg SalesByHourDOWParams) 
 			&i.Revenue,
 			&i.Orders,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const subsidyByProgram = `-- name: SubsidyByProgram :many
+SELECT od.name, SUM(od.amount)::bigint AS amount
+FROM order_discounts od
+JOIN orders o ON o.id = od.order_id
+WHERE o.status = 'paid' AND od.is_subsidy
+  AND o.created_at >= $1::timestamptz
+  AND o.created_at <  $2::timestamptz
+GROUP BY od.name
+ORDER BY amount DESC
+`
+
+type SubsidyByProgramParams struct {
+	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+}
+
+type SubsidyByProgramRow struct {
+	Name   string `db:"name" json:"name"`
+	Amount int64  `db:"amount" json:"amount"`
+}
+
+// Per-program subsidy spend for a period (the "subsidy by program" breakdown).
+func (q *Queries) SubsidyByProgram(ctx context.Context, arg SubsidyByProgramParams) ([]SubsidyByProgramRow, error) {
+	rows, err := q.db.Query(ctx, subsidyByProgram, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SubsidyByProgramRow{}
+	for rows.Next() {
+		var i SubsidyByProgramRow
+		if err := rows.Scan(&i.Name, &i.Amount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

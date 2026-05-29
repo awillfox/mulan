@@ -309,6 +309,8 @@ type checkoutRequest struct {
 	PaymentMethod string                `json:"payment_method,omitempty"` // "cash" | "card" | "qr"
 	CashTendered  float64               `json:"cash_tendered,omitempty"`  // THB, cash payments only
 	CashChange    float64               `json:"cash_change,omitempty"`    // THB, cash payments only
+	CustomerPhone string                `json:"customer_phone,omitempty"`
+	CustomerName  string                `json:"customer_name,omitempty"`
 }
 
 type checkoutOption struct {
@@ -327,12 +329,19 @@ type checkoutResponse struct {
 	Code          string         `json:"code"`
 	Subtotal      float64        `json:"subtotal"`
 	Discount      float64        `json:"discount"`
+	Subsidy       float64        `json:"subsidy"`
 	VAT           float64        `json:"vat"`
 	VATPercent    float64        `json:"vat_percent"`
 	ShopName      string         `json:"shop_name"`
 	ReceiptFooter string         `json:"receipt_footer"`
 	Total         float64        `json:"total"`
 	Items         []checkoutItem `json:"items"`
+	HasMember     bool           `json:"has_member"`
+	MemberName    string         `json:"member_name"`
+	MemberPhone   string         `json:"member_phone"`
+	PointsEarned  int64          `json:"points_earned"`
+	PointsBalance int64          `json:"points_balance"`
+	WifiUsername  string         `json:"wifi_username,omitempty"`
 }
 
 type checkoutEnvelope struct {
@@ -353,7 +362,7 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 		}
 
 		// Forward to mulan API to persist order items and get computed totals
-		result, err := callCheckout(apiBase, req.OrderCode, req.Items, req.DiscountIDs)
+		result, err := callCheckout(apiBase, req.OrderCode, req.Items, req.DiscountIDs, req.CustomerPhone, req.CustomerName)
 		if err != nil {
 			log.Printf("checkout API error: %v", err)
 			http.Error(w, "checkout failed", http.StatusBadGateway)
@@ -383,7 +392,14 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 				Tendered: req.CashTendered,
 				Change:   req.CashChange,
 			}
-			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.VAT, result.VATPercent, result.Total, pay); err != nil {
+			member := printer.MemberInfo{
+				Present: result.HasMember,
+				Name:    result.MemberName,
+				Phone:   result.MemberPhone,
+				Earned:  result.PointsEarned,
+				Balance: result.PointsBalance,
+			}
+			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.Subsidy, result.VAT, result.VATPercent, result.Total, pay, member, result.WifiUsername); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
@@ -402,8 +418,13 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 	}
 }
 
-func callCheckout(apiBase, code string, items any, discountIDs []int32) (*checkoutResponse, error) {
-	body, _ := json.Marshal(map[string]any{"items": items, "discount_ids": discountIDs})
+func callCheckout(apiBase, code string, items any, discountIDs []int32, customerPhone, customerName string) (*checkoutResponse, error) {
+	body, _ := json.Marshal(map[string]any{
+		"items":          items,
+		"discount_ids":   discountIDs,
+		"customer_phone": customerPhone,
+		"customer_name":  customerName,
+	})
 	resp, err := http.Post(apiBase+"/api/orders/"+code+"/checkout", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

@@ -44,6 +44,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/sales-by-day", h.SalesByDay)
 	r.Get("/heatmap", h.Heatmap)
 	r.Get("/compare", h.Compare)
+	r.Get("/subsidies", h.Subsidies)
 }
 
 // rangeFromQuery defaults to today (shop-local 00:00 → next 00:00) and
@@ -134,6 +135,20 @@ func (h *Handler) TopMenus(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.TopMenus(r.Context(), from, to)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to load top menus", err)
+		return
+	}
+	response.OK(w, r, items)
+}
+
+func (h *Handler) Subsidies(w http.ResponseWriter, r *http.Request) {
+	from, to, err := rangeFromQuery(r)
+	if err != nil {
+		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+	items, err := h.svc.SubsidyByProgram(r.Context(), from, to)
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "failed to load subsidies", err)
 		return
 	}
 	response.OK(w, r, items)

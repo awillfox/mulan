@@ -12,6 +12,12 @@ type Config struct {
 	PSQLURL     string `mapstructure:"PSQL_URL"`
 	PSQLDevURL  string `mapstructure:"PSQL_DEV_URL"`
 	PSQLProdURL string `mapstructure:"PSQL_PROD_URL"`
+
+	MikrotikHost          string `mapstructure:"MIKROTIK_HOST"`
+	MikrotikPort          int    `mapstructure:"MIKROTIK_PORT"`
+	MikrotikUser          string `mapstructure:"MIKROTIK_USER"`
+	MikrotikPassword      string `mapstructure:"MIKROTIK_PASSWORD"`
+	MikrotikHotspotServer string `mapstructure:"MIKROTIK_HOTSPOT_SERVER"`
 }
 
 func Load() (*Config, error) {
@@ -22,11 +28,17 @@ func Load() (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	for _, k := range []string{"PORT", "PSQL_URL", "PSQL_DEV_URL", "PSQL_PROD_URL"} {
+	for _, k := range []string{
+		"PORT", "PSQL_URL", "PSQL_DEV_URL", "PSQL_PROD_URL",
+		"MIKROTIK_HOST", "MIKROTIK_PORT", "MIKROTIK_USER", "MIKROTIK_PASSWORD", "MIKROTIK_HOTSPOT_SERVER",
+	} {
 		_ = v.BindEnv(k)
 	}
 
 	v.SetDefault("PORT", "8080")
+	v.SetDefault("MIKROTIK_PORT", 8728)
+	v.SetDefault("MIKROTIK_USER", "admin")
+	v.SetDefault("MIKROTIK_HOTSPOT_SERVER", "hotspot1")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, notFound := err.(viper.ConfigFileNotFoundError); !notFound {
