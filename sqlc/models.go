@@ -35,8 +35,8 @@ type Discount struct {
 	DiscountType string             `db:"discount_type" json:"discount_type"`
 	Value        int64              `db:"value" json:"value"`
 	Active       bool               `db:"active" json:"active"`
-	IsSubsidy    bool               `db:"is_subsidy" json:"is_subsidy"`
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	IsSubsidy    bool               `db:"is_subsidy" json:"is_subsidy"`
 }
 
 type GuestWifiUser struct {

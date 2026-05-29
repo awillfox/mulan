@@ -32,6 +32,18 @@ CREATE TABLE "public"."cashiers" (
 );
 -- Create index "cashiers_login_id_key" to table: "cashiers"
 CREATE UNIQUE INDEX "cashiers_login_id_key" ON "public"."cashiers" ("login_id");
+-- Create "members" table
+CREATE TABLE "public"."members" (
+  "id" serial NOT NULL,
+  "phone" character varying(20) NOT NULL,
+  "name" character varying(255) NULL,
+  "points" bigint NOT NULL DEFAULT 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id")
+);
+-- Create index "members_phone_key" to table: "members"
+CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "settings" table
 CREATE TABLE "public"."settings" (
   "id" integer NOT NULL DEFAULT 1,
@@ -45,18 +57,6 @@ CREATE TABLE "public"."settings" (
   PRIMARY KEY ("id"),
   CONSTRAINT "settings_singleton" CHECK (id = 1)
 );
--- Create "members" table
-CREATE TABLE "public"."members" (
-  "id" serial NOT NULL,
-  "phone" character varying(20) NOT NULL,
-  "name" character varying(255) NULL,
-  "points" bigint NOT NULL DEFAULT 0,
-  "created_at" timestamptz NOT NULL DEFAULT now(),
-  "updated_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
-);
--- Create index "members_phone_key" to table: "members"
-CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "orders" table
 CREATE TABLE "public"."orders" (
   "id" serial NOT NULL,
@@ -147,8 +147,8 @@ CREATE TABLE "public"."discounts" (
   "discount_type" character varying(20) NOT NULL DEFAULT 'fixed',
   "value" bigint NOT NULL DEFAULT 0,
   "active" boolean NOT NULL DEFAULT true,
-  "is_subsidy" boolean NOT NULL DEFAULT false,
   "created_at" timestamptz NOT NULL DEFAULT now(),
+  "is_subsidy" boolean NOT NULL DEFAULT false,
   PRIMARY KEY ("id"),
   CONSTRAINT "discounts_discount_type" CHECK ((discount_type)::text = ANY ((ARRAY['fixed'::character varying, 'percent'::character varying])::text[]))
 );

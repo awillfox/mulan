@@ -14,7 +14,7 @@ import (
 const createDiscount = `-- name: CreateDiscount :one
 INSERT INTO discounts (name, discount_type, value, active, is_subsidy)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, discount_type, value, active, is_subsidy, created_at
+RETURNING id, name, discount_type, value, active, created_at, is_subsidy
 `
 
 type CreateDiscountParams struct {
@@ -40,8 +40,8 @@ func (q *Queries) CreateDiscount(ctx context.Context, arg CreateDiscountParams) 
 		&i.DiscountType,
 		&i.Value,
 		&i.Active,
-		&i.IsSubsidy,
 		&i.CreatedAt,
+		&i.IsSubsidy,
 	)
 	return i, err
 }
@@ -86,7 +86,7 @@ func (q *Queries) DeleteDiscount(ctx context.Context, id int32) error {
 const updateDiscount = `-- name: UpdateDiscount :one
 UPDATE discounts SET name = $2, discount_type = $3, value = $4, active = $5, is_subsidy = $6
 WHERE id = $1
-RETURNING id, name, discount_type, value, active, is_subsidy, created_at
+RETURNING id, name, discount_type, value, active, created_at, is_subsidy
 `
 
 type UpdateDiscountParams struct {
@@ -114,8 +114,8 @@ func (q *Queries) UpdateDiscount(ctx context.Context, arg UpdateDiscountParams) 
 		&i.DiscountType,
 		&i.Value,
 		&i.Active,
-		&i.IsSubsidy,
 		&i.CreatedAt,
+		&i.IsSubsidy,
 	)
 	return i, err
 }

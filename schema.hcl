@@ -581,15 +581,18 @@ table "discounts" {
     null    = false
     default = true
   }
-  column "is_subsidy" {
-    type    = boolean
-    null    = false
-    default = false
-  }
   column "created_at" {
     type    = timestamptz
     null    = false
     default = sql("now()")
+  }
+  # Added after created_at to match Postgres ALTER ADD COLUMN (appends last),
+  # so the physical column order matches a fresh CREATE and sqlc reuses the
+  # Discount model. Keep is_subsidy last in the discount query column lists.
+  column "is_subsidy" {
+    type    = boolean
+    null    = false
+    default = false
   }
 
   primary_key {
