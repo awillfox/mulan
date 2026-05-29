@@ -539,6 +539,8 @@ async function loadCompare(qs) {
     document.getElementById('wf-net').textContent      = fmtTHB(c.net_sales);
     document.getElementById('wf-subsidy').textContent  = '+' + fmtTHB(c.subsidy);
     document.getElementById('wf-paid').textContent     = fmtTHB(c.customers_paid);
+    // Sponsors owe == the full subsidy total (no settlement tracking yet);
+    // customers_paid + subsidy reconcile to net sales.
     document.getElementById('wf-owe').textContent      = fmtTHB(c.subsidy);
 }
 
