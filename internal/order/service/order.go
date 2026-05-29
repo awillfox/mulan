@@ -141,6 +141,7 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	resultItems := make([]domain.CheckoutResultItem, 0, len(items))
 	applied := make([]domain.AppliedDiscount, 0)
 	var subtotalSatang, itemDiscountSatang int64
+	var normalItemSatang, subsidyItemSatang int64
 
 	for _, in := range items {
 		m, ok := menuByID[in.MenuID]
@@ -196,6 +197,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			}
 			lineRemaining -= amt
 			itemDiscountSatang += amt
+			if d.IsSubsidy {
+				subsidyItemSatang += amt
+			} else {
+				normalItemSatang += amt
+			}
 			if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
 				OrderID:      order.ID,
 				OrderItemID:  pgtype.Int4{Int32: itemID, Valid: true},
@@ -203,10 +209,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 				Name:         d.Name,
 				DiscountType: d.DiscountType,
 				Amount:       amt,
+				IsSubsidy:    d.IsSubsidy,
 			}); err != nil {
 				return nil, fmt.Errorf("insert order discount: %w", err)
 			}
-			applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
+			applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt, IsSubsidy: d.IsSubsidy})
 		}
 
 		resultItems = append(resultItems, domain.CheckoutResultItem{
@@ -222,7 +229,7 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	// clamp keeps the order total from going below zero.
 	subtotalAfterItem := subtotalSatang - itemDiscountSatang
 	orderRemaining := subtotalAfterItem
-	var orderDiscountSatang int64
+	var normalOrderSatang, subsidyOrderSatang int64
 	for _, did := range dedupIDs(orderDiscountIDs) {
 		d := discByID[did]
 		amt := computeDiscountAmount(d, subtotalAfterItem)
@@ -233,7 +240,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			continue
 		}
 		orderRemaining -= amt
-		orderDiscountSatang += amt
+		if d.IsSubsidy {
+			subsidyOrderSatang += amt
+		} else {
+			normalOrderSatang += amt
+		}
 		if err := q.CreateOrderDiscount(ctx, sqlc.CreateOrderDiscountParams{
 			OrderID:      order.ID,
 			OrderItemID:  pgtype.Int4{Valid: false},
@@ -241,17 +252,21 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			Name:         d.Name,
 			DiscountType: d.DiscountType,
 			Amount:       amt,
+			IsSubsidy:    d.IsSubsidy,
 		}); err != nil {
 			return nil, fmt.Errorf("insert order discount: %w", err)
 		}
-		applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt})
+		applied = append(applied, domain.AppliedDiscount{DiscountID: d.ID, Name: d.Name, Type: d.DiscountType, Amount: amt, IsSubsidy: d.IsSubsidy})
 	}
 
 	cfg := s.settings.Get()
-	discountSatang := itemDiscountSatang + orderDiscountSatang
-	discountedSubtotal := subtotalSatang - discountSatang
-	vatSatang := discountedSubtotal * int64(cfg.VatPercent*100) / 10000
-	totalSatang := discountedSubtotal + vatSatang
+	t := computeOrderTotals(
+		subtotalSatang,
+		normalItemSatang+normalOrderSatang,
+		subsidyItemSatang+subsidyOrderSatang,
+		cfg.VatPercent,
+	)
+	totalSatang := t.CustomerPays
 
 	var memberID pgtype.Int4
 	var pointsEarned int64
@@ -308,13 +323,14 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	return &domain.CheckoutResult{
 		OrderID:       order.ID,
 		Code:          code,
-		Subtotal:      float64(subtotalSatang) / 100,
-		Discount:      float64(discountSatang) / 100,
-		VAT:           float64(vatSatang) / 100,
+		Subtotal:      float64(t.Gross) / 100,
+		Discount:      float64(t.NormalDisc) / 100,
+		Subsidy:       float64(t.Subsidy) / 100,
+		VAT:           float64(t.VAT) / 100,
 		VATPercent:    cfg.VatPercent,
 		ShopName:      cfg.ShopName,
 		ReceiptFooter: cfg.ReceiptFooter,
-		Total:         float64(totalSatang) / 100,
+		Total:         float64(t.CustomerPays) / 100,
 		Items:         resultItems,
 		Discounts:     applied,
 		HasMember:     hasMember,

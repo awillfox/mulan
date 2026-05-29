@@ -28,6 +28,7 @@ type AppliedDiscount struct {
 	Name       string
 	Type       string // "fixed" | "percent"
 	Amount     int64  // satang, positive
+	IsSubsidy  bool   // sponsor-covered (shop made whole) vs normal discount
 }
 
 type CheckoutResult struct {
@@ -35,6 +36,7 @@ type CheckoutResult struct {
 	Code          string
 	Subtotal      float64 // THB, before discounts
 	Discount      float64 // THB, total of all discounts applied
+	Subsidy       float64 // THB, total sponsor-covered (shop made whole)
 	VAT           float64 // THB
 	VATPercent    float64
 	ShopName      string
