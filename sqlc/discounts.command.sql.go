@@ -12,9 +12,9 @@ import (
 )
 
 const createDiscount = `-- name: CreateDiscount :one
-INSERT INTO discounts (name, discount_type, value, active)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, discount_type, value, active, created_at
+INSERT INTO discounts (name, discount_type, value, active, is_subsidy)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, discount_type, value, active, is_subsidy, created_at
 `
 
 type CreateDiscountParams struct {
@@ -22,6 +22,7 @@ type CreateDiscountParams struct {
 	DiscountType string `db:"discount_type" json:"discount_type"`
 	Value        int64  `db:"value" json:"value"`
 	Active       bool   `db:"active" json:"active"`
+	IsSubsidy    bool   `db:"is_subsidy" json:"is_subsidy"`
 }
 
 func (q *Queries) CreateDiscount(ctx context.Context, arg CreateDiscountParams) (Discount, error) {
@@ -30,6 +31,7 @@ func (q *Queries) CreateDiscount(ctx context.Context, arg CreateDiscountParams) 
 		arg.DiscountType,
 		arg.Value,
 		arg.Active,
+		arg.IsSubsidy,
 	)
 	var i Discount
 	err := row.Scan(
@@ -38,14 +40,15 @@ func (q *Queries) CreateDiscount(ctx context.Context, arg CreateDiscountParams) 
 		&i.DiscountType,
 		&i.Value,
 		&i.Active,
+		&i.IsSubsidy,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const createOrderDiscount = `-- name: CreateOrderDiscount :exec
-INSERT INTO order_discounts (order_id, order_item_id, discount_id, name, discount_type, amount)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO order_discounts (order_id, order_item_id, discount_id, name, discount_type, amount, is_subsidy)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type CreateOrderDiscountParams struct {
@@ -55,6 +58,7 @@ type CreateOrderDiscountParams struct {
 	Name         string      `db:"name" json:"name"`
 	DiscountType string      `db:"discount_type" json:"discount_type"`
 	Amount       int64       `db:"amount" json:"amount"`
+	IsSubsidy    bool        `db:"is_subsidy" json:"is_subsidy"`
 }
 
 func (q *Queries) CreateOrderDiscount(ctx context.Context, arg CreateOrderDiscountParams) error {
@@ -65,6 +69,7 @@ func (q *Queries) CreateOrderDiscount(ctx context.Context, arg CreateOrderDiscou
 		arg.Name,
 		arg.DiscountType,
 		arg.Amount,
+		arg.IsSubsidy,
 	)
 	return err
 }
@@ -79,9 +84,9 @@ func (q *Queries) DeleteDiscount(ctx context.Context, id int32) error {
 }
 
 const updateDiscount = `-- name: UpdateDiscount :one
-UPDATE discounts SET name = $2, discount_type = $3, value = $4, active = $5
+UPDATE discounts SET name = $2, discount_type = $3, value = $4, active = $5, is_subsidy = $6
 WHERE id = $1
-RETURNING id, name, discount_type, value, active, created_at
+RETURNING id, name, discount_type, value, active, is_subsidy, created_at
 `
 
 type UpdateDiscountParams struct {
@@ -90,6 +95,7 @@ type UpdateDiscountParams struct {
 	DiscountType string `db:"discount_type" json:"discount_type"`
 	Value        int64  `db:"value" json:"value"`
 	Active       bool   `db:"active" json:"active"`
+	IsSubsidy    bool   `db:"is_subsidy" json:"is_subsidy"`
 }
 
 func (q *Queries) UpdateDiscount(ctx context.Context, arg UpdateDiscountParams) (Discount, error) {
@@ -99,6 +105,7 @@ func (q *Queries) UpdateDiscount(ctx context.Context, arg UpdateDiscountParams) 
 		arg.DiscountType,
 		arg.Value,
 		arg.Active,
+		arg.IsSubsidy,
 	)
 	var i Discount
 	err := row.Scan(
@@ -107,6 +114,7 @@ func (q *Queries) UpdateDiscount(ctx context.Context, arg UpdateDiscountParams) 
 		&i.DiscountType,
 		&i.Value,
 		&i.Active,
+		&i.IsSubsidy,
 		&i.CreatedAt,
 	)
 	return i, err
