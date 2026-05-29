@@ -147,6 +147,7 @@ CREATE TABLE "public"."discounts" (
   "discount_type" character varying(20) NOT NULL DEFAULT 'fixed',
   "value" bigint NOT NULL DEFAULT 0,
   "active" boolean NOT NULL DEFAULT true,
+  "is_subsidy" boolean NOT NULL DEFAULT false,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("id"),
   CONSTRAINT "discounts_discount_type" CHECK ((discount_type)::text = ANY ((ARRAY['fixed'::character varying, 'percent'::character varying])::text[]))
@@ -172,6 +173,7 @@ CREATE TABLE "public"."order_discounts" (
   "name" character varying(255) NOT NULL,
   "discount_type" character varying(20) NOT NULL,
   "amount" bigint NOT NULL,
+  "is_subsidy" boolean NOT NULL DEFAULT false,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_order_discounts_discount" FOREIGN KEY ("discount_id") REFERENCES "public"."discounts" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "fk_order_discounts_item" FOREIGN KEY ("order_item_id") REFERENCES "public"."order_items" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,

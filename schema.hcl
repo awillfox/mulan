@@ -581,6 +581,11 @@ table "discounts" {
     null    = false
     default = true
   }
+  column "is_subsidy" {
+    type    = boolean
+    null    = false
+    default = false
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -629,6 +634,11 @@ table "order_discounts" {
   column "amount" {
     type = bigint
     null = false
+  }
+  column "is_subsidy" {
+    type    = boolean
+    null    = false
+    default = false
   }
 
   primary_key {
