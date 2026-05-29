@@ -59,7 +59,7 @@ Claude will update CLAUDE.md a long the way
 - `PUT /api/menus/{id}/option-groups` — set the menu's option-group list `{groups: [..]}` (replaces all). Each entry is either shared `{isolated:false, id}` or isolated `{isolated:true, name, selection_mode, options:[{name, price_delta}]}` (price_delta in THB)
 - `GET /api/discounts` — list all preset discounts (manager)
 - `GET /api/discounts/active` — list active discounts only (POS picker)
-- `POST /api/discounts` — create `{name, discount_type, value, active}` (types: `fixed`/`percent`)
+- `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
 
