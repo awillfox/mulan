@@ -35,8 +35,8 @@ type CheckoutResult struct {
 	OrderID       int32
 	Code          string
 	Subtotal      float64 // THB, before discounts
-	Discount      float64 // THB, total of all discounts applied
-	Subsidy       float64 // THB, total sponsor-covered (shop made whole)
+	Discount      float64 // THB, normal (shop-absorbed) discounts only; sponsor subsidies are in Subsidy
+	Subsidy       float64 // THB, total sponsor-covered (shop made whole); customer savings = Discount + Subsidy
 	VAT           float64 // THB
 	VATPercent    float64
 	ShopName      string

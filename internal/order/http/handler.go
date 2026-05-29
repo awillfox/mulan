@@ -178,15 +178,17 @@ type checkoutItemResponse struct {
 }
 
 type checkoutDiscountResponse struct {
-	Name   string  `json:"name"`
-	Type   string  `json:"type"`
-	Amount float64 `json:"amount"`
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Amount    float64 `json:"amount"`
+	IsSubsidy bool    `json:"is_subsidy"`
 }
 
 type checkoutResponse struct {
 	Code          string                     `json:"code"`
 	Subtotal      float64                    `json:"subtotal"`
 	Discount      float64                    `json:"discount"`
+	Subsidy       float64                    `json:"subsidy"`
 	VAT           float64                    `json:"vat"`
 	VATPercent    float64                    `json:"vat_percent"`
 	ShopName      string                     `json:"shop_name"`
@@ -255,9 +257,10 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	respDiscounts := make([]checkoutDiscountResponse, len(result.Discounts))
 	for i, d := range result.Discounts {
 		respDiscounts[i] = checkoutDiscountResponse{
-			Name:   d.Name,
-			Type:   d.Type,
-			Amount: money.New(d.Amount, money.THB).AsMajorUnits(),
+			Name:      d.Name,
+			Type:      d.Type,
+			Amount:    money.New(d.Amount, money.THB).AsMajorUnits(),
+			IsSubsidy: d.IsSubsidy,
 		}
 	}
 
@@ -274,6 +277,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		Code:          result.Code,
 		Subtotal:      result.Subtotal,
 		Discount:      result.Discount,
+		Subsidy:       result.Subsidy,
 		VAT:           result.VAT,
 		VATPercent:    result.VATPercent,
 		ShopName:      result.ShopName,
