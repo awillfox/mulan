@@ -106,7 +106,12 @@ func (s *DashboardService) Heatmap(ctx context.Context, from, to time.Time) ([]H
 }
 
 type PeriodStats struct {
-	Revenue       float64 `json:"revenue"`
+	Revenue       float64 `json:"revenue"`        // == NetSales (back-compat alias)
+	Gross         float64 `json:"gross"`          // sum of price*qty (VAT-inclusive)
+	Discount      float64 `json:"discount"`       // normal discounts given
+	Subsidy       float64 `json:"subsidy"`        // sponsor-covered
+	NetSales      float64 `json:"net_sales"`      // Gross - Discount (what the shop earns)
+	CustomersPaid float64 `json:"customers_paid"` // Gross - Discount - Subsidy
 	Orders        int64   `json:"orders"`
 	Items         int64   `json:"items"`
 	AvgTicket     float64 `json:"avg_ticket"`
@@ -126,13 +131,29 @@ func (s *DashboardService) periodStats(ctx context.Context, from, to time.Time) 
 	if err != nil {
 		return PeriodStats{}, fmt.Errorf("period summary: %w", err)
 	}
+	disc, err := s.q.DiscountSummary(ctx, sqlc.DiscountSummaryParams{
+		FromAt: pgtype.Timestamptz{Time: from, Valid: true},
+		ToAt:   pgtype.Timestamptz{Time: to, Valid: true},
+	})
+	if err != nil {
+		return PeriodStats{}, fmt.Errorf("discount summary: %w", err)
+	}
+	gross := float64(row.Revenue) / 100
+	discount := float64(disc.Discount) / 100
+	subsidy := float64(disc.Subsidy) / 100
+	net := gross - discount
 	stats := PeriodStats{
-		Revenue: float64(row.Revenue) / 100,
-		Orders:  row.Orders,
-		Items:   row.Items,
+		Revenue:       net,
+		Gross:         gross,
+		Discount:      discount,
+		Subsidy:       subsidy,
+		NetSales:      net,
+		CustomersPaid: net - subsidy,
+		Orders:        row.Orders,
+		Items:         row.Items,
 	}
 	if row.Orders > 0 {
-		stats.AvgTicket = stats.Revenue / float64(row.Orders)
+		stats.AvgTicket = net / float64(row.Orders)
 		stats.ItemsPerOrder = float64(row.Items) / float64(row.Orders)
 	}
 	return stats, nil
@@ -168,6 +189,26 @@ func (s *DashboardService) TopMenus(ctx context.Context, from, to time.Time) ([]
 			QtySold: r.QtySold,
 			Revenue: float64(r.Revenue) / 100,
 		}
+	}
+	return out, nil
+}
+
+type SubsidyProgram struct {
+	Name   string  `json:"name"`
+	Amount float64 `json:"amount"`
+}
+
+func (s *DashboardService) SubsidyByProgram(ctx context.Context, from, to time.Time) ([]SubsidyProgram, error) {
+	rows, err := s.q.SubsidyByProgram(ctx, sqlc.SubsidyByProgramParams{
+		FromAt: pgtype.Timestamptz{Time: from, Valid: true},
+		ToAt:   pgtype.Timestamptz{Time: to, Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("subsidy by program: %w", err)
+	}
+	out := make([]SubsidyProgram, len(rows))
+	for i, r := range rows {
+		out[i] = SubsidyProgram{Name: r.Name, Amount: float64(r.Amount) / 100}
 	}
 	return out, nil
 }
