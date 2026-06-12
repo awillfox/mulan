@@ -294,12 +294,13 @@ func cashDrawerHandler() http.HandlerFunc {
 }
 
 type checkoutRequestItem struct {
-	MenuID      int32   `json:"menu_id"`
-	Name        string  `json:"name"`
-	Price       float64 `json:"price"`
-	Qty         int32   `json:"qty"`
-	OptionIDs   []int32 `json:"option_ids"`
-	DiscountIDs []int32 `json:"discount_ids"`
+	MenuID       int32   `json:"menu_id"`
+	Name         string  `json:"name"`
+	Price        float64 `json:"price"`
+	Qty          int32   `json:"qty"`
+	BaseOptionID int32   `json:"base_option_id"`
+	OptionIDs    []int32 `json:"option_ids"`
+	DiscountIDs  []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
@@ -319,10 +320,11 @@ type checkoutOption struct {
 }
 
 type checkoutItem struct {
-	Name    string           `json:"name"`
-	Price   float64          `json:"price"`
-	Qty     int32            `json:"qty"`
-	Options []checkoutOption `json:"options"`
+	Name           string           `json:"name"`
+	Price          float64          `json:"price"`
+	Qty            int32            `json:"qty"`
+	Options        []checkoutOption `json:"options"`
+	BaseOptionName string           `json:"base_option_name"`
 }
 
 type checkoutResponse struct {
@@ -378,10 +380,11 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 					opts[j] = printer.OrderItemOption{Name: o.Name, PriceDelta: o.PriceDelta}
 				}
 				items[i] = printer.OrderItem{
-					Name:    it.Name,
-					Qty:     int(it.Qty),
-					Price:   it.Price,
-					Options: opts,
+					Name:           it.Name,
+					Qty:            int(it.Qty),
+					Price:          it.Price,
+					Options:        opts,
+					BaseOptionName: it.BaseOptionName,
 				}
 			}
 			if err := p.PrintOrderBill(req.OrderCode, items); err != nil {
