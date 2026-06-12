@@ -69,6 +69,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("list options (group %d): %v", l.GroupID, err)
 		}
+		// A Serve group with no options would otherwise be silently detached
+		// (and deleted, if isolated) leaving the menu with no base options.
+		// Skip it so a broken group is surfaced rather than quietly dropped.
+		if len(opts) == 0 {
+			fmt.Printf("menu %d: SKIP — group %d %q has no options\n", l.MenuID, l.GroupID, *sourceName)
+			skipped++
+			continue
+		}
 		isolated := l.OwnerMenuID.Valid && l.OwnerMenuID.Int32 == l.MenuID
 
 		fmt.Printf("menu %d (price %.2f฿) via group %d %q:\n", l.MenuID, float64(l.MenuPrice)/100, l.GroupID, *sourceName)
@@ -84,22 +92,24 @@ func main() {
 
 		if *apply {
 			if err := applyOne(ctx, pool, q, l, opts, isolated); err != nil {
+				// Earlier menus already committed (each menu is its own tx);
+				// re-running is safe because converted menus are skipped above.
 				log.Fatalf("apply menu %d: %v", l.MenuID, err)
 			}
-			if isolated {
-				clonesDeleted++
-			}
+		}
+		if isolated {
+			clonesDeleted++ // counts both "would be deleted" (dry-run) and "deleted" (apply)
 		}
 		converted++
 	}
 
-	mode := "DRY-RUN (no writes)"
 	if *apply {
-		mode = "APPLIED"
-	}
-	fmt.Printf("\n%s — %d converted, %d skipped, %d isolated clones deleted\n", mode, converted, skipped, clonesDeleted)
-	if !*apply && converted > 0 {
-		fmt.Println("Re-run with --apply to commit (against the local DB only).")
+		fmt.Printf("\nAPPLIED — %d converted, %d skipped, %d isolated clones deleted\n", converted, skipped, clonesDeleted)
+	} else {
+		fmt.Printf("\nDRY-RUN (no writes) — %d would be converted, %d skipped, %d isolated clones would be deleted\n", converted, skipped, clonesDeleted)
+		if converted > 0 {
+			fmt.Println("Re-run with --apply to commit (against the local DB only).")
+		}
 	}
 }
 
