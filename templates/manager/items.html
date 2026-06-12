@@ -1443,7 +1443,11 @@ async function saveMenu() {
     const price = parseFloat(document.getElementById('menu-price').value);
     const catVal = document.getElementById('menu-cat').value;
     const vfd   = document.getElementById('menu-vfd').value.trim() || null;
-    const hasBase = baseOptionState.length > 0;
+    // Derive hasBase from the FILTERED payload (blank-name rows are dropped),
+    // so a stray empty base row can't both grey the price field and vanish on
+    // save — which would otherwise persist a ฿0 item with no base options.
+    const baseOptions = collectBaseOptionsPayload();
+    const hasBase = baseOptions.length > 0;
     if (!name || (!hasBase && isNaN(price))) return;
     const body = { name, price: isNaN(price) ? 0 : price, category_id: catVal ? parseInt(catVal) : null, vfd_name: vfd };
     const groups = collectMenuGroupsPayload();
@@ -1468,7 +1472,7 @@ async function saveMenu() {
         });
         await fetch(`/api/menus/${menuId}/base-options`, {
             method: 'PUT', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ base_options: collectBaseOptionsPayload() }),
+            body: JSON.stringify({ base_options: baseOptions }),
         });
     }
     snack(menuEditId ? 'Item updated.' : 'Item added.');
