@@ -57,6 +57,7 @@ Claude will update CLAUDE.md a long the way
 - `PATCH /api/options/{id}` — update option
 - `DELETE /api/options/{id}` — delete option
 - `PUT /api/menus/{id}/option-groups` — set the menu's option-group list `{groups: [..]}` (replaces all). Each entry is either shared `{isolated:false, id}` or isolated `{isolated:true, name, selection_mode, options:[{name, price_delta}]}` (price_delta in THB)
+- `PUT /api/menus/{id}/base-options` — set the menu's base options `{base_options: [{name, price}]}` (replaces all; price in THB, absolute). Empty list = no base option.
 - `GET /api/discounts` — list all preset discounts (manager)
 - `GET /api/discounts/active` — list active discounts only (POS picker)
 - `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
@@ -68,6 +69,22 @@ Shared, reusable option groups attach to menus via `menu_option_groups`. Each gr
 
 ### Isolated (per-menu) groups
 When attaching a group to a menu item, the manager can tick **Customize** to isolate it. An isolated group is a private clone: `option_groups.owner_menu_id` points at the owning menu (NULL = shared preset). It is hidden from the shared list (`ListOptionGroups` filters `owner_menu_id IS NULL`) so it never appears when editing other items, and its options/prices are editable inline in the item dialog without touching the source preset. `SetMenuGroups` fully replaces a menu's groups in one transaction — it clears links, drops the menu's old private groups (`DeletePrivateGroupsForMenu`), then re-attaches shared groups and recreates isolated ones. Deleting a menu cascades its private groups. Menu API `option_groups[]` entries carry an `isolated` bool.
+
+## Base Option
+A menu may have at most one **Base Option** set: named, absolute-priced variants
+(e.g. Hot=50, Iced=80) stored in `menu_base_options(menu_id, name, price, sort_order)`.
+Picking one at POS *sets* the line's base price (it replaces `menus.price`, which
+becomes a fallback used only when a menu has no base options). Selection is
+required when a menu has base options. Normal `+delta` option groups still stack
+on top. The chosen variant is snapshotted onto `order_items.base_option_name`
+(and the chosen price into `order_items.price`), so receipts stay stable. The
+receipt/kitchen bill print the item inline as `Americano (Iced)  80` with no
+price breakdown for the base option. Managed in `/manager/items`; set via
+`PUT /api/menus/{id}/base-options`.
+
+Legacy delta-based "Serve" groups are migrated by `cmd/convert-base-option`
+(`base.price = menu.price + delta`; dry-run by default, `--apply` to commit,
+`--source-name` to override the matched group name). Runs against the local DB.
 
 ## Discounts
 Preset discounts created in `/manager/discounts`, applied by the cashier at POS.
