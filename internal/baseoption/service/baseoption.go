@@ -71,5 +71,8 @@ func (s *Service) SetForMenu(ctx context.Context, menuID int32, specs []Spec) er
 			return fmt.Errorf("create base option: %w", err)
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
