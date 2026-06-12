@@ -1487,10 +1487,14 @@ function menuCardHtml(m) {
         </button>`;
     }
     const hasOpts = (m.option_groups || []).length > 0;
+    const bases = m.base_options || [];
+    const priceLabel = bases.length
+        ? fmt(Math.min(...bases.map(b => b.price))) + '+'
+        : fmt(m.price);
     return `<button class="menu-card" data-menu-id="${m.id}" onclick="addToOrder(${m.id})">
-        ${hasOpts ? '<span class="opt-flag"><span class="material-symbols-rounded">tune</span></span>' : ''}
+        ${(hasOpts || bases.length) ? '<span class="opt-flag"><span class="material-symbols-rounded">tune</span></span>' : ''}
         <div class="name">${esc(m.name)}</div>
-        <div class="price">${fmt(m.price)}</div>
+        <div class="price">${priceLabel}</div>
     </button>`;
 }
 
@@ -1615,22 +1619,27 @@ async function ensureOrderCode() {
 async function addToOrder(menuId) {
     const menu = menus.find(m => m.id === menuId);
     if (!menu) return;
-    if (menu.option_groups && menu.option_groups.length > 0) {
+    const hasBase = (menu.base_options || []).length > 0;
+    const hasOpts = (menu.option_groups || []).length > 0;
+    if (hasBase || hasOpts) {
         openOptionsModal(menu);
         return;
     }
-    await addLine(menu, []);
+    await addLine(menu, [], null);
 }
 
-async function addLine(menu, selectedOptions) {
+async function addLine(menu, selectedOptions, baseOption) {
     await ensureOrderCode();
-    const key = lineKey(menu.id, selectedOptions);
+    const baseId = baseOption ? baseOption.id : null;
+    const key = lineKey(menu.id, selectedOptions) + '|b' + (baseId ?? '');
     const existing = order.find(o => o.key === key);
     if (existing) existing.qty++;
     else order.push({
         key, id: menu.id, name: menu.name,
-        price: menu.price, qty: 1,
+        price: baseOption ? baseOption.price : menu.price, qty: 1,
         options: selectedOptions,
+        base_option_id: baseId,
+        base_option_name: baseOption ? baseOption.name : null,
         vfd_name: menu.vfd_name || menu.name,
     });
     renderOrder({ flashKey: key });
@@ -1705,7 +1714,7 @@ function renderOrder(opts = {}) {
         const flash = opts.flashKey === o.key ? 'flash' : '';
         return `<div class="line ${flash}" data-key="${esc(o.key)}">
             <div>
-                <div class="l-name">${esc(o.name)}</div>
+                <div class="l-name">${esc(o.name)}${o.base_option_name ? ` <span class="mono" style="color:var(--on-surf-var)">(${esc(o.base_option_name)})</span>` : ''}</div>
                 ${optsHtml}
                 ${discHtml}
                 <div class="l-unit">${fmt(u)} each</div>
@@ -1779,7 +1788,23 @@ function openOptionsModal(menu) {
     pendingMenu = menu;
     document.getElementById('options-title').textContent = menu.name;
     const body = document.getElementById('options-body');
-    body.innerHTML = (menu.option_groups || []).map(g => {
+    const baseHtml = (menu.base_options || []).length ? `
+        <div class="opt-group" data-base="1">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <h4>Base Option</h4>
+                <span class="req-tag required">Required</span>
+            </div>
+            <div class="opt-list">
+                ${menu.base_options.map(b => `
+                    <label class="opt-row">
+                        <input type="radio" name="base-opt" value="${b.id}" data-name="${esc(b.name)}" data-price="${b.price}" onchange="optRowSync(this)">
+                        <span class="o-name">${esc(b.name)}</span>
+                        <span class="o-price">${fmt(b.price)}</span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>` : '';
+    const groupsHtml = (menu.option_groups || []).map(g => {
         const isMulti = g.selection_mode === 'multi';
         const required = g.selection_mode === 'single_required';
         const inputType = isMulti ? 'checkbox' : 'radio';
@@ -1800,6 +1825,7 @@ function openOptionsModal(menu) {
                 </div>
             </div>`;
     }).join('');
+    body.innerHTML = baseHtml + groupsHtml;
     document.getElementById('options-modal').classList.add('is-open');
 }
 function optRowSync(input) {
@@ -1816,6 +1842,16 @@ function closeOptionsModal() {
 }
 function confirmOptions() {
     if (!pendingMenu) return;
+    let baseOption = null;
+    if ((pendingMenu.base_options || []).length) {
+        const checked = document.querySelector('#options-body [data-base] input:checked');
+        if (!checked) { snack('Pick a base option', 'warn'); return; }
+        baseOption = {
+            id: parseInt(checked.value),
+            name: checked.dataset.name,
+            price: parseFloat(checked.dataset.price) || 0,
+        };
+    }
     const groupBlocks = document.querySelectorAll('#options-body [data-group-id]');
     const selected = [];
     for (const block of groupBlocks) {
@@ -1835,7 +1871,7 @@ function confirmOptions() {
     }
     const m = pendingMenu;
     closeOptionsModal();
-    addLine(m, selected);
+    addLine(m, selected, baseOption);
 }
 
 // ── Discount modal ────────────────────────────────────────────────
@@ -2156,6 +2192,7 @@ async function doCheckout(method, tendered, change) {
                 customer_name:  customerName,
                 items: order.map(o => ({
                     menu_id: o.id, name: o.name, price: o.price, qty: o.qty,
+                    base_option_id: o.base_option_id || 0,
                     option_ids: (o.options || []).map(op => op.id),
                     options: o.options || [],
                     discount_ids: (o.discounts || []).map(d => d.id),
