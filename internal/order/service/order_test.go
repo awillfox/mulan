@@ -43,6 +43,39 @@ func TestCodeCharsAvoidsAmbiguous(t *testing.T) {
 	}
 }
 
+func TestResolveLineBase(t *testing.T) {
+	baseOpts := []sqlc.MenuBaseOption{
+		{ID: 10, MenuID: 1, Name: "Hot", Price: 5000},
+		{ID: 11, MenuID: 1, Name: "Iced", Price: 8000},
+	}
+	tests := []struct {
+		name      string
+		menuPrice int64
+		opts      []sqlc.MenuBaseOption
+		baseID    int32
+		wantPrice int64
+		wantName  string
+		wantErr   error
+	}{
+		{"no base opts, none chosen", 4500, nil, 0, 4500, "", nil},
+		{"no base opts, id supplied -> reject", 4500, nil, 99, 0, "", ErrInvalidBaseOption},
+		{"has base opts, valid pick", 0, baseOpts, 11, 8000, "Iced", nil},
+		{"has base opts, none chosen -> reject", 0, baseOpts, 0, 0, "", ErrMissingBaseOption},
+		{"has base opts, unknown id -> reject", 0, baseOpts, 999, 0, "", ErrInvalidBaseOption},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			price, name, err := resolveLineBase(tc.menuPrice, tc.opts, tc.baseID)
+			if err != tc.wantErr {
+				t.Fatalf("err = %v want %v", err, tc.wantErr)
+			}
+			if err == nil && (price != tc.wantPrice || name != tc.wantName) {
+				t.Errorf("got (%d,%q) want (%d,%q)", price, name, tc.wantPrice, tc.wantName)
+			}
+		})
+	}
+}
+
 func TestComputeDiscountAmountRoundsUpToBaht(t *testing.T) {
 	tests := []struct {
 		name  string

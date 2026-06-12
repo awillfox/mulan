@@ -35,8 +35,10 @@ var (
 	ErrMenuInactive    = errors.New("menu inactive")
 	ErrInvalidOption   = errors.New("option not allowed for menu")
 	ErrUnknownOption   = errors.New("unknown option")
-	ErrMissingRequired = errors.New("missing required option")
-	ErrOrderNotFound    = errors.New("order not found")
+	ErrMissingRequired   = errors.New("missing required option")
+	ErrMissingBaseOption = errors.New("missing base option")
+	ErrInvalidBaseOption = errors.New("invalid base option for menu")
+	ErrOrderNotFound     = errors.New("order not found")
 	ErrNotHeld          = errors.New("order is not held")
 	ErrCannotHold       = errors.New("order cannot be held")
 	ErrUnknownDiscount  = errors.New("unknown discount")
@@ -74,10 +76,11 @@ func (s *OrderService) Create(ctx context.Context) (CreatedOrder, error) {
 // only trusts MenuID, Qty, OptionIDs, and DiscountIDs — Name and Price are
 // looked up server-side from the menus/options tables.
 type CheckoutItemInput struct {
-	MenuID      int32
-	Qty         int32
-	OptionIDs   []int32
-	DiscountIDs []int32 // per-line discounts applied to this line
+	MenuID       int32
+	Qty          int32
+	OptionIDs    []int32
+	DiscountIDs  []int32 // per-line discounts applied to this line
+	BaseOptionID int32   // chosen base option (0 = none)
 }
 
 // CustomerInput is the optional membership capture at checkout. An empty Phone
@@ -133,6 +136,10 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	if err != nil {
 		return nil, err
 	}
+	baseOptsByMenu, err := loadBaseOptions(ctx, q, menuByID)
+	if err != nil {
+		return nil, err
+	}
 	discByID, err := loadDiscounts(ctx, q, items, orderDiscountIDs)
 	if err != nil {
 		return nil, err
@@ -157,16 +164,22 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			return nil, err
 		}
 
-		unitPrice := m.Price + deltaSum
+		basePrice, baseName, err := resolveLineBase(m.Price, baseOptsByMenu[m.ID], in.BaseOptionID)
+		if err != nil {
+			return nil, err
+		}
+
+		unitPrice := basePrice + deltaSum
 		lineTotal := unitPrice * int64(in.Qty)
 		subtotalSatang += lineTotal
 
 		itemID, err := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
-			OrderID: order.ID,
-			MenuID:  pgtype.Int4{Int32: m.ID, Valid: true},
-			Name:    m.Name,
-			Price:   m.Price,
-			Qty:     in.Qty,
+			OrderID:        order.ID,
+			MenuID:         pgtype.Int4{Int32: m.ID, Valid: true},
+			Name:           m.Name,
+			Price:          basePrice,
+			Qty:            in.Qty,
+			BaseOptionName: textOrNull(baseName),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("insert order item: %w", err)
@@ -217,10 +230,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		}
 
 		resultItems = append(resultItems, domain.CheckoutResultItem{
-			Name:    m.Name,
-			Price:   m.Price,
-			Qty:     in.Qty,
-			Options: opts,
+			Name:           m.Name,
+			Price:          basePrice,
+			Qty:            in.Qty,
+			Options:        opts,
+			BaseOptionName: baseName,
 		})
 	}
 
@@ -497,6 +511,27 @@ func loadOptions(ctx context.Context, q *sqlc.Queries, items []CheckoutItemInput
 	return out, nil
 }
 
+// loadBaseOptions returns the base options attached to each menu being ordered,
+// keyed by menu id. Menus with no base options simply have no entry.
+func loadBaseOptions(ctx context.Context, q *sqlc.Queries, menus map[int32]sqlc.Menu) (map[int32][]sqlc.MenuBaseOption, error) {
+	ids := make([]int32, 0, len(menus))
+	for id := range menus {
+		ids = append(ids, id)
+	}
+	out := make(map[int32][]sqlc.MenuBaseOption, len(menus))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := q.ListBaseOptionsByMenuIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load base options: %w", err)
+	}
+	for _, b := range rows {
+		out[b.MenuID] = append(out[b.MenuID], b)
+	}
+	return out, nil
+}
+
 // resolveLineOptions returns the (server-trusted) options for one line and
 // their summed price delta. Each option must belong to an option group that
 // is attached to the menu being ordered, otherwise we reject the line —
@@ -517,6 +552,36 @@ func resolveLineOptions(in CheckoutItemInput, optByID map[int32]sqlc.Option, all
 		delta += o.PriceDelta
 	}
 	return opts, delta, nil
+}
+
+// resolveLineBase returns the per-unit base price and snapshot name for a line.
+// When the menu has base options exactly one valid baseOptionID is required and
+// its absolute price becomes the line base. When the menu has none, baseOptionID
+// must be zero and the base is the menu's own price.
+func resolveLineBase(menuPrice int64, baseOpts []sqlc.MenuBaseOption, baseOptionID int32) (int64, string, error) {
+	if len(baseOpts) == 0 {
+		if baseOptionID != 0 {
+			return 0, "", ErrInvalidBaseOption
+		}
+		return menuPrice, "", nil
+	}
+	if baseOptionID == 0 {
+		return 0, "", ErrMissingBaseOption
+	}
+	for _, b := range baseOpts {
+		if b.ID == baseOptionID {
+			return b.Price, b.Name, nil
+		}
+	}
+	return 0, "", ErrInvalidBaseOption
+}
+
+// textOrNull wraps a snapshot string into pgtype.Text, mapping "" to SQL NULL.
+func textOrNull(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
 }
 
 func uniqueMenuIDs(items []CheckoutItemInput) []int32 {

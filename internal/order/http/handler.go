@@ -152,10 +152,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 type checkoutItemRequest struct {
-	MenuID      int32   `json:"menu_id"`
-	Qty         int32   `json:"qty"`
-	OptionIDs   []int32 `json:"option_ids"`
-	DiscountIDs []int32 `json:"discount_ids"`
+	MenuID       int32   `json:"menu_id"`
+	BaseOptionID int32   `json:"base_option_id"`
+	Qty          int32   `json:"qty"`
+	OptionIDs    []int32 `json:"option_ids"`
+	DiscountIDs  []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
@@ -171,10 +172,11 @@ type checkoutOptionResponse struct {
 }
 
 type checkoutItemResponse struct {
-	Name    string                   `json:"name"`
-	Price   float64                  `json:"price"`
-	Qty     int32                    `json:"qty"`
-	Options []checkoutOptionResponse `json:"options"`
+	Name           string                   `json:"name"`
+	Price          float64                  `json:"price"`
+	Qty            int32                    `json:"qty"`
+	Options        []checkoutOptionResponse `json:"options"`
+	BaseOptionName string                   `json:"base_option_name,omitempty"`
 }
 
 type checkoutDiscountResponse struct {
@@ -220,10 +222,11 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	items := make([]service.CheckoutItemInput, len(req.Items))
 	for i, it := range req.Items {
 		items[i] = service.CheckoutItemInput{
-			MenuID:      it.MenuID,
-			Qty:         it.Qty,
-			OptionIDs:   it.OptionIDs,
-			DiscountIDs: it.DiscountIDs,
+			MenuID:       it.MenuID,
+			Qty:          it.Qty,
+			OptionIDs:    it.OptionIDs,
+			DiscountIDs:  it.DiscountIDs,
+			BaseOptionID: it.BaseOptionID,
 		}
 	}
 
@@ -247,10 +250,11 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		respItems[i] = checkoutItemResponse{
-			Name:    it.Name,
-			Price:   money.New(it.Price, money.THB).AsMajorUnits(),
-			Qty:     it.Qty,
-			Options: opts,
+			Name:           it.Name,
+			Price:          money.New(it.Price, money.THB).AsMajorUnits(),
+			Qty:            it.Qty,
+			Options:        opts,
+			BaseOptionName: it.BaseOptionName,
 		}
 	}
 
@@ -310,6 +314,10 @@ func classifyCheckoutError(err error) (int, string) {
 		return http.StatusBadRequest, "unknown option"
 	case errors.Is(err, service.ErrInvalidOption):
 		return http.StatusBadRequest, "option not valid for menu"
+	case errors.Is(err, service.ErrMissingBaseOption):
+		return http.StatusBadRequest, "base option required"
+	case errors.Is(err, service.ErrInvalidBaseOption):
+		return http.StatusBadRequest, "invalid base option for menu"
 	case errors.Is(err, service.ErrUnknownDiscount):
 		return http.StatusBadRequest, "unknown discount"
 	case errors.Is(err, service.ErrDiscountInactive):

@@ -15,10 +15,11 @@ type OrderItem struct {
 }
 
 type CheckoutResultItem struct {
-	Name    string
-	Price   int64 // satang, base price per unit
-	Qty     int32
-	Options []SelectedOption
+	Name           string
+	Price          int64 // satang, base price per unit
+	Qty            int32
+	Options        []SelectedOption
+	BaseOptionName string // chosen base option name, empty when none
 }
 
 // AppliedDiscount is one discount that was applied to a checked-out order,
