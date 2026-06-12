@@ -13,7 +13,7 @@ CREATE TABLE "public"."cash_drawer_audit" (
   "terminal" character varying(120) NULL,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("id"),
-  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY ((ARRAY['set'::character varying, 'clear'::character varying, 'adjust'::character varying, 'kick'::character varying, 'open_for_change'::character varying])::text[]))
+  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY (ARRAY[('set'::character varying)::text, ('clear'::character varying)::text, ('adjust'::character varying)::text, ('kick'::character varying)::text, ('open_for_change'::character varying)::text]))
 );
 -- Create index "cash_drawer_audit_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_created_at" ON "public"."cash_drawer_audit" ("created_at");
@@ -32,18 +32,6 @@ CREATE TABLE "public"."cashiers" (
 );
 -- Create index "cashiers_login_id_key" to table: "cashiers"
 CREATE UNIQUE INDEX "cashiers_login_id_key" ON "public"."cashiers" ("login_id");
--- Create "members" table
-CREATE TABLE "public"."members" (
-  "id" serial NOT NULL,
-  "phone" character varying(20) NOT NULL,
-  "name" character varying(255) NULL,
-  "points" bigint NOT NULL DEFAULT 0,
-  "created_at" timestamptz NOT NULL DEFAULT now(),
-  "updated_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
-);
--- Create index "members_phone_key" to table: "members"
-CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "settings" table
 CREATE TABLE "public"."settings" (
   "id" integer NOT NULL DEFAULT 1,
@@ -57,6 +45,18 @@ CREATE TABLE "public"."settings" (
   PRIMARY KEY ("id"),
   CONSTRAINT "settings_singleton" CHECK (id = 1)
 );
+-- Create "members" table
+CREATE TABLE "public"."members" (
+  "id" serial NOT NULL,
+  "phone" character varying(20) NOT NULL,
+  "name" character varying(255) NULL,
+  "points" bigint NOT NULL DEFAULT 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id")
+);
+-- Create index "members_phone_key" to table: "members"
+CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "orders" table
 CREATE TABLE "public"."orders" (
   "id" serial NOT NULL,
@@ -86,7 +86,7 @@ CREATE TABLE "public"."guest_wifi_users" (
   "created_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_guest_wifi_order" FOREIGN KEY ("order_id") REFERENCES "public"."orders" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "guest_wifi_users_state_check" CHECK ((state)::text = ANY ((ARRAY['pending'::character varying, 'assigned'::character varying, 'active'::character varying, 'expired'::character varying])::text[]))
+  CONSTRAINT "guest_wifi_users_state_check" CHECK ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('assigned'::character varying)::text, ('active'::character varying)::text, ('expired'::character varying)::text]))
 );
 -- Create index "guest_wifi_users_state" to table: "guest_wifi_users"
 CREATE INDEX "guest_wifi_users_state" ON "public"."guest_wifi_users" ("state");
@@ -109,6 +109,18 @@ CREATE TABLE "public"."menus" (
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_menu_category" FOREIGN KEY ("category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
+-- Create "menu_base_options" table
+CREATE TABLE "public"."menu_base_options" (
+  "id" serial NOT NULL,
+  "menu_id" integer NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "price" bigint NOT NULL,
+  "sort_order" integer NOT NULL DEFAULT 0,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "fk_mbo_menu" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+);
+-- Create index "menu_base_options_menu_sort" to table: "menu_base_options"
+CREATE INDEX "menu_base_options_menu_sort" ON "public"."menu_base_options" ("menu_id", "sort_order");
 -- Create "option_groups" table
 CREATE TABLE "public"."option_groups" (
   "id" serial NOT NULL,
@@ -117,7 +129,7 @@ CREATE TABLE "public"."option_groups" (
   "owner_menu_id" integer NULL,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_og_owner_menu" FOREIGN KEY ("owner_menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "option_groups_selection_mode" CHECK ((selection_mode)::text = ANY ((ARRAY['single_required'::character varying, 'single_optional'::character varying, 'multi'::character varying])::text[]))
+  CONSTRAINT "option_groups_selection_mode" CHECK ((selection_mode)::text = ANY (ARRAY[('single_required'::character varying)::text, ('single_optional'::character varying)::text, ('multi'::character varying)::text]))
 );
 -- Create "menu_option_groups" table
 CREATE TABLE "public"."menu_option_groups" (
@@ -150,7 +162,7 @@ CREATE TABLE "public"."discounts" (
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "is_subsidy" boolean NOT NULL DEFAULT false,
   PRIMARY KEY ("id"),
-  CONSTRAINT "discounts_discount_type" CHECK ((discount_type)::text = ANY ((ARRAY['fixed'::character varying, 'percent'::character varying])::text[]))
+  CONSTRAINT "discounts_discount_type" CHECK ((discount_type)::text = ANY (ARRAY[('fixed'::character varying)::text, ('percent'::character varying)::text]))
 );
 -- Create "order_items" table
 CREATE TABLE "public"."order_items" (
@@ -160,6 +172,7 @@ CREATE TABLE "public"."order_items" (
   "name" character varying(255) NOT NULL,
   "price" bigint NOT NULL,
   "qty" integer NOT NULL,
+  "base_option_name" character varying(255) NULL,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_order_items_menu" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "fk_order_items_order" FOREIGN KEY ("order_id") REFERENCES "public"."orders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE

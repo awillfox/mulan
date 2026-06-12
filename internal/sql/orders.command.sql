@@ -4,8 +4,8 @@ VALUES ($1, 'open')
 RETURNING id, code, status, created_at;
 
 -- name: CreateOrderItem :one
-INSERT INTO order_items (order_id, menu_id, name, price, qty)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO order_items (order_id, menu_id, name, price, qty, base_option_name)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id;
 
 -- name: CreateOrderItemOption :exec

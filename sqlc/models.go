@@ -67,6 +67,14 @@ type Menu struct {
 	Active     bool        `db:"active" json:"active"`
 }
 
+type MenuBaseOption struct {
+	ID        int32  `db:"id" json:"id"`
+	MenuID    int32  `db:"menu_id" json:"menu_id"`
+	Name      string `db:"name" json:"name"`
+	Price     int64  `db:"price" json:"price"`
+	SortOrder int32  `db:"sort_order" json:"sort_order"`
+}
+
 type MenuCategory struct {
 	ID   int32  `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
@@ -117,12 +125,13 @@ type OrderDiscount struct {
 }
 
 type OrderItem struct {
-	ID      int32       `db:"id" json:"id"`
-	OrderID int32       `db:"order_id" json:"order_id"`
-	MenuID  pgtype.Int4 `db:"menu_id" json:"menu_id"`
-	Name    string      `db:"name" json:"name"`
-	Price   int64       `db:"price" json:"price"`
-	Qty     int32       `db:"qty" json:"qty"`
+	ID             int32       `db:"id" json:"id"`
+	OrderID        int32       `db:"order_id" json:"order_id"`
+	MenuID         pgtype.Int4 `db:"menu_id" json:"menu_id"`
+	Name           string      `db:"name" json:"name"`
+	Price          int64       `db:"price" json:"price"`
+	Qty            int32       `db:"qty" json:"qty"`
+	BaseOptionName pgtype.Text `db:"base_option_name" json:"base_option_name"`
 }
 
 type OrderItemOption struct {

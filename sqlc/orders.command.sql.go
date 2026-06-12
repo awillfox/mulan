@@ -37,17 +37,18 @@ func (q *Queries) CreateOrder(ctx context.Context, code string) (CreateOrderRow,
 }
 
 const createOrderItem = `-- name: CreateOrderItem :one
-INSERT INTO order_items (order_id, menu_id, name, price, qty)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO order_items (order_id, menu_id, name, price, qty, base_option_name)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id
 `
 
 type CreateOrderItemParams struct {
-	OrderID int32       `db:"order_id" json:"order_id"`
-	MenuID  pgtype.Int4 `db:"menu_id" json:"menu_id"`
-	Name    string      `db:"name" json:"name"`
-	Price   int64       `db:"price" json:"price"`
-	Qty     int32       `db:"qty" json:"qty"`
+	OrderID        int32       `db:"order_id" json:"order_id"`
+	MenuID         pgtype.Int4 `db:"menu_id" json:"menu_id"`
+	Name           string      `db:"name" json:"name"`
+	Price          int64       `db:"price" json:"price"`
+	Qty            int32       `db:"qty" json:"qty"`
+	BaseOptionName pgtype.Text `db:"base_option_name" json:"base_option_name"`
 }
 
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (int32, error) {
@@ -57,6 +58,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		arg.Name,
 		arg.Price,
 		arg.Qty,
+		arg.BaseOptionName,
 	)
 	var id int32
 	err := row.Scan(&id)

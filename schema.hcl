@@ -327,6 +327,12 @@ table "order_items" {
     type = int
     null = false
   }
+  # Snapshot of the chosen base option's name (e.g. "Iced"). NULL when the
+  # menu has no base options. The chosen base price is stored in `price`.
+  column "base_option_name" {
+    type = varchar(255)
+    null = true
+  }
 
   primary_key {
     columns = [column.id]
@@ -549,6 +555,46 @@ table "menus" {
     columns     = [column.category_id]
     ref_columns = [table.menu_categories.column.id]
     on_delete   = SET_NULL
+  }
+}
+
+table "menu_base_options" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "menu_id" {
+    type = int
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  # Absolute, VAT-inclusive satang price. Picking this base option sets the
+  # whole line's base price (it does NOT add to menus.price).
+  column "price" {
+    type = bigint
+    null = false
+  }
+  column "sort_order" {
+    type    = int
+    null    = false
+    default = 0
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_mbo_menu" {
+    columns     = [table.menu_base_options.column.menu_id]
+    ref_columns = [table.menus.column.id]
+    on_delete   = CASCADE
+  }
+  index "menu_base_options_menu_sort" {
+    columns = [column.menu_id, column.sort_order]
   }
 }
 
