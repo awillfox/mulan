@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	baseoptionhttp "mulan/internal/baseoption/http"
+	baseoptionservice "mulan/internal/baseoption/service"
 	cashdrawerhttp "mulan/internal/cashdrawer/http"
 	cashdrawerservice "mulan/internal/cashdrawer/service"
 	cashierhttp "mulan/internal/cashier/http"
@@ -62,8 +64,11 @@ func main() {
 	optionGroupSvc := optiongroupservice.NewService(pool, queries)
 	optionGroupHandler := optiongrouphttp.NewHandler(optionGroupSvc)
 
+	baseOptionSvc := baseoptionservice.NewService(pool, queries)
+	baseOptionHandler := baseoptionhttp.NewHandler(baseOptionSvc)
+
 	menuSvc := menuservice.NewMenuService(queries)
-	menuHandler := menuhttp.NewMenuHandler(menuSvc, optionGroupSvc, eventHub)
+	menuHandler := menuhttp.NewMenuHandler(menuSvc, optionGroupSvc, baseOptionSvc, eventHub)
 
 	categorySvc := menucategoryservice.NewCategoryService(queries)
 	categoryHandler := menucategoryhttp.NewCategoryHandler(categorySvc)
@@ -140,6 +145,7 @@ func main() {
 		r.Route("/menus", func(r chi.Router) {
 			menuHandler.Routes(r)
 			r.Put("/{id}/option-groups", optionGroupHandler.SetMenuGroups)
+			r.Put("/{id}/base-options", baseOptionHandler.SetMenuBaseOptions)
 		})
 		r.Route("/menu-categories", categoryHandler.Routes)
 		r.Route("/option-groups", optionGroupHandler.Routes)
