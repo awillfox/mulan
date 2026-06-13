@@ -49,6 +49,26 @@ type GuestWifiUser struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type ManagerSession struct {
+	ID            int32              `db:"id" json:"id"`
+	ManagerUserID int32              `db:"manager_user_id" json:"manager_user_id"`
+	TokenHash     string             `db:"token_hash" json:"token_hash"`
+	ExpiresAt     pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	RevokedAt     pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+}
+
+type ManagerUser struct {
+	ID           int32              `db:"id" json:"id"`
+	Username     string             `db:"username" json:"username"`
+	PasswordHash string             `db:"password_hash" json:"password_hash"`
+	Name         string             `db:"name" json:"name"`
+	Role         string             `db:"role" json:"role"`
+	Active       bool               `db:"active" json:"active"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Member struct {
 	ID        int32              `db:"id" json:"id"`
 	Phone     string             `db:"phone" json:"phone"`
