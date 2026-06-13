@@ -586,8 +586,33 @@ Append to `internal/sql/cash_drawer.command.sql`:
 -- name: AppendCashDrawerDenomEvent :one
 INSERT INTO cash_drawer_audit (event_type, amount, delta, note, actor, terminal, denominations)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, event_type, amount, delta, note, actor, terminal, denominations, created_at;
+RETURNING id, event_type, amount, delta, note, actor, terminal, created_at, denominations;
 ```
+(`denominations` is listed LAST so this query also maps to `sqlc.CashDrawerAudit` rather than a one-off `*Row` type — consistent with the existing audit queries.)
+
+- [ ] **Step 3b: Keep the EXISTING audit queries mapping to `sqlc.CashDrawerAudit`**
+
+> Adding the `denominations` column to `cash_drawer_audit` changes the table model
+> (`sqlc.CashDrawerAudit` gains `Denominations []byte`). The two pre-existing
+> queries that previously returned `sqlc.CashDrawerAudit` (`AppendCashDrawerEvent`
+> RETURNING, `ListCashDrawerAudit` SELECT) will otherwise stop matching the table
+> and sqlc will emit per-query `*Row` structs — breaking `toAuditEvent(sqlc.CashDrawerAudit)`
+> in `internal/cashdrawer/service/service.go`. Fix: append `denominations` LAST to
+> both column lists (matching the table's physical order) so they keep mapping to
+> `sqlc.CashDrawerAudit`. Do NOT add interface/wrapper plumbing to service.go.
+
+In `internal/sql/cash_drawer.command.sql`, change the existing `AppendCashDrawerEvent` RETURNING to end with `denominations`:
+```sql
+RETURNING id, event_type, amount, delta, note, actor, terminal, created_at, denominations;
+```
+In `internal/sql/cash_drawer.query.sql`, change the existing `ListCashDrawerAudit` SELECT list to end with `denominations`:
+```sql
+SELECT id, event_type, amount, delta, note, actor, terminal, created_at, denominations
+FROM cash_drawer_audit
+ORDER BY created_at DESC, id DESC
+LIMIT $1 OFFSET $2;
+```
+(`GetCurrentCashDrawerFloat` selects only a partial column set and already returns its own Row type — leave it unchanged.) `service.go` stays exactly as it was on the base commit (original `toAuditEvent(r sqlc.CashDrawerAudit)`).
 
 - [ ] **Step 4: Regenerate sqlc**
 
@@ -949,7 +974,7 @@ func (s *Service) AdjustDenoms(ctx context.Context, delta map[int64]int, actor s
 		}
 		if _, err := q.AdjustCashDrawerDenomination(ctx, sqlc.AdjustCashDrawerDenominationParams{
 			Denomination: int32(d),
-			Count:        int32(diff),
+			Delta:        int32(diff),
 		}); err != nil {
 			return 0, fmt.Errorf("adjust denom %d (count would go negative?): %w", d, err)
 		}
@@ -1008,7 +1033,7 @@ func (s *Service) ApplyCashSale(ctx context.Context, q *sqlc.Queries, tender, ch
 		}
 		if _, err := q.AdjustCashDrawerDenomination(ctx, sqlc.AdjustCashDrawerDenominationParams{
 			Denomination: int32(d),
-			Count:        int32(diff),
+			Delta:        int32(diff),
 		}); err != nil {
 			return fmt.Errorf("apply cash sale denom %d: %w", d, err)
 		}
