@@ -184,7 +184,28 @@ Non-cash payment methods do not touch the drawer.
 
 ### 5.3 Cashier (extends `/api/cashiers`)
 
-`role` added to create/update request and to list/login responses.
+`role` added to create/update request and to list/login responses. These writes
+are already **owner-gated** by manager-auth (`RequireRole(owner)` per the route
+scoping), so assigning a cashier's role from the web manager uses the existing
+owner bearer token — **distinct** from the POS-side PIN re-challenge in §2, which
+only guards drawer denomination edits on the terminal.
+
+---
+
+## 5.4 mulan-manager frontend (separate repo `../mulan-manager`, SvelteKit)
+
+Cashier role is assigned from the existing cashiers page. Changes:
+
+- `src/lib/api/cashiers.ts`: add `role: 'cashier' | 'manager'` to the `Cashier`
+  interface; thread `role` through `createCashier(...)` and `updateCashier(...)`
+  (PATCH body gains `role`).
+- `src/routes/(app)/cashiers/+page.svelte`: role selector (cashier / manager) in
+  the create and edit forms; show the role on each cashier row.
+- Proxy `src/routes/api/[...path]/+server.ts`: `cashiers` is **already**
+  allowlisted — no change. (Drawer endpoints are POS-only and are **not** added to
+  the web proxy.)
+
+No new auth wiring: cashier writes already require the owner manager session.
 
 ---
 
