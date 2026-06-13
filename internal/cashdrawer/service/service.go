@@ -20,11 +20,11 @@ import (
 // Event types persisted in cash_drawer_audit.event_type. Must match the CHECK
 // constraint declared in schema.hcl.
 const (
-	EventSet            = "set"
-	EventClear          = "clear"
-	EventAdjust         = "adjust"
-	EventKick           = "kick"
-	EventOpenForChange  = "open_for_change"
+	EventSet           = "set"
+	EventClear         = "clear"
+	EventAdjust        = "adjust"
+	EventKick          = "kick"
+	EventOpenForChange = "open_for_change"
 )
 
 var ErrInvalidAmount = errors.New("amount must be >= 0")

@@ -9,14 +9,21 @@ import (
 )
 
 type CashDrawerAudit struct {
-	ID        int64              `db:"id" json:"id"`
-	EventType string             `db:"event_type" json:"event_type"`
-	Amount    pgtype.Int8        `db:"amount" json:"amount"`
-	Delta     pgtype.Int8        `db:"delta" json:"delta"`
-	Note      pgtype.Text        `db:"note" json:"note"`
-	Actor     pgtype.Text        `db:"actor" json:"actor"`
-	Terminal  pgtype.Text        `db:"terminal" json:"terminal"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID            int64              `db:"id" json:"id"`
+	EventType     string             `db:"event_type" json:"event_type"`
+	Amount        pgtype.Int8        `db:"amount" json:"amount"`
+	Delta         pgtype.Int8        `db:"delta" json:"delta"`
+	Note          pgtype.Text        `db:"note" json:"note"`
+	Actor         pgtype.Text        `db:"actor" json:"actor"`
+	Terminal      pgtype.Text        `db:"terminal" json:"terminal"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	Denominations []byte             `db:"denominations" json:"denominations"`
+}
+
+type CashDrawerDenomination struct {
+	Denomination int32              `db:"denomination" json:"denomination"`
+	Count        int32              `db:"count" json:"count"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 type Cashier struct {

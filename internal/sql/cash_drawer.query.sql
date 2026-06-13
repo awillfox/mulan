@@ -9,10 +9,15 @@ ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
 -- name: ListCashDrawerAudit :many
-SELECT id, event_type, amount, delta, note, actor, terminal, created_at
+SELECT id, event_type, amount, delta, note, actor, terminal, created_at, denominations
 FROM cash_drawer_audit
 ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2;
 
 -- name: CountCashDrawerAudit :one
 SELECT COUNT(*)::bigint FROM cash_drawer_audit;
+
+-- name: ListCashDrawerDenominations :many
+SELECT denomination, count, updated_at
+FROM cash_drawer_denominations
+ORDER BY denomination DESC;

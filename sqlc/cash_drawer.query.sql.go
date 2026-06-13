@@ -53,7 +53,7 @@ func (q *Queries) GetCurrentCashDrawerFloat(ctx context.Context) (GetCurrentCash
 }
 
 const listCashDrawerAudit = `-- name: ListCashDrawerAudit :many
-SELECT id, event_type, amount, delta, note, actor, terminal, created_at
+SELECT id, event_type, amount, delta, note, actor, terminal, created_at, denominations
 FROM cash_drawer_audit
 ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2
@@ -82,7 +82,34 @@ func (q *Queries) ListCashDrawerAudit(ctx context.Context, arg ListCashDrawerAud
 			&i.Actor,
 			&i.Terminal,
 			&i.CreatedAt,
+			&i.Denominations,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCashDrawerDenominations = `-- name: ListCashDrawerDenominations :many
+SELECT denomination, count, updated_at
+FROM cash_drawer_denominations
+ORDER BY denomination DESC
+`
+
+func (q *Queries) ListCashDrawerDenominations(ctx context.Context) ([]CashDrawerDenomination, error) {
+	rows, err := q.db.Query(ctx, listCashDrawerDenominations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CashDrawerDenomination{}
+	for rows.Next() {
+		var i CashDrawerDenomination
+		if err := rows.Scan(&i.Denomination, &i.Count, &i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
