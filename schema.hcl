@@ -135,6 +135,11 @@ table "cashiers" {
     null    = false
     default = true
   }
+  column "role" {
+    type    = varchar(20)
+    null    = false
+    default = "cashier"
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -152,6 +157,9 @@ table "cashiers" {
   index "cashiers_login_id_key" {
     columns = [column.login_id]
     unique  = true
+  }
+  check "cashiers_role_check" {
+    expr = "role IN ('cashier', 'manager')"
   }
 }
 

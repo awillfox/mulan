@@ -28,7 +28,9 @@ CREATE TABLE "public"."cashiers" (
   "active" boolean NOT NULL DEFAULT true,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
+  "role" character varying(20) NOT NULL DEFAULT 'cashier',
+  PRIMARY KEY ("id"),
+  CONSTRAINT "cashiers_role_check" CHECK ((role)::text = ANY (ARRAY[('cashier'::character varying)::text, ('manager'::character varying)::text]))
 );
 -- Create index "cashiers_login_id_key" to table: "cashiers"
 CREATE UNIQUE INDEX "cashiers_login_id_key" ON "public"."cashiers" ("login_id");
