@@ -27,6 +27,7 @@ type Cashier struct {
 	Active    bool               `db:"active" json:"active"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	Role      string             `db:"role" json:"role"`
 }
 
 type Discount struct {

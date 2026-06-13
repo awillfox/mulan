@@ -10,7 +10,7 @@ import (
 )
 
 const getCashier = `-- name: GetCashier :one
-SELECT id, login_id, name, pin_hash, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers WHERE id = $1
 `
 
@@ -25,12 +25,13 @@ func (q *Queries) GetCashier(ctx context.Context, id int32) (Cashier, error) {
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getCashierByLoginID = `-- name: GetCashierByLoginID :one
-SELECT id, login_id, name, pin_hash, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers WHERE login_id = $1
 `
 
@@ -45,12 +46,13 @@ func (q *Queries) GetCashierByLoginID(ctx context.Context, loginID string) (Cash
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const listCashiers = `-- name: ListCashiers :many
-SELECT id, login_id, name, pin_hash, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers
 ORDER BY login_id
 `
@@ -72,6 +74,7 @@ func (q *Queries) ListCashiers(ctx context.Context) ([]Cashier, error) {
 			&i.Active,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}
