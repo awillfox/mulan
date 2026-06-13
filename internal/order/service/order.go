@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -43,16 +44,26 @@ var (
 	ErrCannotHold        = errors.New("order cannot be held")
 	ErrUnknownDiscount   = errors.New("unknown discount")
 	ErrDiscountInactive  = errors.New("discount inactive")
+	ErrShortTender       = errors.New("cash tendered is less than amount due")
+	ErrChangeNotMakeable = errors.New("cannot make change from drawer")
 )
+
+// CashDrawer is the subset of cashdrawer/service used at checkout. Defined here
+// (consumer side) to avoid a hard import cycle and keep the dependency explicit.
+type CashDrawer interface {
+	MakeChange(ctx context.Context, changeSatang int64) (map[int64]int, error)
+	ApplyCashSale(ctx context.Context, q *sqlc.Queries, tender, change map[int64]int, actor string) error
+}
 
 type OrderService struct {
 	pool     *pgxpool.Pool
 	q        *sqlc.Queries
 	settings *settingsservice.SettingsService
+	drawer   CashDrawer
 }
 
-func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsservice.SettingsService) *OrderService {
-	return &OrderService{pool: pool, q: q, settings: settings}
+func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsservice.SettingsService, drawer CashDrawer) *OrderService {
+	return &OrderService{pool: pool, q: q, settings: settings, drawer: drawer}
 }
 
 type CreatedOrder struct {
@@ -90,6 +101,15 @@ type CustomerInput struct {
 	Name  string
 }
 
+// CashPayment carries the per-denomination tender for a cash sale. Empty (nil or
+// IsCash=false) means a non-cash sale and the drawer is untouched. Tender is
+// satang-keyed denomination -> count.
+type CashPayment struct {
+	IsCash bool
+	Tender map[int64]int
+	Actor  string
+}
+
 // Checkout finalises an open order: it validates every line against the
 // authoritative menu/option data, applies per-line and whole-order discounts,
 // persists order_items + order_item_options + order_discounts, marks the order
@@ -101,7 +121,7 @@ type CustomerInput struct {
 // whole-order discounts reduce the net subtotal, then VAT is computed on the
 // discounted subtotal. Every applied discount is clamped so no line — and the
 // order total — can never go below zero.
-func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32, customer CustomerInput) (*domain.CheckoutResult, error) {
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32, customer CustomerInput, cash CashPayment) (*domain.CheckoutResult, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -282,6 +302,30 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	)
 	totalSatang := t.CustomerPays
 
+	// Cash payment: round the amount due to whole baht, validate tender, compute
+	// the change breakdown against live drawer stock, and apply the movement in
+	// this same transaction so the drawer can never drift from the sale.
+	var roundedDueSatang, changeSatang int64
+	var changeBreakdown map[int64]int
+	if cash.IsCash {
+		roundedDueSatang = roundToBaht(totalSatang)
+		var tenderSatang int64
+		for d, c := range cash.Tender {
+			tenderSatang += d * int64(c)
+		}
+		if tenderSatang < roundedDueSatang {
+			return nil, ErrShortTender
+		}
+		changeSatang = tenderSatang - roundedDueSatang
+		changeBreakdown, err = s.drawer.MakeChange(ctx, changeSatang)
+		if err != nil {
+			return nil, ErrChangeNotMakeable
+		}
+		if err := s.drawer.ApplyCashSale(ctx, q, cash.Tender, changeBreakdown, cash.Actor); err != nil {
+			return nil, fmt.Errorf("apply cash sale: %w", err)
+		}
+	}
+
 	var memberID pgtype.Int4
 	var pointsEarned int64
 	var hasMember bool
@@ -352,6 +396,10 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		MemberPhone:   memberPhone,
 		PointsEarned:  pointsEarned,
 		PointsBalance: pointsBalance,
+
+		RoundedDue:      float64(roundedDueSatang) / 100,
+		Change:          float64(changeSatang) / 100,
+		ChangeBreakdown: breakdownToStringMap(changeBreakdown),
 	}, nil
 }
 
@@ -716,4 +764,27 @@ func generateCode() (string, error) {
 		code[i] = codeChars[int(v)%len(codeChars)]
 	}
 	return string(code), nil
+}
+
+// roundToBaht rounds a satang amount to the nearest whole baht (100 satang).
+// Cash is settled in whole baht because the smallest tracked coin is ฿1.
+func roundToBaht(satang int64) int64 {
+	r := satang % 100
+	if r == 0 {
+		return satang
+	}
+	if r >= 50 {
+		return satang - r + 100
+	}
+	return satang - r
+}
+
+// breakdownToStringMap converts a satang-keyed change breakdown to the
+// string-keyed shape the JSON API uses (nil-safe → empty map).
+func breakdownToStringMap(b map[int64]int) map[string]int {
+	out := make(map[string]int, len(b))
+	for d, n := range b {
+		out[strconv.FormatInt(d, 10)] = n
+	}
+	return out
 }

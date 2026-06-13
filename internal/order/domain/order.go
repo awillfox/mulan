@@ -50,4 +50,8 @@ type CheckoutResult struct {
 	MemberPhone   string
 	PointsEarned  int64
 	PointsBalance int64
+
+	RoundedDue      float64        `json:"rounded_due"`
+	Change          float64        `json:"change"`
+	ChangeBreakdown map[string]int `json:"change_breakdown"`
 }

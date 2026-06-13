@@ -97,7 +97,12 @@ func main() {
 	}
 	wifiHandler := guestwifihttp.New(wifiSvc)
 
-	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc)
+	cashDrawerSvc := cashdrawerservice.NewService(pool, queries)
+	if err := cashDrawerSvc.SeedDenominations(ctx); err != nil {
+		log.Fatalf("seed cash drawer denominations: %v", err)
+	}
+
+	orderSvc := orderservice.NewOrderService(pool, queries, settingsSvc, cashDrawerSvc)
 	var wifiDep orderhttp.WifiService
 	if cfg.MikrotikHost != "" {
 		wifiDep = wifiSvc
@@ -113,10 +118,6 @@ func main() {
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
 
-	cashDrawerSvc := cashdrawerservice.NewService(pool, queries)
-	if err := cashDrawerSvc.SeedDenominations(ctx); err != nil {
-		log.Fatalf("seed cash drawer denominations: %v", err)
-	}
 	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc, cashierSvc)
 
 	discountSvc := discountservice.NewService(pool, queries)
