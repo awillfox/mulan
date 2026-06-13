@@ -148,49 +148,66 @@ func main() {
 	r.Handle("/elements/*", http.StripPrefix("/elements/", http.FileServer(http.Dir("elements"))))
 
 	r.Route("/api", func(r chi.Router) {
-		r.Route("/menus", func(r chi.Router) {
-			menuHandler.Routes(r)
-			r.Put("/{id}/option-groups", optionGroupHandler.SetMenuGroups)
-			r.Put("/{id}/base-options", baseOptionHandler.SetMenuBaseOptions)
-		})
-		r.Route("/menu-categories", categoryHandler.Routes)
-		r.Route("/option-groups", optionGroupHandler.Routes)
-		r.Route("/options", optionGroupHandler.OptionRoutes)
+		// ---------- OPEN: POS / agent / shared (no auth) ----------
+		r.Get("/menus", menuHandler.List)
+		r.Get("/menu-categories", categoryHandler.List)
+		r.Get("/settings", settingsHandler.Get)
+		r.Get("/settings/logo", settingsHandler.GetLogo)
+		r.Get("/members/lookup", memberHandler.Lookup)
+		r.Post("/cashiers/login", cashierHandler.Login)
 		r.Route("/orders", orderHandler.Routes)
-		r.Route("/members", memberHandler.Routes)
-		r.Route("/cashiers", cashierHandler.Routes)
-		r.Route("/settings", settingsHandler.Routes)
 		r.Route("/cash-drawer", cashDrawerHandler.Routes)
-
-		// Public auth: login mints a session.
-		r.Route("/auth", managerAuthHandler.Routes)
-
-		// POS reads the active discount set without auth. Keep BEFORE the
-		// protected group so it is not shadowed.
+		r.Mount("/wifi", wifiHandler.Routes())
 		r.Get("/discounts/active", discountHandler.ListActive)
+		r.Route("/auth", managerAuthHandler.Routes) // POST /auth/login
 
-		// Manager-only, bearer-protected group.
+		// ---------- RequireManager: any logged-in manager (reads) ----------
 		r.Group(func(r chi.Router) {
 			r.Use(managerauthhttp.RequireManager(managerAuthSvc))
 
 			r.Post("/auth/logout", managerAuthHandler.Logout)
 			r.Get("/auth/me", managerAuthHandler.Me)
-
-			// Any authenticated manager may read the discount list.
 			r.Get("/discounts", discountHandler.List)
+			r.Get("/option-groups", optionGroupHandler.ListGroups)
+			r.Get("/members", memberHandler.List)
+			r.Get("/members/{id}/orders", memberHandler.Orders)
+			r.Get("/cashiers", cashierHandler.List)
 
-			// Owner-only: discount mutations + dashboard.
+			// ---------- RequireRole(owner): writes + owner data ----------
 			r.Group(func(r chi.Router) {
 				r.Use(managerauthhttp.RequireRole(managerauthdomain.RoleOwner))
 
 				r.Post("/discounts", discountHandler.Create)
 				r.Patch("/discounts/{id}", discountHandler.Update)
 				r.Delete("/discounts/{id}", discountHandler.Delete)
-
 				r.Route("/dashboard", dashboardHandler.Routes)
+				r.Post("/menus", menuHandler.Create)
+				r.Patch("/menus/{id}", menuHandler.Update)
+				r.Patch("/menus/{id}/toggle", menuHandler.Toggle)
+				r.Delete("/menus/{id}", menuHandler.Delete)
+				r.Put("/menus/{id}/option-groups", optionGroupHandler.SetMenuGroups)
+				r.Put("/menus/{id}/base-options", baseOptionHandler.SetMenuBaseOptions)
+				r.Post("/menu-categories", categoryHandler.Create)
+				r.Patch("/menu-categories/{id}", categoryHandler.Update)
+				r.Delete("/menu-categories/{id}", categoryHandler.Delete)
+				r.Post("/option-groups", optionGroupHandler.CreateGroup)
+				r.Patch("/option-groups/{id}", optionGroupHandler.UpdateGroup)
+				r.Delete("/option-groups/{id}", optionGroupHandler.DeleteGroup)
+				r.Post("/option-groups/{id}/options", optionGroupHandler.CreateOption)
+				r.Patch("/options/{id}", optionGroupHandler.UpdateOption)
+				r.Delete("/options/{id}", optionGroupHandler.DeleteOption)
+				r.Post("/members", memberHandler.Create)
+				r.Patch("/members/{id}", memberHandler.Update)
+				r.Delete("/members/{id}", memberHandler.Delete)
+				r.Post("/cashiers", cashierHandler.Create)
+				r.Patch("/cashiers/{id}", cashierHandler.Update)
+				r.Patch("/cashiers/{id}/pin", cashierHandler.UpdatePin)
+				r.Delete("/cashiers/{id}", cashierHandler.Delete)
+				r.Patch("/settings", settingsHandler.Update)
+				r.Put("/settings/logo", settingsHandler.PutLogo)
+				r.Delete("/settings/logo", settingsHandler.DeleteLogo)
 			})
 		})
-		r.Mount("/wifi", wifiHandler.Routes())
 	})
 
 	log.Println("server starting on :" + cfg.Port)
