@@ -21,12 +21,12 @@ func NewHandler(svc *service.Service) *Handler {
 }
 
 func (h *Handler) Routes(r chi.Router) {
-	r.Get("/", h.list)
-	r.Post("/", h.create)
-	r.Post("/login", h.login)
-	r.Patch("/{id}", h.update)
-	r.Patch("/{id}/pin", h.updatePin)
-	r.Delete("/{id}", h.delete)
+	r.Get("/", h.List)
+	r.Post("/", h.Create)
+	r.Post("/login", h.Login)
+	r.Patch("/{id}", h.Update)
+	r.Patch("/{id}/pin", h.UpdatePin)
+	r.Delete("/{id}", h.Delete)
 }
 
 type cashierResponse struct {
@@ -56,7 +56,7 @@ type updatePinRequest struct {
 	PIN string `json:"pin"`
 }
 
-func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
@@ -78,7 +78,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
 }
 
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	cashiers, err := h.svc.List(r.Context())
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to list cashiers", err)
@@ -91,7 +91,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, out)
 }
 
-func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
@@ -117,7 +117,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	response.Created(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
 }
 
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)
@@ -144,7 +144,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
 }
 
-func (h *Handler) updatePin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdatePin(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)
@@ -170,7 +170,7 @@ func (h *Handler) updatePin(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w, r)
 }
 
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)
