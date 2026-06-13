@@ -24,6 +24,7 @@ import (
 	guestwifihttp "mulan/internal/guestwifi/http"
 	guestwifiservice "mulan/internal/guestwifi/service"
 	"mulan/internal/hub"
+	managerauthdomain "mulan/internal/managerauth/domain"
 	managerauthhttp "mulan/internal/managerauth/http"
 	managerauthservice "mulan/internal/managerauth/service"
 	memberhttp "mulan/internal/member/http"
@@ -175,14 +176,19 @@ func main() {
 			r.Post("/auth/logout", managerAuthHandler.Logout)
 			r.Get("/auth/me", managerAuthHandler.Me)
 
-			r.Route("/discounts", func(r chi.Router) {
-				r.Get("/", discountHandler.List)
-				r.Post("/", discountHandler.Create)
-				r.Patch("/{id}", discountHandler.Update)
-				r.Delete("/{id}", discountHandler.Delete)
-			})
+			// Any authenticated manager may read the discount list.
+			r.Get("/discounts", discountHandler.List)
 
-			r.Route("/dashboard", dashboardHandler.Routes)
+			// Owner-only: discount mutations + dashboard.
+			r.Group(func(r chi.Router) {
+				r.Use(managerauthhttp.RequireRole(managerauthdomain.RoleOwner))
+
+				r.Post("/discounts", discountHandler.Create)
+				r.Patch("/discounts/{id}", discountHandler.Update)
+				r.Delete("/discounts/{id}", discountHandler.Delete)
+
+				r.Route("/dashboard", dashboardHandler.Routes)
+			})
 		})
 		r.Mount("/wifi", wifiHandler.Routes())
 	})
