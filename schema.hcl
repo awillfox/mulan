@@ -288,6 +288,10 @@ table "cash_drawer_audit" {
     type = varchar(120)
     null = true
   }
+  column "denominations" {
+    type = jsonb
+    null = true
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -304,7 +308,33 @@ table "cash_drawer_audit" {
     columns = [column.event_type, column.created_at]
   }
   check "cash_drawer_audit_event_type" {
-    expr = "event_type IN ('set','clear','adjust','kick','open_for_change')"
+    expr = "event_type IN ('set','clear','adjust','kick','open_for_change','sale')"
+  }
+}
+
+table "cash_drawer_denominations" {
+  schema = schema.public
+
+  column "denomination" {
+    type = integer
+    null = false
+  }
+  column "count" {
+    type    = integer
+    null    = false
+    default = 0
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.denomination]
+  }
+  check "cash_drawer_denominations_count_nonneg" {
+    expr = "count >= 0"
   }
 }
 

@@ -12,13 +12,22 @@ CREATE TABLE "public"."cash_drawer_audit" (
   "actor" character varying(120) NULL,
   "terminal" character varying(120) NULL,
   "created_at" timestamptz NOT NULL DEFAULT now(),
+  "denominations" jsonb NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY ((ARRAY['set'::character varying, 'clear'::character varying, 'adjust'::character varying, 'kick'::character varying, 'open_for_change'::character varying])::text[]))
+  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY (ARRAY[('set'::character varying)::text, ('clear'::character varying)::text, ('adjust'::character varying)::text, ('kick'::character varying)::text, ('open_for_change'::character varying)::text, ('sale'::character varying)::text]))
 );
 -- Create index "cash_drawer_audit_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_created_at" ON "public"."cash_drawer_audit" ("created_at");
 -- Create index "cash_drawer_audit_event_type_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_event_type_created_at" ON "public"."cash_drawer_audit" ("event_type", "created_at");
+-- Create "cash_drawer_denominations" table
+CREATE TABLE "public"."cash_drawer_denominations" (
+  "denomination" integer NOT NULL,
+  "count" integer NOT NULL DEFAULT 0,
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("denomination"),
+  CONSTRAINT "cash_drawer_denominations_count_nonneg" CHECK (count >= 0)
+);
 -- Create "cashiers" table
 CREATE TABLE "public"."cashiers" (
   "id" serial NOT NULL,
