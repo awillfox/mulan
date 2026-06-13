@@ -71,6 +71,12 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
+- `GET /api/cash-drawer/denominations` — current bill/coin counts `{counts:{<satang>:count}, total}` (open; POS reads live)
+- `PUT /api/cash-drawer/denominations` — set counts `{cashier_id, pin, counts:{<satang>:count}}` (manager-role cashier, id+PIN — 403 otherwise)
+- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{cashier_id, pin, delta:{<satang>:±count}}` (manager id+PIN; 409 if a count would go negative)
+- `POST /api/cash-drawer/change-preview` — `{due, tender:{<satang>:count}}` → `{rounded_due, change_total, breakdown, makeable}` (advisory; open)
+- Cashiers now carry `role` (`cashier|manager`); `POST/PATCH /api/cashiers` accept `role`, and login/list responses include it. Manager-role gates drawer denomination writes at the POS.
+- `POST /api/orders/{code}/checkout` accepts (cash) `{payment_method:"cash", cash_tender:{<satang>:count}, cashier_name}` and returns `{rounded_due, change, change_breakdown}` (see Cash Drawer Denominations)
 
 ## Option Groups
 Shared, reusable option groups attach to menus via `menu_option_groups`. Each group has a selection mode: `single_required` (must pick one), `single_optional` (zero or one), `multi` (any). Options carry a `price_delta` in satang. Order lines snapshot selected options into `order_item_options` (name + price_delta) so receipts stay stable when groups/options edit later. Menu API responses include `option_groups` populated with their options. POS opens a modal whenever a clicked menu has any attached group; selected options print as indented sub-lines on both the order bill (kitchen) and the receipt.
@@ -127,11 +133,41 @@ Single-row `settings` table (PK check `id = 1`). Seeded on first startup with de
 ## Membership / Loyalty
 Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
 
+## Cash Drawer Denominations
+The drawer tracks how many of each THB bill/coin it holds: 9 denominations
+(1000,500,100,50,20,10,5,2,1) in `cash_drawer_denominations` (one row per
+denomination in **satang**, `count >= 0` CHECK, single physical drawer). The 9 rows
+are seeded (count 0) on startup. Total float = Σ(denom×count) — this **replaces** the
+old single-float concept; the legacy `GetCurrentCashDrawerFloat` query now filters
+`denominations IS NULL` so denomination events don't pollute it. Every change appends
+a `cash_drawer_audit` row carrying a signed per-denomination JSON delta
+(`denominations` jsonb) + net satang (`delta`); event types `set`/`adjust`/`sale`.
+
+A **manager-role** cashier sets/adjusts counts from the POS (`PUT`/`adjust`,
+confirmed by `cashier_id`+`pin` — there is no cashier session, so the backend
+re-verifies bcrypt + role per request; trusted-tailnet kiosk model). On a **cash**
+sale the cashier enters the exact denominations tendered; checkout rounds the amount
+due to the nearest ฿1 (smallest coin; card/QR charge exact satang), computes change
+as real bills/coins via a **bounded coin-change DP** against current stock
+(`internal/cashdrawer/service/change.go` — greedy is wrong with limited stock), and
+inside the existing checkout transaction adds the tender and subtracts the change
+(`ApplyCashSale` on the tx-bound queries → atomic with the order; rolls back on any
+error). **Block-until-restocked:** if exact change can't be made, checkout returns
+`409` and the order stays open; a manager restocks via `adjust` (id+PIN) and the
+cashier retries. POS shows a live `change-preview` (the exact bills/coins to return)
+as the cashier taps denominations. `internal/cashdrawer/service/denominations.go`
+owns the state/audit/DP-glue; `change-preview` + the denomination endpoints live in
+`internal/cashdrawer/http/`.
+
+**Deploy ordering:** these queries reference the new `denominations` column +
+`cash_drawer_denominations` table — run `task migrate-prod` **before** swapping in the
+new binary, or drawer/audit queries error at runtime.
+
 ## Manager Authentication
-`internal/managerauth/` — opaque bearer-token sessions for the SvelteKit manager, **separate from POS `cashiers`** (which stay PIN-only). Tables: `manager_users` (username, bcrypt `password_hash`, name, `role` = `owner|staff`, active) + `manager_sessions` (SHA-256-hashed token, `expires_at`, `revoked_at`; 30-day TTL). Middleware `RequireManager` (valid session → user in ctx) + `RequireRole(owner)`. Seed: `go run ./cmd/create-manager-user -username U -password P -name N -role owner|staff`. Login bcrypt-verifies and runs a dummy compare on unknown user (constant-time, anti-enumeration); passwords ≥8 chars; change-password validates the current password.
+`internal/managerauth/` — opaque bearer-token sessions for the SvelteKit manager, **separate from POS `cashiers`** (cashiers are PIN-only and now carry a `role` of `cashier|manager`, distinct from manager_users' `owner|staff`). Tables: `manager_users` (username, bcrypt `password_hash`, name, `role` = `owner|staff`, active) + `manager_sessions` (SHA-256-hashed token, `expires_at`, `revoked_at`; 30-day TTL). Middleware `RequireManager` (valid session → user in ctx) + `RequireRole(owner)`. Seed: `go run ./cmd/create-manager-user -username U -password P -name N -role owner|staff`. Login bcrypt-verifies and runs a dummy compare on unknown user (constant-time, anti-enumeration); passwords ≥8 chars; change-password validates the current password.
 
 **Route scoping (in `main.go`'s `/api` block):**
-- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer`, `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`.
+- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer` (incl. `GET /denominations`, `POST /change-preview`; the denomination **writes** `PUT /denominations` + `POST /denominations/adjust` self-gate on `cashier_id`+`pin`→manager-role inside the handler, since POS cashiers have no bearer session), `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`.
 - **`RequireManager`** (any logged-in manager, reads): `GET /api/option-groups`, `GET /api/members`(+`/{id}/orders`), `GET /api/cashiers`, `GET /api/discounts`, `/api/auth/{me,logout,change-password}`.
 - **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `/api/dashboard/*`.
 
