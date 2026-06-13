@@ -4,6 +4,10 @@
 Go-based Point of Sale (POS) system. Two modules:
 - **mulan** — main server (API, manager web UI)
 - **mulan-agent** — device agent running on POS terminal, serves POS UI, controls cash drawer (GS-410B) and VFD display (COM3)
+- **mulan-manager** (separate repo, `../mulan-manager`) — phone-first iOS-style **SvelteKit** frontend for the manager pages, deployed on render.com, consuming this backend's `/api/*` over Tailscale. Progressively replacing the Go `html/template` `/manager/*` pages (those still serve until fully replaced).
+
+## Deployment
+The backend runs on tailnet node **chaiyarak** (`100.109.90.83`) as **systemd service `mulan`** in `~/mulan-deploy/` (static `CGO_ENABLED=0` linux/amd64 binary + `templates/` + `elements/` + `.env`; DB = local Postgres on that host). Update: cross-build → `scp` to `~/mulan-deploy/mulan.new` → `mv -f mulan.new mulan` (can't overwrite a running binary — ETXTBSY) → `sudo systemctl restart mulan`. The render frontend reaches it at `http://100.109.90.83:8085` over Tailscale.
 
 Claude will update CLAUDE.md a long the way
 
@@ -36,6 +40,10 @@ Claude will update CLAUDE.md a long the way
 - `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
+
+**Auth (manager) — manager `/api/*` routes are auth-scoped; see Manager Authentication below. POS-shared reads stay open.**
+- `POST /api/auth/login` — `{username,password}` → `{token, expires_at, user:{id,username,name,role}}` (opaque bearer)
+- `POST /api/auth/logout` · `GET /api/auth/me` · `POST /api/auth/change-password` `{current_password,new_password}` — require bearer
 - `GET /api/menus` — returns list of menus (currently mock data)
 - `GET /api/menu-categories` — list all menu categories
 - `POST /api/menu-categories` — create a menu category `{name}`
@@ -118,6 +126,16 @@ Single-row `settings` table (PK check `id = 1`). Seeded on first startup with de
 
 ## Membership / Loyalty
 Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
+
+## Manager Authentication
+`internal/managerauth/` — opaque bearer-token sessions for the SvelteKit manager, **separate from POS `cashiers`** (which stay PIN-only). Tables: `manager_users` (username, bcrypt `password_hash`, name, `role` = `owner|staff`, active) + `manager_sessions` (SHA-256-hashed token, `expires_at`, `revoked_at`; 30-day TTL). Middleware `RequireManager` (valid session → user in ctx) + `RequireRole(owner)`. Seed: `go run ./cmd/create-manager-user -username U -password P -name N -role owner|staff`. Login bcrypt-verifies and runs a dummy compare on unknown user (constant-time, anti-enumeration); passwords ≥8 chars; change-password validates the current password.
+
+**Route scoping (in `main.go`'s `/api` block):**
+- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer`, `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`.
+- **`RequireManager`** (any logged-in manager, reads): `GET /api/option-groups`, `GET /api/members`(+`/{id}/orders`), `GET /api/cashiers`, `GET /api/discounts`, `/api/auth/{me,logout,change-password}`.
+- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `/api/dashboard/*`.
+
+Adding a manager route: register it in the right group in `main.go` AND add its prefix to the proxy `ALLOW` in mulan-manager's `src/routes/api/[...path]/+server.ts`. **Never wrap a POS-shared read** (it breaks the POS) — verify with a no-token curl returning 200.
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router
