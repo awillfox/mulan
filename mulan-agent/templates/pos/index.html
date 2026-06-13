@@ -1071,6 +1071,16 @@
                 </div>
             </section>
 
+            <!-- Cash drawer denominations (manager only) -->
+            <div id="denom-editor" style="display:none;margin-top:16px">
+              <div style="font-weight:600;font-size:14px;color:var(--on-surf);margin-bottom:8px">Cash drawer denominations</div>
+              <div id="denom-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                <div style="flex:1;font-size:13px;color:var(--on-surf-var)">Total: <span id="denom-total" class="mono">฿0.00</span></div>
+                <button class="btn-filled" onclick="saveDenoms()" style="height:44px;padding:0 18px">Save (manager)</button>
+              </div>
+            </div>
+
             <!-- Display preferences -->
             <section>
                 <div style="font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--on-surf-var);padding:0 4px 6px">Display</div>
@@ -1305,6 +1315,7 @@ function esc(s) {
 }
 function fmt(n) { return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtPlain(n) { return (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function isManager() { return (loggedInCashier && loggedInCashier.role === 'manager'); }
 
 // ── Init ──────────────────────────────────────────────────────────
 async function init() {
@@ -2388,6 +2399,7 @@ function openSettings()  {
     syncFullscreenLabels();
     syncFloatUI();
     syncPrefsUI();
+    loadDenoms();
 }
 
 // ── Display prefs (terminal-local) ─────────────────────────────────
@@ -2470,6 +2482,61 @@ async function setFloat() {
     }
     await syncFloatUI();
     snack('Float set to ' + fmt(v) + '.', 'success');
+}
+
+// ── Cash drawer denominations ─────────────────────────────────────
+const DENOMS_SATANG = [100000,50000,10000,5000,2000,1000,500,200,100];
+let denomCounts = {}; // satang string -> count (working copy in the editor)
+
+function denomBaht(satang) { return satang / 100; }
+
+async function loadDenoms() {
+    try {
+        const r = await fetch(API_BASE + '/api/cash-drawer/denominations');
+        const d = await r.json().then(x => x.data ?? x);
+        denomCounts = {};
+        DENOMS_SATANG.forEach(s => { denomCounts[s] = (d.counts && d.counts[s]) || 0; });
+    } catch { denomCounts = {}; DENOMS_SATANG.forEach(s => denomCounts[s] = 0); }
+    renderDenomEditor();
+}
+
+function renderDenomEditor() {
+    const editor = document.getElementById('denom-editor');
+    editor.style.display = isManager() ? '' : 'none';
+    if (!isManager()) return;
+    const grid = document.getElementById('denom-grid');
+    grid.innerHTML = DENOMS_SATANG.map(s => `
+        <div style="background:var(--surf-2);border-radius:var(--shape-md);padding:8px;text-align:center">
+            <div style="font-size:12px;color:var(--on-surf-var)">฿${denomBaht(s).toLocaleString('th-TH')}</div>
+            <input type="number" min="0" value="${denomCounts[s]||0}"
+                   onchange="denomCounts['${s}']=Math.max(0,parseInt(this.value)||0); renderDenomTotal();"
+                   style="width:100%;text-align:center;font-family:'Roboto Mono',monospace;font-size:16px;border:1px solid var(--outline-soft);border-radius:8px;padding:6px 0;margin-top:4px">
+        </div>`).join('');
+    renderDenomTotal();
+}
+
+function renderDenomTotal() {
+    let total = 0;
+    DENOMS_SATANG.forEach(s => { total += s * (denomCounts[s]||0); });
+    document.getElementById('denom-total').textContent = fmt(total/100);
+}
+
+async function saveDenoms() {
+    if (!isManager()) { snack('Manager only.', 'warn'); return; }
+    const pin = prompt('Enter your manager PIN to save the drawer:');
+    if (!pin) return;
+    const counts = {};
+    DENOMS_SATANG.forEach(s => { counts[s] = denomCounts[s]||0; });
+    try {
+        const r = await fetch(API_BASE + '/api/cash-drawer/denominations', {
+            method: 'PUT', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ cashier_id: loggedInCashier.id, pin, counts }),
+        });
+        if (r.status === 403) { snack('Manager id + PIN rejected.', 'danger'); return; }
+        if (!r.ok) { snack('Failed to save drawer.', 'danger'); return; }
+        snack('Drawer updated.', 'success');
+        await loadDenoms();
+    } catch { snack('Failed to save drawer.', 'danger'); }
 }
 
 function floatPreset(v) {
