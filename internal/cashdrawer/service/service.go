@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mulan/sqlc"
 )
@@ -52,11 +53,12 @@ type AuditEvent struct {
 }
 
 type Service struct {
-	q *sqlc.Queries
+	pool *pgxpool.Pool
+	q    *sqlc.Queries
 }
 
-func NewService(q *sqlc.Queries) *Service {
-	return &Service{q: q}
+func NewService(pool *pgxpool.Pool, q *sqlc.Queries) *Service {
+	return &Service{pool: pool, q: q}
 }
 
 // SetFloat records an absolute float reading. Pass amount in satang. Delta is

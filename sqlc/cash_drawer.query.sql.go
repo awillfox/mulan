@@ -26,6 +26,7 @@ const getCurrentCashDrawerFloat = `-- name: GetCurrentCashDrawerFloat :one
 SELECT id, event_type, amount, created_at
 FROM cash_drawer_audit
 WHERE event_type IN ('set','clear')
+  AND denominations IS NULL
 ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
@@ -38,8 +39,10 @@ type GetCurrentCashDrawerFloatRow struct {
 }
 
 // Returns the most recent absolute float reading (set / clear events carry an
-// amount; kicks and open_for_change do not). NULL is acceptable here — it just
-// means no float has been recorded yet.
+// amount; kicks and open_for_change do not). Denomination events also use
+// event_type 'set'/'adjust' but carry a non-NULL denominations payload, so they
+// are excluded here — this query is only about the legacy single-float reading.
+// NULL is acceptable — it just means no float has been recorded yet.
 func (q *Queries) GetCurrentCashDrawerFloat(ctx context.Context) (GetCurrentCashDrawerFloatRow, error) {
 	row := q.db.QueryRow(ctx, getCurrentCashDrawerFloat)
 	var i GetCurrentCashDrawerFloatRow
