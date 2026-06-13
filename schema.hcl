@@ -712,3 +712,101 @@ table "order_discounts" {
     columns = [column.order_id]
   }
 }
+
+table "manager_users" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "username" {
+    type = varchar(50)
+    null = false
+  }
+  column "password_hash" {
+    type = varchar(255)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "role" {
+    type    = varchar(20)
+    null    = false
+    default = "staff"
+  }
+  column "active" {
+    type    = boolean
+    null    = false
+    default = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "manager_users_username_key" {
+    columns = [column.username]
+    unique  = true
+  }
+  check "manager_users_role_check" {
+    expr = "role IN ('owner', 'staff')"
+  }
+}
+
+table "manager_sessions" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "manager_user_id" {
+    type = integer
+    null = false
+  }
+  column "token_hash" {
+    type = varchar(64)
+    null = false
+  }
+  column "expires_at" {
+    type = timestamptz
+    null = false
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "revoked_at" {
+    type = timestamptz
+    null = true
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "manager_sessions_token_hash_key" {
+    columns = [column.token_hash]
+    unique  = true
+  }
+  index "manager_sessions_user_idx" {
+    columns = [column.manager_user_id]
+  }
+  foreign_key "manager_sessions_user_fk" {
+    columns     = [column.manager_user_id]
+    ref_columns = [table.manager_users.column.id]
+    on_delete   = CASCADE
+  }
+}
