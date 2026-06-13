@@ -6,16 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"mulan/sqlc"
 )
 
-// ErrChangeNotMakeable is returned when the drawer cannot form the requested
-// change from current stock. The HTTP layer maps it to 409 so the POS can prompt
-// a manager to restock.
-var ErrChangeNotMakeable = errors.New("cannot make exact change from drawer")
+var (
+	// ErrChangeNotMakeable is returned when the drawer cannot form the requested
+	// change from current stock.
+	ErrChangeNotMakeable = errors.New("cannot make exact change from drawer")
+	// ErrUnknownDenomination is returned when a denomination key is not one of the
+	// nine tracked denominations.
+	ErrUnknownDenomination = errors.New("unknown denomination")
+	// ErrNegativeCount is returned when an absolute count would be negative.
+	ErrNegativeCount = errors.New("count must be >= 0")
+	// ErrInsufficientStock is returned when an adjustment would drive a count below
+	// zero (the DB CHECK fires).
+	ErrInsufficientStock = errors.New("insufficient denomination stock")
+)
 
 // SeedDenominations inserts the nine tracked denomination rows if missing. Safe
 // to call on every startup (ON CONFLICT DO NOTHING).
@@ -44,37 +54,35 @@ func (s *Service) CurrentDenoms(ctx context.Context) (map[int64]int, int64, erro
 
 // SetDenoms writes an absolute count for every supplied denomination, records the
 // signed delta vs the previous state into the audit log, and returns the new
-// total. Unknown denomination keys are rejected. Runs in a transaction so the
-// state and audit row commit together.
-//
-// Assumes a single-terminal POS (no concurrent drawer writers). Under
-// concurrency the pre-tx state read should move inside the tx with row locking.
-func (s *Service) SetDenoms(ctx context.Context, counts map[int64]int, actor string) (int64, error) {
+// counts + total. Unknown keys → ErrUnknownDenomination; negative → ErrNegativeCount.
+// The pre-tx read assumes a single-terminal POS (no concurrent drawer writers).
+func (s *Service) SetDenoms(ctx context.Context, counts map[int64]int, actor string) (map[int64]int, int64, error) {
 	if err := validateDenomKeys(counts); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	for d, v := range counts {
 		if v < 0 {
-			return 0, fmt.Errorf("count for denom %d must be >= 0", d)
+			return nil, 0, fmt.Errorf("%w: denom %d", ErrNegativeCount, d)
 		}
 	}
 	prev, _, err := s.CurrentDenoms(ctx)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
+		return nil, 0, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
 
 	delta := make(map[int64]int)
+	newCounts := make(map[int64]int, len(DenominationsSatang))
 	var newTotal int64
 	for _, d := range DenominationsSatang {
 		newC, ok := counts[d]
 		if !ok {
-			newC = prev[d] // unspecified denominations keep their current count
+			newC = prev[d]
 		}
 		if diff := newC - prev[d]; diff != 0 {
 			delta[d] = diff
@@ -83,32 +91,31 @@ func (s *Service) SetDenoms(ctx context.Context, counts map[int64]int, actor str
 			Denomination: int32(d),
 			Count:        int32(newC),
 		}); err != nil {
-			return 0, fmt.Errorf("set denom %d: %w", d, err)
+			return nil, 0, fmt.Errorf("set denom %d: %w", d, err)
 		}
-		newTotal += int64(d) * int64(newC)
+		newCounts[d] = newC
+		newTotal += d * int64(newC)
 	}
 	if err := appendDenomAudit(ctx, q, "set", delta, actor); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
+		return nil, 0, fmt.Errorf("commit: %w", err)
 	}
-	return newTotal, nil
+	return newCounts, newTotal, nil
 }
 
-// AdjustDenoms applies a relative change per denomination (add a coin roll, remove
-// a bundle). A subtraction that would drive a count below zero fails the tx (table
-// CHECK). Records the delta as an 'adjust' audit row.
-//
-// Assumes a single-terminal POS (no concurrent drawer writers). Under
-// concurrency the pre-tx state read should move inside the tx with row locking.
-func (s *Service) AdjustDenoms(ctx context.Context, delta map[int64]int, actor string) (int64, error) {
+// AdjustDenoms applies a relative change per denomination and returns the new
+// counts + total. A subtraction that would drive a count below zero fails the tx
+// (DB CHECK) and is surfaced as ErrInsufficientStock. The pre-tx state assumes a
+// single-terminal POS (no concurrent drawer writers).
+func (s *Service) AdjustDenoms(ctx context.Context, delta map[int64]int, actor string) (map[int64]int, int64, error) {
 	if err := validateDenomKeys(delta); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
+		return nil, 0, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
@@ -123,21 +130,24 @@ func (s *Service) AdjustDenoms(ctx context.Context, delta map[int64]int, actor s
 			Denomination: int32(d),
 			Delta:        int32(diff),
 		}); err != nil {
-			return 0, fmt.Errorf("adjust denom %d (count would go negative?): %w", d, err)
+			if strings.Contains(err.Error(), "cash_drawer_denominations_count_nonneg") {
+				return nil, 0, fmt.Errorf("%w: denom %d", ErrInsufficientStock, d)
+			}
+			return nil, 0, fmt.Errorf("adjust denom %d: %w", d, err)
 		}
 		applied[d] = diff
 	}
 	if err := appendDenomAudit(ctx, q, "adjust", applied, actor); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
+		return nil, 0, fmt.Errorf("commit: %w", err)
 	}
-	newCounts, _, err := s.CurrentDenoms(ctx)
+	newCounts, total, err := s.CurrentDenoms(ctx)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	return totalSatang(newCounts), nil
+	return newCounts, total, nil
 }
 
 // MakeChange computes the bills/coins to return for changeSatang against current
@@ -219,7 +229,7 @@ var validDenoms = func() map[int64]struct{} {
 func validateDenomKeys(m map[int64]int) error {
 	for d := range m {
 		if _, ok := validDenoms[d]; !ok {
-			return fmt.Errorf("unknown denomination: %d", d)
+			return fmt.Errorf("%w: %d", ErrUnknownDenomination, d)
 		}
 	}
 	return nil

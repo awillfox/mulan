@@ -9,6 +9,7 @@ import (
 
 	"github.com/Rhymond/go-money"
 
+	"mulan/internal/cashdrawer/service"
 	cashiersvc "mulan/internal/cashier/service"
 	"mulan/internal/response"
 )
@@ -75,12 +76,16 @@ func (h *Handler) setDenominations(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	total, err := h.svc.SetDenoms(r.Context(), counts, actor)
+	newCounts, total, err := h.svc.SetDenoms(r.Context(), counts, actor)
 	if err != nil {
-		response.Error(w, r, http.StatusBadRequest, "failed to set denominations", err)
+		switch {
+		case errors.Is(err, service.ErrUnknownDenomination), errors.Is(err, service.ErrNegativeCount):
+			response.Error(w, r, http.StatusBadRequest, "invalid denominations", err)
+		default:
+			response.Error(w, r, http.StatusInternalServerError, "failed to set denominations", err)
+		}
 		return
 	}
-	newCounts, _, _ := h.svc.CurrentDenoms(r.Context())
 	response.OK(w, r, toDenomsResponse(newCounts, total))
 }
 
@@ -99,12 +104,18 @@ func (h *Handler) adjustDenominations(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	total, err := h.svc.AdjustDenoms(r.Context(), delta, actor)
+	newCounts, total, err := h.svc.AdjustDenoms(r.Context(), delta, actor)
 	if err != nil {
-		response.Error(w, r, http.StatusConflict, "adjust failed (insufficient stock?)", err)
+		switch {
+		case errors.Is(err, service.ErrUnknownDenomination):
+			response.Error(w, r, http.StatusBadRequest, "invalid denominations", err)
+		case errors.Is(err, service.ErrInsufficientStock):
+			response.Error(w, r, http.StatusConflict, "insufficient stock for adjustment", err)
+		default:
+			response.Error(w, r, http.StatusInternalServerError, "adjust failed", err)
+		}
 		return
 	}
-	newCounts, _, _ := h.svc.CurrentDenoms(r.Context())
 	response.OK(w, r, toDenomsResponse(newCounts, total))
 }
 
@@ -124,6 +135,10 @@ func (h *Handler) changePreview(w http.ResponseWriter, r *http.Request) {
 	var req changePreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
+		return
+	}
+	if req.Due < 0 {
+		response.Error(w, r, http.StatusBadRequest, "due must be >= 0", nil)
 		return
 	}
 	tender, err := parseDenomMap(req.Tender)
@@ -169,17 +184,26 @@ func roundToBahtSatang(satang int64) int64 {
 func itoa(d int64) string { return strconv.FormatInt(d, 10) }
 
 // parseDenomMap converts a JSON object keyed by satang strings into an int64-keyed
-// map, rejecting non-numeric keys.
+// map, rejecting non-numeric keys and keys that are not tracked denominations.
 func parseDenomMap(in map[string]int) (map[int64]int, error) {
 	out := make(map[int64]int, len(in))
 	for k, v := range in {
 		d, err := strconv.ParseInt(k, 10, 64)
-		if err != nil {
+		if err != nil || !trackedDenom(d) {
 			return nil, errInvalidDenomKey
 		}
 		out[d] = v
 	}
 	return out, nil
+}
+
+func trackedDenom(d int64) bool {
+	for _, x := range service.DenominationsSatang {
+		if x == d {
+			return true
+		}
+	}
+	return false
 }
 
 var errInvalidDenomKey = errors.New("invalid denomination key")
