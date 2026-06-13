@@ -26,9 +26,11 @@ Two coupled capabilities for the Mulan POS:
 - Cash amount due **rounds to nearest ฿1** (smallest tracked coin). Card/QR charge
   the exact satang total. Only cash sales touch the drawer.
 - Change shortfall policy: **block until restocked** — if exact change cannot be
-  made from current stock, the cash sale cannot complete. A **manager** may then
-  adjust the drawer to restock, **confirming with cashier id + PIN**, after which
-  the sale can complete. (No silent best-effort, no negative-on-normal-path.)
+  made from current stock, the cash sale cannot complete (`409`). The **only**
+  escape is a **manager** restocking the drawer via the adjust endpoint,
+  **confirming with cashier id + PIN**; once stock makes the change feasible, the
+  sale completes through the normal path. There is **no** force-complete override
+  and **no** negative-count path — counts are always `>= 0` (DB CHECK enforced).
 - Storage: **current-state denomination table** (source of truth) + the existing
   `cash_drawer_audit` as history (extended with a per-denom delta). Total derived
   = Σ(denom×count); this replaces the old single-float concept.
@@ -83,16 +85,16 @@ token; the POS holds id/role client-side. All `/api/cash-drawer` routes are in
 the **Open** group (POS-shared, no manager-auth). Therefore drawer-write
 authorization is done **per request by re-verifying the cashier**:
 
-- Drawer **writes** (`PUT /denominations`, `POST /denominations/adjust`, and the
-  checkout `override`) require **`cashier_id` + `pin`** in the body. The backend
-  bcrypt-verifies the PIN against that cashier and checks `role == 'manager'` and
-  `active`. Failure → `403`. This reuses the existing cashier login verification
-  path and logs the manager as `actor` in the audit row.
+- Drawer **writes** (`PUT /denominations`, `POST /denominations/adjust`) require
+  **`cashier_id` + `pin`** in the body. The backend bcrypt-verifies the PIN
+  against that cashier and checks `role == 'manager'` and `active`. Failure →
+  `403`. This reuses the existing cashier login verification path and logs the
+  manager as `actor` in the audit row.
 - This directly satisfies the requirement: when a sale is blocked for lack of
   change, a manager restocks via the adjust endpoint **confirmed by id + PIN**,
-  then the sale completes.
+  then the sale completes through the normal path.
 - Cash **sales** (the auto-adjust) need **no** role — any active cashier completes
-  them. Only manual set/adjust and the block-override are manager-gated.
+  them. Only manual set/adjust are manager-gated.
 - POS additionally hides the drawer editor for non-manager cashiers (UX), but the
   server check is authoritative.
 
@@ -136,15 +138,15 @@ New methods alongside the existing float/audit service:
   `adjust` audit. Manager-gated.
 - `MakeChange(ctx, changeSatang int64) (breakdown map[int64]int, makeable bool, err)`
   — reads current stock, runs the DP. Pure read, no mutation.
-- `ApplyCashSale(ctx, q *sqlc.Queries /* tx-bound */, tender, change map[int64]int, actor string, override bool) error`
-  — runs **inside the checkout transaction**. Validates tender total; applies
-  `+tender − change` to state; on the normal path guards every count ≥ 0; with
-  `override == true` (manager already restocked, or giving change manually) it
-  still records the movement and flags the audit row. Appends `sale` audit with
-  the net delta. Any error aborts → checkout tx rolls back.
+- `ApplyCashSale(ctx, q *sqlc.Queries /* tx-bound */, tender, change map[int64]int, actor string) error`
+  — runs **inside the checkout transaction**. Applies `+tender − change` to state
+  and guards every resulting count ≥ 0 (a change denom exceeding stock aborts the
+  tx — but checkout only reaches here after `MakeChange` confirmed feasibility, so
+  the guard is a belt-and-suspenders invariant). Appends `sale` audit with the net
+  delta. Any error aborts → checkout tx rolls back.
 
 PIN/role verification lives in (or is shared with) the cashier service and is
-called by the HTTP handlers before `SetDenoms`/`AdjustDenoms`/override.
+called by the HTTP handlers before `SetDenoms`/`AdjustDenoms`.
 
 ---
 
@@ -165,17 +167,16 @@ committing. It is advisory only; checkout re-computes authoritatively.
 
 ### 5.2 Checkout (extends `POST /api/orders/{code}/checkout`)
 
-Request gains, for cash: `{payment_method:"cash", tender:{denom:count}, override?:bool, cashier_id?, pin?}`
-(`cashier_id`+`pin` required only when `override` is true). Backend:
+Request gains, for cash: `{payment_method:"cash", cash_tender:{denom:count}}`.
+Backend:
 
 1. Compute authoritative order total (existing path).
 2. Round cash due to nearest ฿1.
-3. `tender_total = Σ tender`; if `< rounded_due` → `400`.
+3. `tender_total = Σ cash_tender`; if `< rounded_due` → `400`.
 4. `change = tender_total − rounded_due`; `MakeChange(change)`.
    - makeable → proceed.
-   - not makeable and no valid override → `409` with the shortfall (which denoms
-     are short), so the POS prompts the manager to restock.
-   - override (manager id+PIN verified) → proceed, flag the sale.
+   - not makeable → `409` with the shortfall, so the POS prompts a manager to
+     restock (adjust, id+PIN) and the cashier retries checkout.
 5. `ApplyCashSale(...)` inside the existing checkout transaction (alongside member
    points etc.), so the drawer adjusts atomically and rolls back on any failure.
 6. Response adds `rounded_due` and `change_breakdown` for display/print.
@@ -217,8 +218,9 @@ No new auth wiring: cashier writes already require the owner manager session.
 - **Tender dialog, cash tab:** replace the single quick-cash total with **per-denom
   tender entry** (tap a denomination to +1 it). Live `change-preview` shows rounded
   due, change total, and **the exact bills/coins to hand back**. If not makeable:
-  red "cannot make change" with the shortfall and (for a manager) a restock/override
-  affordance that requires id+PIN.
+  red "cannot make change" with the shortfall and (for a manager) a restock
+  affordance (opens the drawer editor / adjust, requires id+PIN); after restock the
+  cashier retries the payment.
 - On checkout: send the tender map; display the returned change breakdown (also on
   the printed receipt where appropriate); **re-fetch drawer counts** so the on-screen
   drawer reflects reality immediately ("realtime" = immediate re-fetch on the single
@@ -231,9 +233,9 @@ No new auth wiring: cashier writes already require the owner manager session.
 | case | result |
 |------|--------|
 | tender total < rounded due | `400` |
-| change not makeable, no override | `409` + shortfall detail |
-| non-manager (or bad PIN) attempts drawer write/override | `403` |
-| `adjust` would drive a count below 0 (normal path) | `409` |
+| change not makeable | `409` + shortfall detail (restock + retry) |
+| non-manager / bad PIN attempts drawer write | `403` |
+| `adjust` would drive a count below 0 | `409` |
 | any drawer failure during checkout | whole checkout tx rolls back |
 
 All money is int64 **satang** server-side; THB float only at display, via
@@ -247,7 +249,7 @@ go-money (matches existing convention).
   fails but a valid combo exists; infeasible case.
 - **Service tests:** `SetDenoms`/`AdjustDenoms` delta + audit row correctness;
   `AdjustDenoms` negative guard; `ApplyCashSale` +tender/−change and the negative
-  guard / override flag; role+PIN gate (wrong PIN, wrong role, inactive → reject).
+  guard; role+PIN gate (wrong PIN, wrong role, inactive → reject).
 - **Checkout integration:** cash sale adjusts the drawer atomically; a forced
   failure after adjust rolls the drawer back; non-cash leaves the drawer unchanged;
   blocked-then-restock-then-complete happy path.
@@ -268,5 +270,6 @@ go-money (matches existing convention).
   column; reversible). Drawer state always correctable by a manager `set`. Feature
   is additive to checkout; non-cash and existing flows unaffected.
 - **Blind spots:** block-until-restocked can stall a queue if small coins run out —
-  mitigated by the manager restock/override (id+PIN). Concurrency is a non-issue on
-  one terminal but `ApplyCashSale` still runs inside the checkout tx for safety.
+  mitigated by the manager restock (adjust, id+PIN) then retry. Concurrency is a
+  non-issue on one terminal but `ApplyCashSale` still runs inside the checkout tx
+  for safety.
