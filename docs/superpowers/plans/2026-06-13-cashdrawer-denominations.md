@@ -1655,14 +1655,38 @@ In `checkout`, after building `items` and before the `result, err := h.svc.Check
 		tender := make(map[int64]int, len(req.CashTender))
 		for k, v := range req.CashTender {
 			d, perr := strconv.ParseInt(k, 10, 64)
-			if perr != nil {
+			if perr != nil || !trackedDenom(d) {
 				response.Error(w, r, http.StatusBadRequest, "invalid denomination key", perr)
+				return
+			}
+			if v < 0 {
+				response.Error(w, r, http.StatusBadRequest, "tender count must be >= 0", nil)
 				return
 			}
 			tender[d] = v
 		}
 		cash = service.CashPayment{IsCash: true, Tender: tender, Actor: req.CashierName}
 	}
+```
+
+Add a small file-local helper (and import the cashdrawer service for the denomination
+set) so an untracked tender denomination can't slip past the authoritative backend
+(it would otherwise be summed into the tender total but silently dropped by
+`ApplyCashSale`, which only iterates the nine tracked denominations — a drawer/sale
+mismatch):
+
+```go
+import cashdrawerservice "mulan/internal/cashdrawer/service"
+
+// trackedDenom reports whether d (satang) is one of the nine tracked denominations.
+func trackedDenom(d int64) bool {
+	for _, x := range cashdrawerservice.DenominationsSatang {
+		if x == d {
+			return true
+		}
+	}
+	return false
+}
 ```
 
 Change the service call to:
