@@ -143,3 +143,30 @@ func (s *Service) CreateUser(ctx context.Context, username, password, name, role
 	}
 	return domain.User{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role}, nil
 }
+
+// ChangePassword verifies the user's current password and sets a new one. The
+// new password must meet the minimum length. Returns ErrInvalidCredentials when
+// the current password is wrong.
+func (s *Service) ChangePassword(ctx context.Context, username, current, newPassword string) error {
+	u, err := s.q.GetManagerUserByUsername(ctx, strings.TrimSpace(username))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInvalidSession
+		}
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(current)) != nil {
+		return ErrInvalidCredentials
+	}
+	if len(newPassword) < minPasswordLen {
+		return ErrPasswordTooShort
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 10)
+	if err != nil {
+		return err
+	}
+	return s.q.UpdateManagerUserPassword(ctx, sqlc.UpdateManagerUserPasswordParams{
+		ID:           u.ID,
+		PasswordHash: string(hash),
+	})
+}

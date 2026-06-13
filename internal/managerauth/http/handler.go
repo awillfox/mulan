@@ -79,3 +79,40 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	response.OK(w, r, user)
 }
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ChangePassword lets the authenticated user change their own password after
+// confirming their current one. Registered under RequireManager.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusUnauthorized, "not authenticated", nil)
+		return
+	}
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		response.Error(w, r, http.StatusBadRequest, "current_password and new_password required", nil)
+		return
+	}
+	err := h.svc.ChangePassword(r.Context(), user.Username, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidCredentials):
+			response.Error(w, r, http.StatusUnauthorized, "current password is incorrect", err)
+		case errors.Is(err, service.ErrPasswordTooShort):
+			response.Error(w, r, http.StatusBadRequest, "new password must be at least 8 characters", err)
+		default:
+			response.Error(w, r, http.StatusInternalServerError, "failed to change password", err)
+		}
+		return
+	}
+	response.NoContent(w, r)
+}

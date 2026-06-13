@@ -167,6 +167,7 @@ func main() {
 
 			r.Post("/auth/logout", managerAuthHandler.Logout)
 			r.Get("/auth/me", managerAuthHandler.Me)
+			r.Post("/auth/change-password", managerAuthHandler.ChangePassword)
 			r.Get("/discounts", discountHandler.List)
 			r.Get("/option-groups", optionGroupHandler.ListGroups)
 			r.Get("/members", memberHandler.List)

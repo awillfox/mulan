@@ -16,3 +16,9 @@ WHERE token_hash = $1 AND revoked_at IS NULL;
 -- name: DeleteExpiredManagerSessions :exec
 DELETE FROM manager_sessions
 WHERE expires_at < now();
+
+-- name: UpdateManagerUserPassword :exec
+UPDATE manager_users
+SET password_hash = $2,
+    updated_at    = now()
+WHERE id = $1;

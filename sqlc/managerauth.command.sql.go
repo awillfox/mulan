@@ -91,3 +91,20 @@ func (q *Queries) RevokeManagerSession(ctx context.Context, tokenHash string) er
 	_, err := q.db.Exec(ctx, revokeManagerSession, tokenHash)
 	return err
 }
+
+const updateManagerUserPassword = `-- name: UpdateManagerUserPassword :exec
+UPDATE manager_users
+SET password_hash = $2,
+    updated_at    = now()
+WHERE id = $1
+`
+
+type UpdateManagerUserPasswordParams struct {
+	ID           int32  `db:"id" json:"id"`
+	PasswordHash string `db:"password_hash" json:"password_hash"`
+}
+
+func (q *Queries) UpdateManagerUserPassword(ctx context.Context, arg UpdateManagerUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateManagerUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
