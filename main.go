@@ -117,7 +117,7 @@ func main() {
 	if err := cashDrawerSvc.SeedDenominations(ctx); err != nil {
 		log.Fatalf("seed cash drawer denominations: %v", err)
 	}
-	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc)
+	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc, cashierSvc)
 
 	discountSvc := discountservice.NewService(pool, queries)
 	discountHandler := discounthttp.NewHandler(discountSvc, eventHub)

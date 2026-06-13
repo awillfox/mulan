@@ -5,6 +5,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -16,14 +17,22 @@ import (
 
 	"mulan/internal/cashdrawer/service"
 	"mulan/internal/response"
+	"mulan/sqlc"
 )
 
-type Handler struct {
-	svc *service.Service
+// ManagerVerifier authorizes drawer writes by re-checking a cashier's id + PIN
+// and manager role (POS has no session token). Implemented by cashier/service.
+type ManagerVerifier interface {
+	VerifyManager(ctx context.Context, id int32, pin string) (sqlc.Cashier, error)
 }
 
-func NewHandler(svc *service.Service) *Handler {
-	return &Handler{svc: svc}
+type Handler struct {
+	svc      *service.Service
+	verifier ManagerVerifier
+}
+
+func NewHandler(svc *service.Service, verifier ManagerVerifier) *Handler {
+	return &Handler{svc: svc, verifier: verifier}
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -32,6 +41,10 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Delete("/float", h.clearFloat)
 	r.Post("/kick", h.logKick)
 	r.Get("/audit", h.listAudit)
+	r.Get("/denominations", h.getDenominations)
+	r.Put("/denominations", h.setDenominations)
+	r.Post("/denominations/adjust", h.adjustDenominations)
+	r.Post("/change-preview", h.changePreview)
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────
