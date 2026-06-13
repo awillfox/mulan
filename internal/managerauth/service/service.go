@@ -19,10 +19,20 @@ var (
 	ErrInvalidSession     = errors.New("invalid or expired session")
 	ErrUsernameTaken      = errors.New("username already in use")
 	ErrInvalidRole        = errors.New("invalid role")
+	ErrPasswordTooShort   = errors.New("password too short")
 )
 
 // sessionTTL is how long a freshly minted session stays valid.
 const sessionTTL = 30 * 24 * time.Hour
+
+// minPasswordLen is the minimum length enforced when creating a manager user.
+const minPasswordLen = 8
+
+// dummyHash is a precomputed bcrypt hash. Login compares against it when the
+// username does not exist (or is inactive) so the request still pays the bcrypt
+// cost — keeping login timing roughly constant and defeating username
+// enumeration via response-time differences.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("login-timing-equalizer"), 10)
 
 type Service struct {
 	q *sqlc.Queries
@@ -41,16 +51,18 @@ func pgtimestamptz(t time.Time) pgtype.Timestamptz {
 func (s *Service) Login(ctx context.Context, username, password string) (domain.User, string, time.Time, error) {
 	username = strings.TrimSpace(username)
 	u, err := s.q.GetManagerUserByUsername(ctx, username)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.User{}, "", time.Time{}, ErrInvalidCredentials
-		}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return domain.User{}, "", time.Time{}, err
 	}
-	if !u.Active {
-		return domain.User{}, "", time.Time{}, ErrInvalidCredentials
+	// Always run bcrypt — against the real hash when the user exists and is
+	// active, otherwise against a dummy hash — so the response time does not
+	// reveal whether the username exists.
+	valid := err == nil && u.Active
+	hash := dummyHash
+	if valid {
+		hash = []byte(u.PasswordHash)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+	if bcrypt.CompareHashAndPassword(hash, []byte(password)) != nil || !valid {
 		return domain.User{}, "", time.Time{}, ErrInvalidCredentials
 	}
 
@@ -109,6 +121,9 @@ func (s *Service) CreateUser(ctx context.Context, username, password, name, role
 	name = strings.TrimSpace(name)
 	if !domain.ValidRole(role) {
 		return domain.User{}, ErrInvalidRole
+	}
+	if len(password) < minPasswordLen {
+		return domain.User{}, ErrPasswordTooShort
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if err != nil {
