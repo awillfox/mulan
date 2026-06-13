@@ -124,11 +124,17 @@ git commit -m "feat(cashier): add role column (cashier|manager)"
 
 Replace the full contents of `internal/sql/cashiers.command.sql` with:
 
+> NOTE (plan fix): column order in every SELECT/RETURNING list MUST match the
+> table's physical column order, which has `role` **last** (Atlas appended it).
+> Putting `role` mid-list makes sqlc emit per-query `*Row` structs instead of
+> reusing `sqlc.Cashier`, breaking downstream code that returns `sqlc.Cashier`.
+> Keep `role` last.
+
 ```sql
 -- name: CreateCashier :one
 INSERT INTO cashiers (login_id, name, pin_hash, role)
 VALUES ($1, $2, $3, $4)
-RETURNING id, login_id, name, pin_hash, role, active, created_at, updated_at;
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role;
 
 -- name: UpdateCashier :one
 UPDATE cashiers
@@ -137,14 +143,14 @@ SET name       = $2,
     role       = $4,
     updated_at = now()
 WHERE id = $1
-RETURNING id, login_id, name, pin_hash, role, active, created_at, updated_at;
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role;
 
 -- name: UpdateCashierPin :one
 UPDATE cashiers
 SET pin_hash   = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, login_id, name, pin_hash, role, active, created_at, updated_at;
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role;
 
 -- name: DeleteCashier :exec
 DELETE FROM cashiers WHERE id = $1;
@@ -156,16 +162,16 @@ Replace the full contents of `internal/sql/cashiers.query.sql` with:
 
 ```sql
 -- name: ListCashiers :many
-SELECT id, login_id, name, pin_hash, role, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers
 ORDER BY login_id;
 
 -- name: GetCashierByLoginID :one
-SELECT id, login_id, name, pin_hash, role, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers WHERE login_id = $1;
 
 -- name: GetCashier :one
-SELECT id, login_id, name, pin_hash, role, active, created_at, updated_at
+SELECT id, login_id, name, pin_hash, active, created_at, updated_at, role
 FROM cashiers WHERE id = $1;
 ```
 
@@ -512,56 +518,26 @@ git commit -m "feat(cashdrawer): denominations table + audit jsonb delta + sale 
 
 ---
 
-### Task B2: Seed the 9 denomination rows on startup
+### Task B2: (FOLDED into B3 + B5)
 
-**Files:**
-- Modify: `internal/sql/cash_drawer.command.sql`
-- Modify: `main.go` (startup seed, near where settings are seeded)
-
-- [ ] **Step 1: Add the seed query**
-
-Append to `internal/sql/cash_drawer.command.sql`:
-
-```sql
--- name: SeedCashDrawerDenomination :exec
--- Idempotent insert of one denomination row; does nothing if it already exists
--- so startup can run unconditionally without clobbering live counts.
-INSERT INTO cash_drawer_denominations (denomination, count)
-VALUES ($1, 0)
-ON CONFLICT (denomination) DO NOTHING;
-```
-
-- [ ] **Step 2: Regenerate sqlc**
-
-Run: `task sqlcgen`
-Expected: `SeedCashDrawerDenomination(ctx, denomination int32)` generated.
-
-- [ ] **Step 3: Seed at startup**
-
-In `main.go`, find where `cashDrawerSvc := cashdrawerservice.NewService(queries)` is constructed (~line 116). Immediately after it, add:
-
-```go
-	if err := cashDrawerSvc.SeedDenominations(ctx); err != nil {
-		log.Fatalf("seed cash drawer denominations: %v", err)
-	}
-```
-
-(`ctx` is the startup context already used for the pool; if the surrounding code uses `context.Background()`, match that.) `SeedDenominations` is defined in Task B3.
-
-- [ ] **Step 4: Commit (build deferred to B3)**
-
-```bash
-git add internal/sql/cash_drawer.command.sql sqlc/ main.go
-git commit -m "feat(cashdrawer): seed denomination rows on startup"
-```
+> **Restructured during execution to avoid a multi-task broken-build window.**
+> The seed **query** (`SeedCashDrawerDenomination`) is added in B3 (with the other
+> denomination SQL, so the package still builds — generated code is just unused).
+> The startup seed **call** (`cashDrawerSvc.SeedDenominations(ctx)`) moves to B5,
+> where the service method, the `pool` constructor change, and the `main.go` wiring
+> all land together and the build stays green. No standalone B2 commit.
 
 ---
 
-### Task B3: Denomination SQL queries + regenerate
+### Task B3: Denomination SQL queries (incl. seed) + regenerate
 
 **Files:**
 - Modify: `internal/sql/cash_drawer.query.sql`
 - Modify: `internal/sql/cash_drawer.command.sql`
+
+This task only adds hand-written SQL and regenerates sqlc. It adds NO Go call sites,
+so the project still builds cleanly afterwards (the new generated query methods are
+simply unused until B5).
 
 - [ ] **Step 1: Add the read query**
 
@@ -574,11 +550,18 @@ FROM cash_drawer_denominations
 ORDER BY denomination DESC;
 ```
 
-- [ ] **Step 2: Add the write queries**
+- [ ] **Step 2: Add the write + seed queries**
 
 Append to `internal/sql/cash_drawer.command.sql`:
 
 ```sql
+-- name: SeedCashDrawerDenomination :exec
+-- Idempotent insert of one denomination row; does nothing if it already exists
+-- so startup can run unconditionally without clobbering live counts.
+INSERT INTO cash_drawer_denominations (denomination, count)
+VALUES ($1, 0)
+ON CONFLICT (denomination) DO NOTHING;
+
 -- name: SetCashDrawerDenomination :exec
 -- Absolute set of one denomination's count. Negative counts are rejected by the
 -- table CHECK; the caller validates before calling.
@@ -609,18 +592,18 @@ RETURNING id, event_type, amount, delta, note, actor, terminal, denominations, c
 - [ ] **Step 4: Regenerate sqlc**
 
 Run: `task sqlcgen`
-Expected: `ListCashDrawerDenominations`, `SetCashDrawerDenomination`, `AdjustCashDrawerDenomination`, `AppendCashDrawerDenomEvent` generated. Note: adding `denominations` to the table means the existing `AppendCashDrawerEvent` RETURNING (which lists explicit columns) is unaffected; `CashDrawerAudit` model gains `Denominations []byte`.
+Expected: `SeedCashDrawerDenomination`, `ListCashDrawerDenominations`, `SetCashDrawerDenomination`, `AdjustCashDrawerDenomination`, `AppendCashDrawerDenomEvent` generated. Note: adding `denominations` to the table means the existing `AppendCashDrawerEvent` RETURNING (which lists explicit columns) is unaffected; `CashDrawerAudit` model gains `Denominations []byte`.
 
-- [ ] **Step 5: Build (will fail — service methods not yet written)**
+- [ ] **Step 5: Build (stays clean)**
 
-Run: `go build ./... 2>&1 | head`
-Expected: error — `cashDrawerSvc.SeedDenominations` undefined (from B2). Fixed in B4.
+Run: `go build ./...`
+Expected: success — only generated (unused) code was added.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add internal/sql/cash_drawer.query.sql internal/sql/cash_drawer.command.sql sqlc/
-git commit -m "feat(cashdrawer): denomination get/set/adjust + denom audit queries"
+git commit -m "feat(cashdrawer): denomination get/set/adjust/seed + denom audit queries"
 ```
 
 ---
@@ -1117,9 +1100,19 @@ func NewService(pool *pgxpool.Pool, q *sqlc.Queries) *Service {
 
 Add `"github.com/jackc/pgx/v5/pgxpool"` to that file's imports.
 
-- [ ] **Step 5: Update the constructor call in main.go**
+- [ ] **Step 5: Update the constructor call + seed at startup in main.go**
 
 In `main.go`, change `cashDrawerSvc := cashdrawerservice.NewService(queries)` to `cashDrawerSvc := cashdrawerservice.NewService(pool, queries)`.
+
+Then, immediately AFTER that line, add the startup seed call (folded here from former Task B2 so the build stays green):
+
+```go
+	if err := cashDrawerSvc.SeedDenominations(context.Background()); err != nil {
+		log.Fatalf("seed cash drawer denominations: %v", err)
+	}
+```
+
+Use whatever startup context the surrounding `main()` already uses — if there's an existing `ctx` in scope at that point, use it instead of `context.Background()`. Ensure `context` and `log` are imported (they already are in `main.go`).
 
 - [ ] **Step 6: Run the tests**
 
@@ -1127,7 +1120,7 @@ Run: `go test ./internal/cashdrawer/service/ -run 'TestDenomDeltaJSON|TestTotalS
 Expected: PASS.
 
 Run: `go build ./...`
-Expected: success (B2's `SeedDenominations` call now resolves).
+Expected: success — the `SeedDenominations` call resolves and the seed runs at startup.
 
 - [ ] **Step 7: Commit**
 
