@@ -10,6 +10,7 @@ import (
 
 	"mulan/internal/cashier/service"
 	"mulan/internal/response"
+	"mulan/sqlc"
 )
 
 type Handler struct {
@@ -30,10 +31,15 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 type cashierResponse struct {
-	ID       int32  `json:"id"`
-	LoginID  string `json:"login_id"`
-	Name     string `json:"name"`
-	Active   bool   `json:"active"`
+	ID      int32  `json:"id"`
+	LoginID string `json:"login_id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+	Active  bool   `json:"active"`
+}
+
+func toCashierResponse(c sqlc.Cashier) cashierResponse {
+	return cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Role: c.Role, Active: c.Active}
 }
 
 type loginRequest struct {
@@ -45,11 +51,13 @@ type createRequest struct {
 	LoginID string `json:"login_id"`
 	Name    string `json:"name"`
 	PIN     string `json:"pin"`
+	Role    string `json:"role"`
 }
 
 type updateRequest struct {
 	Name   string `json:"name"`
 	Active bool   `json:"active"`
+	Role   string `json:"role"`
 }
 
 type updatePinRequest struct {
@@ -75,7 +83,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusInternalServerError, "login failed", err)
 		return
 	}
-	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.OK(w, r, toCashierResponse(c))
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +94,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]cashierResponse, len(cashiers))
 	for i, c := range cashiers {
-		out[i] = cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active}
+		out[i] = toCashierResponse(c)
 	}
 	response.OK(w, r, out)
 }
@@ -105,16 +113,20 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, "pin must be at least 4 digits", nil)
 		return
 	}
-	c, err := h.svc.Create(r.Context(), req.LoginID, req.Name, req.PIN)
+	c, err := h.svc.Create(r.Context(), req.LoginID, req.Name, req.PIN, req.Role)
 	if err != nil {
 		if errors.Is(err, service.ErrLoginIDTaken) {
 			response.Error(w, r, http.StatusConflict, "login ID already in use", err)
 			return
 		}
+		if errors.Is(err, service.ErrInvalidRole) {
+			response.Error(w, r, http.StatusBadRequest, "invalid role", err)
+			return
+		}
 		response.Error(w, r, http.StatusInternalServerError, "failed to create cashier", err)
 		return
 	}
-	response.Created(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.Created(w, r, toCashierResponse(c))
 }
 
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
@@ -132,16 +144,20 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, "name is required", nil)
 		return
 	}
-	c, err := h.svc.Update(r.Context(), int32(id), req.Name, req.Active)
+	c, err := h.svc.Update(r.Context(), int32(id), req.Name, req.Active, req.Role)
 	if err != nil {
 		if errors.Is(err, service.ErrCashierNotFound) {
 			response.Error(w, r, http.StatusNotFound, "cashier not found", err)
 			return
 		}
+		if errors.Is(err, service.ErrInvalidRole) {
+			response.Error(w, r, http.StatusBadRequest, "invalid role", err)
+			return
+		}
 		response.Error(w, r, http.StatusInternalServerError, "failed to update cashier", err)
 		return
 	}
-	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.OK(w, r, toCashierResponse(c))
 }
 
 func (h *Handler) UpdatePin(w http.ResponseWriter, r *http.Request) {
