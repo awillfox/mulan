@@ -79,9 +79,18 @@ func main() {
 		}
 		isolated := l.OwnerMenuID.Valid && l.OwnerMenuID.Int32 == l.MenuID
 
-		fmt.Printf("menu %d (price %.2f฿) via group %d %q:\n", l.MenuID, float64(l.MenuPrice)/100, l.GroupID, *sourceName)
+		opPrices := make([]optionPrice, len(opts))
+		for i, o := range opts {
+			opPrices[i] = optionPrice{Name: o.Name, Delta: o.PriceDelta}
+		}
+		absolute := isAbsoluteGroup(opPrices)
+		mode := ""
+		if absolute {
+			mode = " [absolute]"
+		}
+		fmt.Printf("menu %d (price %.2f฿) via group %d %q%s:\n", l.MenuID, float64(l.MenuPrice)/100, l.GroupID, *sourceName, mode)
 		for _, o := range opts {
-			base := basePriceFor(l.MenuPrice, o.PriceDelta)
+			base := basePriceFor(l.MenuPrice, o.PriceDelta, absolute)
 			fmt.Printf("    %-16s delta %+d -> base %.2f฿\n", o.Name, o.PriceDelta, float64(base)/100)
 		}
 		if isolated {
@@ -91,7 +100,7 @@ func main() {
 		}
 
 		if *apply {
-			if err := applyOne(ctx, pool, q, l, opts, isolated); err != nil {
+			if err := applyOne(ctx, pool, q, l, opts, isolated, absolute); err != nil {
 				// Earlier menus already committed (each menu is its own tx);
 				// re-running is safe because converted menus are skipped above.
 				log.Fatalf("apply menu %d: %v", l.MenuID, err)
@@ -117,7 +126,7 @@ func main() {
 // insert base options, detach the menu link, and delete the group only when
 // it is an isolated per-menu clone (shared presets are left intact). The pool
 // is needed for BeginTx; q.WithTx binds the queries to the transaction.
-func applyOne(ctx context.Context, pool *pgxpool.Pool, q *sqlc.Queries, l sqlc.ListMenuLinksByGroupNameRow, opts []sqlc.Option, isolated bool) error {
+func applyOne(ctx context.Context, pool *pgxpool.Pool, q *sqlc.Queries, l sqlc.ListMenuLinksByGroupNameRow, opts []sqlc.Option, isolated bool, absolute bool) error {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -129,7 +138,7 @@ func applyOne(ctx context.Context, pool *pgxpool.Pool, q *sqlc.Queries, l sqlc.L
 		if _, err := qtx.CreateMenuBaseOption(ctx, sqlc.CreateMenuBaseOptionParams{
 			MenuID:    l.MenuID,
 			Name:      o.Name,
-			Price:     basePriceFor(l.MenuPrice, o.PriceDelta),
+			Price:     basePriceFor(l.MenuPrice, o.PriceDelta, absolute),
 			SortOrder: int32(i),
 		}); err != nil {
 			return fmt.Errorf("create base option: %w", err)
