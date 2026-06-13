@@ -12,7 +12,8 @@ import (
 // One-off backfill: set menus.vfd_name from menus.name (truncated to 20
 // runes) for any row where vfd_name is NULL or empty.
 // Usage: go run ./scripts/vfdfill          (dry run — list only)
-//        go run ./scripts/vfdfill --apply  (write changes)
+//
+//	go run ./scripts/vfdfill --apply  (write changes)
 func main() {
 	apply := len(os.Args) > 1 && os.Args[1] == "--apply"
 

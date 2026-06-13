@@ -29,20 +29,20 @@ const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // Sentinel errors translated to specific HTTP statuses by the handler.
 var (
-	ErrAlreadyPaid     = errors.New("order already paid")
-	ErrNoItems         = errors.New("no items")
-	ErrUnknownMenu     = errors.New("unknown menu")
-	ErrMenuInactive    = errors.New("menu inactive")
-	ErrInvalidOption   = errors.New("option not allowed for menu")
-	ErrUnknownOption   = errors.New("unknown option")
+	ErrAlreadyPaid       = errors.New("order already paid")
+	ErrNoItems           = errors.New("no items")
+	ErrUnknownMenu       = errors.New("unknown menu")
+	ErrMenuInactive      = errors.New("menu inactive")
+	ErrInvalidOption     = errors.New("option not allowed for menu")
+	ErrUnknownOption     = errors.New("unknown option")
 	ErrMissingRequired   = errors.New("missing required option")
 	ErrMissingBaseOption = errors.New("missing base option")
 	ErrInvalidBaseOption = errors.New("invalid base option for menu")
 	ErrOrderNotFound     = errors.New("order not found")
-	ErrNotHeld          = errors.New("order is not held")
-	ErrCannotHold       = errors.New("order cannot be held")
-	ErrUnknownDiscount  = errors.New("unknown discount")
-	ErrDiscountInactive = errors.New("discount inactive")
+	ErrNotHeld           = errors.New("order is not held")
+	ErrCannotHold        = errors.New("order cannot be held")
+	ErrUnknownDiscount   = errors.New("unknown discount")
+	ErrDiscountInactive  = errors.New("discount inactive")
 )
 
 type OrderService struct {

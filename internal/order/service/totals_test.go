@@ -4,10 +4,10 @@ import "testing"
 
 func TestComputeOrderTotals(t *testing.T) {
 	tests := []struct {
-		name                                          string
-		gross, normalDisc, subsidy                    int64
-		vatPercent                                    float64
-		wantShopReceives, wantCustomerPays, wantVAT   int64
+		name                                        string
+		gross, normalDisc, subsidy                  int64
+		vatPercent                                  float64
+		wantShopReceives, wantCustomerPays, wantVAT int64
 	}{
 		// ฿100 item, 50% subsidy, VAT 7%: customer pays ฿50, shop whole at ฿100,
 		// VAT is the inclusive portion of ฿100 = 10000 - floor(10000*10000/10700) = 655 satang.
