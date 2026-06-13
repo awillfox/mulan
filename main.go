@@ -18,12 +18,14 @@ import (
 	cashierservice "mulan/internal/cashier/service"
 	"mulan/internal/config"
 	dashboardhttp "mulan/internal/dashboard/http"
-	guestwifihttp "mulan/internal/guestwifi/http"
-	guestwifiservice "mulan/internal/guestwifi/service"
 	dashboardservice "mulan/internal/dashboard/service"
 	discounthttp "mulan/internal/discount/http"
 	discountservice "mulan/internal/discount/service"
+	guestwifihttp "mulan/internal/guestwifi/http"
+	guestwifiservice "mulan/internal/guestwifi/service"
 	"mulan/internal/hub"
+	managerauthhttp "mulan/internal/managerauth/http"
+	managerauthservice "mulan/internal/managerauth/service"
 	memberhttp "mulan/internal/member/http"
 	memberservice "mulan/internal/member/service"
 	menuhttp "mulan/internal/menu/http"
@@ -116,6 +118,9 @@ func main() {
 	discountSvc := discountservice.NewService(pool, queries)
 	discountHandler := discounthttp.NewHandler(discountSvc, eventHub)
 
+	managerAuthSvc := managerauthservice.NewService(queries)
+	managerAuthHandler := managerauthhttp.NewHandler(managerAuthSvc)
+
 	webHandler := web.NewHandler("templates")
 
 	r := chi.NewRouter()
@@ -151,12 +156,34 @@ func main() {
 		r.Route("/option-groups", optionGroupHandler.Routes)
 		r.Route("/options", optionGroupHandler.OptionRoutes)
 		r.Route("/orders", orderHandler.Routes)
-		r.Route("/discounts", discountHandler.Routes)
 		r.Route("/members", memberHandler.Routes)
 		r.Route("/cashiers", cashierHandler.Routes)
 		r.Route("/settings", settingsHandler.Routes)
-		r.Route("/dashboard", dashboardHandler.Routes)
 		r.Route("/cash-drawer", cashDrawerHandler.Routes)
+
+		// Public auth: login mints a session.
+		r.Route("/auth", managerAuthHandler.Routes)
+
+		// POS reads the active discount set without auth. Keep BEFORE the
+		// protected group so it is not shadowed.
+		r.Get("/discounts/active", discountHandler.ListActive)
+
+		// Manager-only, bearer-protected group.
+		r.Group(func(r chi.Router) {
+			r.Use(managerauthhttp.RequireManager(managerAuthSvc))
+
+			r.Post("/auth/logout", managerAuthHandler.Logout)
+			r.Get("/auth/me", managerAuthHandler.Me)
+
+			r.Route("/discounts", func(r chi.Router) {
+				r.Get("/", discountHandler.List)
+				r.Post("/", discountHandler.Create)
+				r.Patch("/{id}", discountHandler.Update)
+				r.Delete("/{id}", discountHandler.Delete)
+			})
+
+			r.Route("/dashboard", dashboardHandler.Routes)
+		})
 		r.Mount("/wifi", wifiHandler.Routes())
 	})
 
