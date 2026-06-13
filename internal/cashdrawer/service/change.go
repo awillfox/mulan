@@ -5,6 +5,18 @@ package service
 // change-making DP.
 var DenominationsSatang = []int64{100000, 50000, 10000, 5000, 2000, 1000, 500, 200, 100}
 
+// TrackedDenom reports whether d (in satang) is one of the nine tracked
+// denominations. Shared by the HTTP layers that validate client-supplied
+// denomination keys, so the valid set lives in exactly one place.
+func TrackedDenom(d int64) bool {
+	for _, x := range DenominationsSatang {
+		if x == d {
+			return true
+		}
+	}
+	return false
+}
+
 // denomsBaht is DenominationsSatang expressed in whole baht (since cash due is
 // rounded to ฿1, every change amount is a whole-baht multiple). It is DERIVED
 // from DenominationsSatang so the two can never drift out of sync — adding a

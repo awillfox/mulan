@@ -189,21 +189,12 @@ func parseDenomMap(in map[string]int) (map[int64]int, error) {
 	out := make(map[int64]int, len(in))
 	for k, v := range in {
 		d, err := strconv.ParseInt(k, 10, 64)
-		if err != nil || !trackedDenom(d) {
+		if err != nil || !service.TrackedDenom(d) {
 			return nil, errInvalidDenomKey
 		}
 		out[d] = v
 	}
 	return out, nil
-}
-
-func trackedDenom(d int64) bool {
-	for _, x := range service.DenominationsSatang {
-		if x == d {
-			return true
-		}
-	}
-	return false
 }
 
 var errInvalidDenomKey = errors.New("invalid denomination key")

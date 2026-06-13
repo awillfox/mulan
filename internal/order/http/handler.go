@@ -243,7 +243,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 		tender := make(map[int64]int, len(req.CashTender))
 		for k, v := range req.CashTender {
 			d, perr := strconv.ParseInt(k, 10, 64)
-			if perr != nil || !trackedDenom(d) {
+			if perr != nil || !cashdrawerservice.TrackedDenom(d) {
 				response.Error(w, r, http.StatusBadRequest, "invalid denomination key", perr)
 				return
 			}
@@ -358,14 +358,4 @@ func classifyCheckoutError(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, "checkout failed"
 	}
-}
-
-// trackedDenom reports whether d (satang) is one of the nine tracked denominations.
-func trackedDenom(d int64) bool {
-	for _, x := range cashdrawerservice.DenominationsSatang {
-		if x == d {
-			return true
-		}
-	}
-	return false
 }
