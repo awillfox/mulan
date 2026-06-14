@@ -5,7 +5,6 @@
 package http
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -17,24 +16,18 @@ import (
 
 	"mulan/internal/cashdrawer/service"
 	"mulan/internal/response"
-	"mulan/sqlc"
 )
 
-// ManagerVerifier authorizes drawer writes by re-checking a cashier's id + PIN
-// and manager role (POS has no session token). Implemented by cashier/service.
-type ManagerVerifier interface {
-	VerifyManager(ctx context.Context, id int32, pin string) (sqlc.Cashier, error)
-}
-
 type Handler struct {
-	svc      *service.Service
-	verifier ManagerVerifier
+	svc *service.Service
 }
 
-func NewHandler(svc *service.Service, verifier ManagerVerifier) *Handler {
-	return &Handler{svc: svc, verifier: verifier}
+func NewHandler(svc *service.Service) *Handler {
+	return &Handler{svc: svc}
 }
 
+// Routes registers the open (POS/agent-shared) cash-drawer endpoints. The
+// denomination WRITES are owner-gated and registered separately via OwnerRoutes.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.current)
 	r.Put("/float", h.setFloat)
@@ -42,9 +35,15 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/kick", h.logKick)
 	r.Get("/audit", h.listAudit)
 	r.Get("/denominations", h.getDenominations)
-	r.Put("/denominations", h.setDenominations)
-	r.Post("/denominations/adjust", h.adjustDenominations)
 	r.Post("/change-preview", h.changePreview)
+}
+
+// OwnerRoutes registers the denomination write endpoints. main.go mounts these
+// under the same /cash-drawer prefix but wrapped in RequireRole(owner), so only
+// manager-auth owners can set/adjust the drawer's bill/coin counts.
+func (h *Handler) OwnerRoutes(r chi.Router) {
+	r.Put("/denominations", h.SetDenominations)
+	r.Post("/denominations/adjust", h.AdjustDenominations)
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────

@@ -118,7 +118,7 @@ func main() {
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
 
-	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc, cashierSvc)
+	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc)
 
 	discountSvc := discountservice.NewService(pool, queries)
 	discountHandler := discounthttp.NewHandler(discountSvc, eventHub)
@@ -160,7 +160,15 @@ func main() {
 		r.Get("/members/lookup", memberHandler.Lookup)
 		r.Post("/cashiers/login", cashierHandler.Login)
 		r.Route("/orders", orderHandler.Routes)
-		r.Route("/cash-drawer", cashDrawerHandler.Routes)
+		r.Route("/cash-drawer", func(r chi.Router) {
+			cashDrawerHandler.Routes(r) // open: reads + change-preview + float/kick/audit
+			// Denomination writes are owner-gated (manager web app sets the drawer).
+			r.Group(func(r chi.Router) {
+				r.Use(managerauthhttp.RequireManager(managerAuthSvc))
+				r.Use(managerauthhttp.RequireRole(managerauthdomain.RoleOwner))
+				cashDrawerHandler.OwnerRoutes(r)
+			})
+		})
 		r.Mount("/wifi", wifiHandler.Routes())
 		r.Get("/discounts/active", discountHandler.ListActive)
 		r.Route("/auth", managerAuthHandler.Routes) // POST /auth/login

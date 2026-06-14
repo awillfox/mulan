@@ -10,7 +10,7 @@ import (
 	"github.com/Rhymond/go-money"
 
 	"mulan/internal/cashdrawer/service"
-	cashiersvc "mulan/internal/cashier/service"
+	managerauthhttp "mulan/internal/managerauth/http"
 	"mulan/internal/response"
 )
 
@@ -40,37 +40,28 @@ func (h *Handler) getDenominations(w http.ResponseWriter, r *http.Request) {
 }
 
 type denomWriteRequest struct {
-	CashierID int32          `json:"cashier_id"`
-	PIN       string         `json:"pin"`
-	Counts    map[string]int `json:"counts"` // for PUT (absolute)
-	Delta     map[string]int `json:"delta"`  // for adjust (relative)
+	Counts map[string]int `json:"counts"` // for PUT (absolute)
+	Delta  map[string]int `json:"delta"`  // for adjust (relative)
 }
 
-// authorize verifies the request's cashier_id + pin belong to an active manager
-// and returns the actor name to stamp on the audit row.
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, id int32, pin string) (string, bool) {
-	c, err := h.verifier.VerifyManager(r.Context(), id, pin)
-	if err != nil {
-		if errors.Is(err, cashiersvc.ErrInvalidCredentials) || errors.Is(err, cashiersvc.ErrNotManager) {
-			response.Error(w, r, http.StatusForbidden, "manager id + PIN required", err)
-			return "", false
-		}
-		response.Error(w, r, http.StatusInternalServerError, "authorization failed", err)
-		return "", false
+// actorFromCtx returns the audit actor name for a drawer write. These handlers
+// run behind RequireRole(owner), so a manager user is always in context.
+func actorFromCtx(r *http.Request) string {
+	if u, ok := managerauthhttp.UserFromContext(r.Context()); ok {
+		return u.Name
 	}
-	return c.Name, true
+	return ""
 }
 
-func (h *Handler) setDenominations(w http.ResponseWriter, r *http.Request) {
+// SetDenominations replaces the drawer's per-denomination counts. Owner-gated
+// (manager-auth) — registered by main.go inside the RequireRole(owner) group.
+func (h *Handler) SetDenominations(w http.ResponseWriter, r *http.Request) {
 	var req denomWriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
-	actor, ok := h.authorize(w, r, req.CashierID, req.PIN)
-	if !ok {
-		return
-	}
+	actor := actorFromCtx(r)
 	counts, err := parseDenomMap(req.Counts)
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
@@ -89,16 +80,15 @@ func (h *Handler) setDenominations(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, toDenomsResponse(newCounts, total))
 }
 
-func (h *Handler) adjustDenominations(w http.ResponseWriter, r *http.Request) {
+// AdjustDenominations applies a relative add/remove to drawer counts. Owner-gated
+// (manager-auth) — registered by main.go inside the RequireRole(owner) group.
+func (h *Handler) AdjustDenominations(w http.ResponseWriter, r *http.Request) {
 	var req denomWriteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
 		return
 	}
-	actor, ok := h.authorize(w, r, req.CashierID, req.PIN)
-	if !ok {
-		return
-	}
+	actor := actorFromCtx(r)
 	delta, err := parseDenomMap(req.Delta)
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
