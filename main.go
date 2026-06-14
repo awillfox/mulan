@@ -37,6 +37,8 @@ import (
 	optiongroupservice "mulan/internal/optiongroup/service"
 	orderhttp "mulan/internal/order/http"
 	orderservice "mulan/internal/order/service"
+	reporthttp "mulan/internal/report/http"
+	reportservice "mulan/internal/report/service"
 	settingshttp "mulan/internal/settings/http"
 	settingsservice "mulan/internal/settings/service"
 	"mulan/internal/web"
@@ -117,6 +119,8 @@ func main() {
 
 	dashboardSvc := dashboardservice.NewDashboardService(queries)
 	dashboardHandler := dashboardhttp.NewHandler(dashboardSvc)
+	reportSvc := reportservice.NewService(queries)
+	reportHandler := reporthttp.NewHandler(reportSvc)
 
 	cashDrawerHandler := cashdrawerhttp.NewHandler(cashDrawerSvc)
 
@@ -201,6 +205,7 @@ func main() {
 				r.Post("/discounts", discountHandler.Create)
 				r.Patch("/discounts/{id}", discountHandler.Update)
 				r.Delete("/discounts/{id}", discountHandler.Delete)
+				r.Route("/reports", reportHandler.Routes)
 				r.Post("/menus", menuHandler.Create)
 				r.Patch("/menus/{id}", menuHandler.Update)
 				r.Patch("/menus/{id}/toggle", menuHandler.Toggle)
