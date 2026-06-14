@@ -2090,19 +2090,18 @@ function setMethod(method) {
 document.querySelectorAll('.pay-tab').forEach(t => t.addEventListener('click', () => setMethod(t.dataset.method)));
 
 function buildQuickCash() {
-    const total = orderTotals().grand;
-    const exact = Math.ceil(total);
-    const presets = [exact];
-    [50, 100, 500, 1000].forEach(v => { if (v >= exact && !presets.includes(v)) presets.push(v); });
-    while (presets.length < 5) {
-        const last = presets[presets.length-1];
+    // No "exact" preset for cash — the customer hands over real bills/coins, so
+    // the denomination pad drives the tender. Presets are common notes >= due.
+    const due = Math.ceil(orderTotals().grand);
+    const presets = [];
+    [20, 50, 100, 500, 1000].forEach(v => { if (v >= due && !presets.includes(v)) presets.push(v); });
+    while (presets.length < 4) {
+        const last = presets[presets.length - 1] || due;
         presets.push(last + 100);
     }
     const wrap = document.getElementById('quick-cash');
-    wrap.innerHTML = presets.slice(0, 4).map((v, i) => `
-        <button class="${i === 0 ? 'exact' : ''}" onclick="setCash(${v})">
-            ${i === 0 ? 'Exact' : ''} ฿${v.toLocaleString('th-TH')}
-        </button>
+    wrap.innerHTML = presets.slice(0, 4).map(v => `
+        <button onclick="setCash(${v})">฿${v.toLocaleString('th-TH')}</button>
     `).join('');
 }
 function setCash(v) { cashTendered = v; renderTender(); }
