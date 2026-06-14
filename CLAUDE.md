@@ -71,11 +71,11 @@ Claude will update CLAUDE.md a long the way
 - `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
-- `GET /api/cash-drawer/denominations` — current bill/coin counts `{counts:{<satang>:count}, total}` (open; POS reads live)
-- `PUT /api/cash-drawer/denominations` — set counts `{cashier_id, pin, counts:{<satang>:count}}` (manager-role cashier, id+PIN — 403 otherwise)
-- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{cashier_id, pin, delta:{<satang>:±count}}` (manager id+PIN; 409 if a count would go negative)
+- `GET /api/cash-drawer/denominations` — current bill/coin counts `{counts:{<satang>:count}, total}` (open; POS + manager web read)
+- `PUT /api/cash-drawer/denominations` — set counts `{counts:{<satang>:count}}` (**owner**, manager-auth) — replaces all
+- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{delta:{<satang>:±count}}` (**owner**; 409 if a count would go negative)
 - `POST /api/cash-drawer/change-preview` — `{due, tender:{<satang>:count}}` → `{rounded_due, change_total, breakdown, makeable}` (advisory; open)
-- Cashiers now carry `role` (`cashier|manager`); `POST/PATCH /api/cashiers` accept `role`, and login/list responses include it. Manager-role gates drawer denomination writes at the POS.
+- Cashiers carry `role` (`cashier|manager`); `POST/PATCH /api/cashiers` accept `role`, login/list responses include it. (The cashier `manager` role no longer gates anything now that drawer denomination management moved to the owner-gated manager web app; it's retained for future POS-side permissions.)
 - `POST /api/orders/{code}/checkout` accepts (cash) `{payment_method:"cash", cash_tender:{<satang>:count}, cashier_name}` and returns `{rounded_due, change, change_breakdown}` (see Cash Drawer Denominations)
 
 ## Option Groups
@@ -143,19 +143,19 @@ old single-float concept; the legacy `GetCurrentCashDrawerFloat` query now filte
 a `cash_drawer_audit` row carrying a signed per-denomination JSON delta
 (`denominations` jsonb) + net satang (`delta`); event types `set`/`adjust`/`sale`.
 
-A **manager-role** cashier sets/adjusts counts from the POS (`PUT`/`adjust`,
-confirmed by `cashier_id`+`pin` — there is no cashier session, so the backend
-re-verifies bcrypt + role per request; trusted-tailnet kiosk model). On a **cash**
-sale the cashier enters the exact denominations tendered; checkout rounds the amount
-due to the nearest ฿1 (smallest coin; card/QR charge exact satang), computes change
-as real bills/coins via a **bounded coin-change DP** against current stock
-(`internal/cashdrawer/service/change.go` — greedy is wrong with limited stock), and
-inside the existing checkout transaction adds the tender and subtracts the change
+**Setting the drawer counts** lives in the **manager web app** (mulan-manager
+`/drawer` page) — owner-only, via the `RequireRole(owner)` `PUT`/`adjust` endpoints
+(actor = the logged-in manager). The POS no longer edits drawer denominations. On a
+**cash** sale the cashier enters the exact denominations tendered; checkout rounds
+the amount due to the nearest ฿1 (smallest coin; card/QR charge exact satang),
+computes change as real bills/coins via a **bounded coin-change DP** against current
+stock (`internal/cashdrawer/service/change.go` — greedy is wrong with limited stock),
+and inside the existing checkout transaction adds the tender and subtracts the change
 (`ApplyCashSale` on the tx-bound queries → atomic with the order; rolls back on any
 error). **Block-until-restocked:** if exact change can't be made, checkout returns
-`409` and the order stays open; a manager restocks via `adjust` (id+PIN) and the
-cashier retries. POS shows a live `change-preview` (the exact bills/coins to return)
-as the cashier taps denominations. `internal/cashdrawer/service/denominations.go`
+`409` and the order stays open; an **owner** restocks via the manager web `/drawer`
+page, then the cashier retries. POS shows a live `change-preview` (the exact
+bills/coins to return) as the cashier taps the denomination tender pad. `internal/cashdrawer/service/denominations.go`
 owns the state/audit/DP-glue; `change-preview` + the denomination endpoints live in
 `internal/cashdrawer/http/`.
 
@@ -167,9 +167,9 @@ new binary, or drawer/audit queries error at runtime.
 `internal/managerauth/` — opaque bearer-token sessions for the SvelteKit manager, **separate from POS `cashiers`** (cashiers are PIN-only and now carry a `role` of `cashier|manager`, distinct from manager_users' `owner|staff`). Tables: `manager_users` (username, bcrypt `password_hash`, name, `role` = `owner|staff`, active) + `manager_sessions` (SHA-256-hashed token, `expires_at`, `revoked_at`; 30-day TTL). Middleware `RequireManager` (valid session → user in ctx) + `RequireRole(owner)`. Seed: `go run ./cmd/create-manager-user -username U -password P -name N -role owner|staff`. Login bcrypt-verifies and runs a dummy compare on unknown user (constant-time, anti-enumeration); passwords ≥8 chars; change-password validates the current password.
 
 **Route scoping (in `main.go`'s `/api` block):**
-- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer` (incl. `GET /denominations`, `POST /change-preview`; the denomination **writes** `PUT /denominations` + `POST /denominations/adjust` self-gate on `cashier_id`+`pin`→manager-role inside the handler, since POS cashiers have no bearer session), `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`.
+- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer` (incl. `GET /denominations`, `POST /change-preview`, float/kick/audit), `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`. The drawer denomination **writes** (`PUT /cash-drawer/denominations`, `POST /cash-drawer/denominations/adjust`) are nested inside the `/cash-drawer` mount but wrapped in `RequireRole(owner)` — see below.
 - **`RequireManager`** (any logged-in manager, reads): `GET /api/option-groups`, `GET /api/members`(+`/{id}/orders`), `GET /api/cashiers`, `GET /api/discounts`, `/api/auth/{me,logout,change-password}`.
-- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `/api/dashboard/*`.
+- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `/api/dashboard/*`, and the cash-drawer denomination writes (`PUT /api/cash-drawer/denominations`, `POST /api/cash-drawer/denominations/adjust` — nested inside the open `/cash-drawer` mount but wrapped in owner middleware).
 
 Adding a manager route: register it in the right group in `main.go` AND add its prefix to the proxy `ALLOW` in mulan-manager's `src/routes/api/[...path]/+server.ts`. **Never wrap a POS-shared read** (it breaks the POS) — verify with a no-token curl returning 200.
 
