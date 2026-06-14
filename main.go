@@ -171,6 +171,14 @@ func main() {
 		})
 		r.Mount("/wifi", wifiHandler.Routes())
 		r.Get("/discounts/active", discountHandler.ListActive)
+		// Dashboard reads are OPEN by deliberate choice: the legacy Go
+		// html/template /manager dashboard sends no bearer token (no login
+		// flow), so an owner-gated /api/dashboard/* returns 401 and the page
+		// renders zeros. Tailnet access is treated as trusted. NOTE: this
+		// exposes revenue/top-menus/subsidies/heatmap to anyone who can reach
+		// this port. Re-gate (move back under RequireRole(owner)) once the Go
+		// pages are retired in favour of the SvelteKit mulan-manager.
+		r.Route("/dashboard", dashboardHandler.Routes)
 		r.Route("/auth", managerAuthHandler.Routes) // POST /auth/login
 
 		// ---------- RequireManager: any logged-in manager (reads) ----------
@@ -193,7 +201,6 @@ func main() {
 				r.Post("/discounts", discountHandler.Create)
 				r.Patch("/discounts/{id}", discountHandler.Update)
 				r.Delete("/discounts/{id}", discountHandler.Delete)
-				r.Route("/dashboard", dashboardHandler.Routes)
 				r.Post("/menus", menuHandler.Create)
 				r.Patch("/menus/{id}", menuHandler.Update)
 				r.Patch("/menus/{id}/toggle", menuHandler.Toggle)
