@@ -561,17 +561,6 @@
   .pay-figs .row.change .v { font-size: 22px; color: var(--pay); }
   .pay-figs .row.change.short .v { color: var(--danger); }
 
-  .quick-cash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
-  .quick-cash button {
-    height: 44px; border-radius: 999px;
-    background: var(--surf-2);
-    color: var(--on-surf); font-weight: 500; font-size: 14px;
-    border: 1px solid transparent;
-    transition: background .15s, border-color .15s;
-  }
-  .quick-cash button:hover { background: var(--p-ctr); border-color: var(--p-ctr); }
-  .quick-cash button.exact { background: var(--p-ctr); color: var(--p-on-ctr); font-weight: 600; }
-
   .deno-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .deno-pad button {
     height: 60px; border-radius: var(--shape-md);
@@ -988,19 +977,17 @@
             </div>
 
             <div id="cash-pane">
-                <div class="quick-cash" id="quick-cash"></div>
-                <div id="tender-denoms" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px"></div>
                 <div id="change-breakdown" style="font-size:13px;color:var(--on-surf-var);min-height:20px;margin-bottom:8px"></div>
                 <div class="deno-pad">
-                    <button onclick="addCash(1)">฿1</button>
-                    <button onclick="addCash(2)">฿2</button>
-                    <button onclick="addCash(5)">฿5</button>
-                    <button onclick="addCash(10)">฿10</button>
-                    <button onclick="addCash(20)">฿20</button>
-                    <button onclick="addCash(50)">฿50</button>
-                    <button onclick="addCash(100)">฿100</button>
-                    <button onclick="addCash(500)">฿500</button>
-                    <button onclick="addCash(1000)">฿1000</button>
+                    <button onclick="addTenderDenom(100)">฿1</button>
+                    <button onclick="addTenderDenom(200)">฿2</button>
+                    <button onclick="addTenderDenom(500)">฿5</button>
+                    <button onclick="addTenderDenom(1000)">฿10</button>
+                    <button onclick="addTenderDenom(2000)">฿20</button>
+                    <button onclick="addTenderDenom(5000)">฿50</button>
+                    <button onclick="addTenderDenom(10000)">฿100</button>
+                    <button onclick="addTenderDenom(50000)">฿500</button>
+                    <button onclick="addTenderDenom(100000)">฿1000</button>
                     <button class="clear span-3" onclick="kpClear()">
                         <span class="material-symbols-rounded" style="font-size:20px;vertical-align:-4px">backspace</span>
                         Clear
@@ -2035,11 +2022,11 @@ function scheduleMemberLookup() {
 function openTenderDirect() {
     payMethod = 'cash';
     cashTendered = 0;
-    buildTenderDenoms();
+    tenderDenoms = {};
     renderTender();
-    buildQuickCash();
     setMethod('cash');
     document.getElementById('tender-modal').classList.add('is-open');
+    runChangePreview();
 }
 
 function closeMember() {
@@ -2089,27 +2076,6 @@ function setMethod(method) {
 }
 document.querySelectorAll('.pay-tab').forEach(t => t.addEventListener('click', () => setMethod(t.dataset.method)));
 
-function buildQuickCash() {
-    // No "exact" preset for cash — the customer hands over real bills/coins, so
-    // the denomination pad drives the tender. Presets are common notes >= due.
-    const due = Math.ceil(orderTotals().grand);
-    const presets = [];
-    [20, 50, 100, 500, 1000].forEach(v => { if (v >= due && !presets.includes(v)) presets.push(v); });
-    while (presets.length < 4) {
-        const last = presets[presets.length - 1] || due;
-        presets.push(last + 100);
-    }
-    const wrap = document.getElementById('quick-cash');
-    wrap.innerHTML = presets.slice(0, 4).map(v => `
-        <button onclick="setCash(${v})">฿${v.toLocaleString('th-TH')}</button>
-    `).join('');
-}
-function setCash(v) { cashTendered = v; renderTender(); }
-function addCash(amount) {
-    cashTendered = Math.round((cashTendered + amount) * 100) / 100;
-    renderTender();
-}
-
 // ── Per-denomination tender pad + live change preview ─────────────
 // Tapping a denom button tallies it into tenderDenoms (satang string ->
 // count) and keeps the existing cashTendered number in sync so the
@@ -2117,17 +2083,6 @@ function addCash(amount) {
 // live preview adds the exact bills/coins to return and can disable
 // Confirm when the drawer cannot make change.
 let tenderDenoms = {}; // satang string -> count tendered this sale
-
-function buildTenderDenoms() {
-    tenderDenoms = {};
-    const wrap = document.getElementById('tender-denoms');
-    wrap.innerHTML = DENOMS_SATANG.map(s => `
-        <button type="button" onclick="addTenderDenom(${s})"
-            style="height:44px;border:1px solid var(--outline-soft);border-radius:10px;background:var(--surf-2);font-weight:600">
-            +฿${denomBaht(s).toLocaleString('th-TH')}
-        </button>`).join('');
-    renderTender();
-}
 
 function addTenderDenom(s) {
     tenderDenoms[s] = (tenderDenoms[s]||0) + 1;
@@ -2179,7 +2134,7 @@ async function runChangePreview() {
     } catch { out.textContent = ''; }
 }
 
-function kpClear() { cashTendered = 0; tenderDenoms = {}; buildTenderDenoms(); renderTender(); }
+function kpClear() { cashTendered = 0; tenderDenoms = {}; renderTender(); runChangePreview(); }
 function renderTender() {
     const total = orderTotals().grand;
     document.getElementById('tender-total').textContent = fmt(total);
