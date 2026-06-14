@@ -483,6 +483,16 @@
     max-height: 92vh; display: flex; flex-direction: column;
   }
   .dialog.wide { max-width: 560px; }
+  /* Settings: large, near-full display, no scroll, big touch targets */
+  .settings-dialog { width: 94vw; max-width: 820px; max-height: 94vh; }
+  .settings-body { display: flex; flex-direction: column; gap: 22px; padding: 18px 24px 24px; }
+  .settings-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .settings-act {
+    height: 84px; flex-direction: row; justify-content: flex-start; gap: 16px;
+    padding: 0 22px; background: var(--surf-2); border-radius: var(--shape-md);
+    font-size: 17px; font-weight: 500;
+  }
+  .settings-act .material-symbols-rounded { font-size: 28px; }
   @keyframes dialog-pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
   .d-head { padding: 18px 22px 4px; display: flex; align-items: center; justify-content: space-between; }
   .d-head h3 { font-family: 'Google Sans Display'; font-size: 20px; font-weight: 500; color: var(--on-surf); }
@@ -1027,53 +1037,17 @@
 
 <!-- ── Settings dialog ───────────────────────────────────────────── -->
 <div id="settings-modal" class="scrim">
-    <div class="dialog" style="max-width:420px">
+    <div class="dialog settings-dialog">
         <div class="d-head">
             <h3>Settings</h3>
             <button class="icon-btn" onclick="closeSettings()"><span class="material-symbols-rounded">close</span></button>
         </div>
-        <div class="d-body" style="display:flex;flex-direction:column;gap:14px">
-
-            <!-- Cash drawer float -->
-            <section style="background:var(--surf-2);border-radius:var(--shape-md);padding:14px 16px">
-                <div style="display:flex;align-items:center;gap:8px">
-                    <span class="material-symbols-rounded" style="color:var(--p)">savings</span>
-                    <div style="flex:1">
-                        <div style="font-weight:600;font-size:14px;color:var(--on-surf)">Cash drawer float</div>
-                        <div id="float-meta" style="font-size:11px;color:var(--on-surf-var);margin-top:1px">Opening cash kept in the drawer for change.</div>
-                    </div>
-                    <div style="font-family:'Roboto Mono',monospace;font-weight:600;color:var(--p);font-size:18px" id="float-display">฿0.00</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-                    <span style="font-family:'Roboto Mono',monospace;color:var(--on-surf-var);font-size:15px;padding-left:4px">฿</span>
-                    <input id="float-input" type="number" min="0" step="0.01" placeholder="0.00"
-                           style="flex:1;height:44px;border:1px solid var(--outline);border-radius:var(--shape-sm);padding:0 12px;font-size:15px;font-family:'Roboto Mono',monospace;background:var(--surf);outline:none">
-                    <button class="btn-filled" onclick="setFloat()" style="height:44px;padding:0 18px">Set</button>
-                </div>
-                <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
-                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(500)">฿500</button>
-                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(1000)">฿1,000</button>
-                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(2000)">฿2,000</button>
-                    <button class="cat-chip" style="height:30px;font-size:12px" onclick="floatPreset(5000)">฿5,000</button>
-                    <div style="flex:1"></div>
-                    <button class="btn-text danger" style="height:30px;padding:0 10px;font-size:12px" onclick="clearFloat()">Clear</button>
-                </div>
-            </section>
-
-            <!-- Cash drawer denominations (manager only) -->
-            <div id="denom-editor" style="display:none;margin-top:16px">
-              <div style="font-weight:600;font-size:14px;color:var(--on-surf);margin-bottom:8px">Cash drawer denominations</div>
-              <div id="denom-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
-              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-                <div style="flex:1;font-size:13px;color:var(--on-surf-var)">Total: <span id="denom-total" class="mono">฿0.00</span></div>
-                <button class="btn-filled" onclick="saveDenoms()" style="height:44px;padding:0 18px">Save (manager)</button>
-              </div>
-            </div>
+        <div class="d-body settings-body">
 
             <!-- Display preferences -->
             <section>
-                <div style="font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--on-surf-var);padding:0 4px 6px">Display</div>
-                <div id="pref-hide-search" class="pref-row" onclick="toggleHideSearch()">
+                <div style="font-size:13px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--on-surf-var);padding:0 4px 8px">Display</div>
+                <div id="pref-hide-search" class="pref-row" onclick="toggleHideSearch()" style="min-height:64px">
                     <span class="material-symbols-rounded" style="color:var(--on-surf-var)">search_off</span>
                     <div class="pref-text">
                         <div class="pref-title">Hide search bar</div>
@@ -1084,22 +1058,22 @@
             </section>
 
             <!-- Quick actions -->
-            <div style="display:flex;flex-direction:column;gap:8px">
-                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="toggleFullscreen()">
+            <div class="settings-actions">
+                <button class="util-btn settings-act" onclick="toggleFullscreen()">
                     <span class="material-symbols-rounded" id="fs-icon-2">fullscreen</span>
-                    <span style="font-size:14px;font-weight:500" id="fs-label">Enter full screen</span>
+                    <span id="fs-label">Enter full screen</span>
                 </button>
-                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="kickDrawer(); closeSettings()">
+                <button class="util-btn settings-act" onclick="kickDrawer(); closeSettings()">
                     <span class="material-symbols-rounded">point_of_sale</span>
-                    <span style="font-size:14px;font-weight:500">Open cash drawer</span>
+                    <span>Open cash drawer</span>
                 </button>
-                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="reloadMenus()">
+                <button class="util-btn settings-act" onclick="reloadMenus()">
                     <span class="material-symbols-rounded">refresh</span>
-                    <span style="font-size:14px;font-weight:500">Reload menus</span>
+                    <span>Reload menus</span>
                 </button>
-                <button class="util-btn" style="height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 16px;background:var(--surf-2);border-radius:var(--shape-md)" onclick="restartAgent()">
+                <button class="util-btn settings-act" onclick="restartAgent()">
                     <span class="material-symbols-rounded" style="color:var(--warn)">restart_alt</span>
-                    <span style="font-size:14px;font-weight:500">Restart agent</span>
+                    <span>Restart agent</span>
                 </button>
             </div>
         </div>
@@ -1304,7 +1278,6 @@ function esc(s) {
 }
 function fmt(n) { return '฿' + (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtPlain(n) { return (n || 0).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
-function isManager() { return (loggedInCashier && loggedInCashier.role === 'manager'); }
 
 // ── Init ──────────────────────────────────────────────────────────
 async function init() {
@@ -2432,9 +2405,7 @@ function kickDrawer() {
 function openSettings()  {
     document.getElementById('settings-modal').classList.add('is-open');
     syncFullscreenLabels();
-    syncFloatUI();
     syncPrefsUI();
-    loadDenoms();
 }
 
 // ── Display prefs (terminal-local) ─────────────────────────────────
@@ -2458,10 +2429,10 @@ function toggleHideSearch() {
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('is-open'); }
 
-// ── Cash drawer float (persisted in Postgres + audited) ───────────
-// Source of truth: GET /api/cash-drawer. Every mutation appends a row to
-// cash_drawer_audit for shift reconciliation. Drawer kicks (manual + auto)
-// are logged too so we can correlate cash-on-hand with physical opens.
+// ── Terminal id + drawer-kick audit ───────────────────────────────
+// Drawer denomination management lives in the manager web app now; the POS
+// only logs physical drawer opens (manual + auto on cash checkout) to
+// cash_drawer_audit, tagged with a stable per-terminal id.
 let terminalId = null;
 function getTerminalId() {
     if (terminalId) return terminalId;
@@ -2474,125 +2445,9 @@ function getTerminalId() {
     return id;
 }
 
-async function fetchCurrentFloat() {
-    try {
-        return await fetch(API_BASE + '/api/cash-drawer').then(unwrap);
-    } catch {
-        return null;
-    }
-}
-
-async function syncFloatUI() {
-    const disp = document.getElementById('float-display');
-    const meta = document.getElementById('float-meta');
-    const input = document.getElementById('float-input');
-    const cur = await fetchCurrentFloat();
-    if (cur && cur.amount_valid) {
-        disp.textContent = fmt(cur.amount);
-        const when = cur.set_at ? new Date(cur.set_at) : null;
-        const stamp = when ? when.toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-        const verb = cur.event_type === 'clear' ? 'Cleared' : 'Set';
-        meta.textContent = stamp ? `${verb} ${stamp}` : 'Opening cash for change.';
-        input.value = Number(cur.amount || 0).toFixed(2);
-    } else {
-        disp.textContent = '฿0.00';
-        meta.textContent = 'Opening cash kept in the drawer for change.';
-        input.value = '';
-    }
-}
-
-async function setFloat() {
-    const v = parseFloat(document.getElementById('float-input').value);
-    if (isNaN(v) || v < 0) { snack('Enter a valid amount.', 'warn'); return; }
-    try {
-        const res = await fetch(API_BASE + '/api/cash-drawer/float', {
-            method: 'PUT',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ amount: v, terminal: getTerminalId(), actor: loggedInCashier?.name ?? null }),
-        });
-        if (!res.ok) throw new Error('set failed');
-    } catch {
-        snack('Failed to save float.', 'danger');
-        return;
-    }
-    await syncFloatUI();
-    snack('Float set to ' + fmt(v) + '.', 'success');
-}
-
-// ── Cash drawer denominations ─────────────────────────────────────
+// ── Denomination helpers (shared by the cash tender pad + change preview) ──
 const DENOMS_SATANG = [100000,50000,10000,5000,2000,1000,500,200,100];
-let denomCounts = {}; // satang string -> count (working copy in the editor)
-
 function denomBaht(satang) { return satang / 100; }
-
-async function loadDenoms() {
-    try {
-        const r = await fetch(API_BASE + '/api/cash-drawer/denominations');
-        const d = await r.json().then(x => x.data ?? x);
-        denomCounts = {};
-        DENOMS_SATANG.forEach(s => { denomCounts[s] = (d.counts && d.counts[s]) || 0; });
-    } catch { denomCounts = {}; DENOMS_SATANG.forEach(s => denomCounts[s] = 0); }
-    renderDenomEditor();
-}
-
-function renderDenomEditor() {
-    const editor = document.getElementById('denom-editor');
-    editor.style.display = isManager() ? '' : 'none';
-    if (!isManager()) return;
-    const grid = document.getElementById('denom-grid');
-    grid.innerHTML = DENOMS_SATANG.map(s => `
-        <div style="background:var(--surf-2);border-radius:var(--shape-md);padding:8px;text-align:center">
-            <div style="font-size:12px;color:var(--on-surf-var)">฿${denomBaht(s).toLocaleString('th-TH')}</div>
-            <input type="number" min="0" value="${denomCounts[s]||0}"
-                   onchange="denomCounts['${s}']=Math.max(0,parseInt(this.value)||0); renderDenomTotal();"
-                   style="width:100%;text-align:center;font-family:'Roboto Mono',monospace;font-size:16px;border:1px solid var(--outline-soft);border-radius:8px;padding:6px 0;margin-top:4px">
-        </div>`).join('');
-    renderDenomTotal();
-}
-
-function renderDenomTotal() {
-    let total = 0;
-    DENOMS_SATANG.forEach(s => { total += s * (denomCounts[s]||0); });
-    document.getElementById('denom-total').textContent = fmt(total/100);
-}
-
-async function saveDenoms() {
-    if (!isManager()) { snack('Manager only.', 'warn'); return; }
-    const pin = prompt('Enter your manager PIN to save the drawer:');
-    if (!pin) return;
-    const counts = {};
-    DENOMS_SATANG.forEach(s => { counts[s] = denomCounts[s]||0; });
-    try {
-        const r = await fetch(API_BASE + '/api/cash-drawer/denominations', {
-            method: 'PUT', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ cashier_id: loggedInCashier.id, pin, counts }),
-        });
-        if (r.status === 403) { snack('Manager id + PIN rejected.', 'danger'); return; }
-        if (!r.ok) { snack('Failed to save drawer.', 'danger'); return; }
-        snack('Drawer updated.', 'success');
-        await loadDenoms();
-    } catch { snack('Failed to save drawer.', 'danger'); }
-}
-
-function floatPreset(v) {
-    document.getElementById('float-input').value = v.toFixed(2);
-}
-
-async function clearFloat() {
-    try {
-        const res = await fetch(API_BASE + '/api/cash-drawer/float', {
-            method: 'DELETE',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ terminal: getTerminalId(), actor: loggedInCashier?.name ?? null }),
-        });
-        if (!res.ok) throw new Error('clear failed');
-    } catch {
-        snack('Failed to clear float.', 'danger');
-        return;
-    }
-    await syncFloatUI();
-    snack('Float cleared.', 'warn');
-}
 
 // Fire-and-forget audit log for a physical drawer open.
 // reason: 'manual' = cashier pressed Drawer button; 'change' = auto-opened
