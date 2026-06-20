@@ -52,6 +52,7 @@ type menuResponse struct {
 	CategoryID   *int32                    `json:"category_id,omitempty"`
 	VfdName      *string                   `json:"vfd_name,omitempty"`
 	Active       bool                      `json:"active"`
+	Favourite    bool                      `json:"favourite"`
 	OptionGroups []menuOptionGroupResponse `json:"option_groups"`
 	BaseOptions  []menuBaseOptionResponse  `json:"base_options"`
 }
@@ -76,6 +77,7 @@ func toMenuResponse(m sqlc.Menu) menuResponse {
 		CategoryID:   catID,
 		VfdName:      vfdName,
 		Active:       m.Active,
+		Favourite:    m.Favourite,
 		OptionGroups: []menuOptionGroupResponse{},
 		BaseOptions:  []menuBaseOptionResponse{},
 	}
@@ -158,6 +160,7 @@ type menuRequest struct {
 	Price      float64 `json:"price"`
 	CategoryID *int32  `json:"category_id"`
 	VfdName    *string `json:"vfd_name"`
+	Favourite  bool    `json:"favourite"`
 }
 
 func (req menuRequest) validate() error {
@@ -180,7 +183,7 @@ func (h *MenuHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	m, err := h.svc.Create(r.Context(), req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName)
+	m, err := h.svc.Create(r.Context(), req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName, req.Favourite)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to create menu", err)
 		return
@@ -203,7 +206,7 @@ func (h *MenuHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	m, err := h.svc.Update(r.Context(), id, req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName)
+	m, err := h.svc.Update(r.Context(), id, req.Name, satangFromTHB(req.Price), req.CategoryID, req.VfdName, req.Favourite)
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to update menu", err)
 		return

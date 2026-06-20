@@ -7,7 +7,17 @@ Go-based Point of Sale (POS) system. Two modules:
 - **mulan-manager** (separate repo, `../mulan-manager`) — phone-first iOS-style **SvelteKit** frontend for the manager pages, deployed on render.com, consuming this backend's `/api/*` over Tailscale. Progressively replacing the Go `html/template` `/manager/*` pages (those still serve until fully replaced).
 
 ## Deployment
-The backend runs on tailnet node **chaiyarak** (`100.109.90.83`) as **systemd service `mulan`** in `~/mulan-deploy/` (static `CGO_ENABLED=0` linux/amd64 binary + `templates/` + `elements/` + `.env`; DB = local Postgres on that host). Update: cross-build → `scp` to `~/mulan-deploy/mulan.new` → `mv -f mulan.new mulan` (can't overwrite a running binary — ETXTBSY) → `sudo systemctl restart mulan`. The render frontend reaches it at `http://100.109.90.83:8085` over Tailscale.
+**Backend** runs as **systemd service `mulan`** (User=coffee) on prod host **`coffee@100.86.43.70`** in **`/home/coffee/mulan/`** — `ExecStart=/home/coffee/mulan/mulan-linux-amd64`, `EnvironmentFile=/home/coffee/mulan/.env`, plus `templates/` + `elements/`; DB = local Postgres on that host (`coffee_production`). `coffee` has passwordless `sudo systemctl`. Update flow:
+1. **Build** (local): `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o build/mulan-linux-amd64 .`
+2. **Backup prod DB FIRST** (before any migrate): `ssh coffee@100.86.43.70` → `pg_dump "$PSQL_URL" -Fc -f /home/coffee/Database_Backup/<name>.dump` then verify size>0 + `pg_restore -l` reads. (`pg_dump`/`psql`/`atlas` all present on prod; no `go`.)
+3. **Migrate** (local → prod over tailnet, pg 5432 reachable): `atlas schema apply --url "$PSQL_URL" --to "file://schema.hcl" --auto-approve`. **Note:** the root `.env` defines only `PSQL_URL` (= prod DB); `PSQL_PROD_URL` is undefined, so `task migrate-prod` runs with an empty url — use the `atlas` command directly. Dry-run first with `--dry-run`.
+4. **Ship**: `scp build/mulan-linux-amd64 coffee@100.86.43.70:/home/coffee/mulan/mulan-linux-amd64.new`; `rsync -az --delete templates/ … elements/ …`; then `ssh … 'cd /home/coffee/mulan && mv -f mulan-linux-amd64.new mulan-linux-amd64 && sudo systemctl restart mulan'` (mv because can't overwrite a running binary — ETXTBSY).
+5. **Verify**: `curl http://100.86.43.70:8085/api/settings` → 200; `journalctl -u mulan` clean.
+- ⚠️ The `cd … mulan-agent` in the agent build persists the shell CWD — `source .env` afterward sources the agent's `.env` (no `PSQL_URL`). Use absolute paths for backend `.env`/`schema.hcl`.
+
+**Agent** runs as **NSSM service `MulanAgent`** on the Windows POS **`coffee@100.115.144.52`** in `C:\Users\Coffee\mulan-agent\` (port 8090, `API_BASE` = backend LAN `192.168.1.100:8085`). Deploy with **`mulan-agent/deploy.sh`** (handles GOOS=windows build → NSSM stop+wait → scp → start → `/pos` 200 probe); add `--templates` when POS templates changed, `--tail` to follow logs.
+
+Claude will update CLAUDE.md a long the way
 
 Claude will update CLAUDE.md a long the way
 
@@ -83,6 +93,17 @@ Shared, reusable option groups attach to menus via `menu_option_groups`. Each gr
 
 ### Isolated (per-menu) groups
 When attaching a group to a menu item, the manager can tick **Customize** to isolate it. An isolated group is a private clone: `option_groups.owner_menu_id` points at the owning menu (NULL = shared preset). It is hidden from the shared list (`ListOptionGroups` filters `owner_menu_id IS NULL`) so it never appears when editing other items, and its options/prices are editable inline in the item dialog without touching the source preset. `SetMenuGroups` fully replaces a menu's groups in one transaction — it clears links, drops the menu's old private groups (`DeletePrivateGroupsForMenu`), then re-attaches shared groups and recreates isolated ones. Deleting a menu cascades its private groups. Menu API `option_groups[]` entries carry an `isolated` bool.
+
+## Favourite items
+A menu carries a boolean `menus.favourite` (default false), orthogonal to its
+`category_id`. The POS renders a synthetic **★ Favourite** tab pinned right after
+**All** (before real categories) that filters `m.favourite` — same client-side
+pattern as All/Uncategorised in `mulan-agent/templates/pos/index.html`
+(`renderCategories`/`filteredMenus`); the tab hides when zero items are favourited.
+An item keeps its real category AND can be favourite (shows in both tabs). Assigned
+in mulan-manager's menu editor (★ Favourite toggle); the field rides the existing
+`menu_request`/`menuResponse` (no new endpoint) and the POS reads it via the raw
+`GET /api/menus` JSON (agent passes through, no agent struct).
 
 ## Base Option
 A menu may have at most one **Base Option** set: named, absolute-priced variants

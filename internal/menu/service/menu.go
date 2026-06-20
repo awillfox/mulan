@@ -20,7 +20,7 @@ func (s *MenuService) List(ctx context.Context) ([]db.Menu, error) {
 	return s.q.ListMenus(ctx)
 }
 
-func (s *MenuService) Create(ctx context.Context, name string, priceSatang int64, categoryID *int32, vfdName *string) (db.Menu, error) {
+func (s *MenuService) Create(ctx context.Context, name string, priceSatang int64, categoryID *int32, vfdName *string, favourite bool) (db.Menu, error) {
 	catID := pgtype.Int4{}
 	if categoryID != nil {
 		catID = pgtype.Int4{Int32: *categoryID, Valid: true}
@@ -34,10 +34,11 @@ func (s *MenuService) Create(ctx context.Context, name string, priceSatang int64
 		Price:      priceSatang,
 		CategoryID: catID,
 		VfdName:    vfd,
+		Favourite:  favourite,
 	})
 }
 
-func (s *MenuService) Update(ctx context.Context, id int32, name string, priceSatang int64, categoryID *int32, vfdName *string) (db.Menu, error) {
+func (s *MenuService) Update(ctx context.Context, id int32, name string, priceSatang int64, categoryID *int32, vfdName *string, favourite bool) (db.Menu, error) {
 	catID := pgtype.Int4{}
 	if categoryID != nil {
 		catID = pgtype.Int4{Int32: *categoryID, Valid: true}
@@ -52,6 +53,7 @@ func (s *MenuService) Update(ctx context.Context, id int32, name string, priceSa
 		Price:      priceSatang,
 		CategoryID: catID,
 		VfdName:    vfd,
+		Favourite:  favourite,
 	})
 }
 
