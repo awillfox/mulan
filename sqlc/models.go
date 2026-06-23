@@ -9,14 +9,21 @@ import (
 )
 
 type CashDrawerAudit struct {
-	ID        int64              `db:"id" json:"id"`
-	EventType string             `db:"event_type" json:"event_type"`
-	Amount    pgtype.Int8        `db:"amount" json:"amount"`
-	Delta     pgtype.Int8        `db:"delta" json:"delta"`
-	Note      pgtype.Text        `db:"note" json:"note"`
-	Actor     pgtype.Text        `db:"actor" json:"actor"`
-	Terminal  pgtype.Text        `db:"terminal" json:"terminal"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID            int64              `db:"id" json:"id"`
+	EventType     string             `db:"event_type" json:"event_type"`
+	Amount        pgtype.Int8        `db:"amount" json:"amount"`
+	Delta         pgtype.Int8        `db:"delta" json:"delta"`
+	Note          pgtype.Text        `db:"note" json:"note"`
+	Actor         pgtype.Text        `db:"actor" json:"actor"`
+	Terminal      pgtype.Text        `db:"terminal" json:"terminal"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	Denominations []byte             `db:"denominations" json:"denominations"`
+}
+
+type CashDrawerDenomination struct {
+	Denomination int32              `db:"denomination" json:"denomination"`
+	Count        int32              `db:"count" json:"count"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 type Cashier struct {
@@ -27,6 +34,7 @@ type Cashier struct {
 	Active    bool               `db:"active" json:"active"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	Role      string             `db:"role" json:"role"`
 }
 
 type Discount struct {
@@ -49,6 +57,26 @@ type GuestWifiUser struct {
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
+type ManagerSession struct {
+	ID            int32              `db:"id" json:"id"`
+	ManagerUserID int32              `db:"manager_user_id" json:"manager_user_id"`
+	TokenHash     string             `db:"token_hash" json:"token_hash"`
+	ExpiresAt     pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	RevokedAt     pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+}
+
+type ManagerUser struct {
+	ID           int32              `db:"id" json:"id"`
+	Username     string             `db:"username" json:"username"`
+	PasswordHash string             `db:"password_hash" json:"password_hash"`
+	Name         string             `db:"name" json:"name"`
+	Role         string             `db:"role" json:"role"`
+	Active       bool               `db:"active" json:"active"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
 type Member struct {
 	ID        int32              `db:"id" json:"id"`
 	Phone     string             `db:"phone" json:"phone"`
@@ -65,6 +93,14 @@ type Menu struct {
 	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
 	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
 	Active     bool        `db:"active" json:"active"`
+}
+
+type MenuBaseOption struct {
+	ID        int32  `db:"id" json:"id"`
+	MenuID    int32  `db:"menu_id" json:"menu_id"`
+	Name      string `db:"name" json:"name"`
+	Price     int64  `db:"price" json:"price"`
+	SortOrder int32  `db:"sort_order" json:"sort_order"`
 }
 
 type MenuCategory struct {
@@ -117,12 +153,13 @@ type OrderDiscount struct {
 }
 
 type OrderItem struct {
-	ID      int32       `db:"id" json:"id"`
-	OrderID int32       `db:"order_id" json:"order_id"`
-	MenuID  pgtype.Int4 `db:"menu_id" json:"menu_id"`
-	Name    string      `db:"name" json:"name"`
-	Price   int64       `db:"price" json:"price"`
-	Qty     int32       `db:"qty" json:"qty"`
+	ID             int32       `db:"id" json:"id"`
+	OrderID        int32       `db:"order_id" json:"order_id"`
+	MenuID         pgtype.Int4 `db:"menu_id" json:"menu_id"`
+	Name           string      `db:"name" json:"name"`
+	Price          int64       `db:"price" json:"price"`
+	Qty            int32       `db:"qty" json:"qty"`
+	BaseOptionName pgtype.Text `db:"base_option_name" json:"base_option_name"`
 }
 
 type OrderItemOption struct {

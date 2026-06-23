@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	baseoptionservice "mulan/internal/baseoption/service"
 	"mulan/sqlc"
 )
 
@@ -68,6 +69,23 @@ func TestToMenuResponse(t *testing.T) {
 				t.Fatalf("vfd: got %v want %v", got.VfdName, tc.want.VfdName)
 			}
 		})
+	}
+}
+
+func TestToMenuBaseOptions(t *testing.T) {
+	in := []baseoptionservice.BaseOption{
+		{ID: 1, Name: "Hot", Price: 5000},
+		{ID: 2, Name: "Iced", Price: 8000},
+	}
+	got := toMenuBaseOptions(in)
+	if len(got) != 2 {
+		t.Fatalf("len = %d want 2", len(got))
+	}
+	if got[0].Name != "Hot" || got[0].Price != 50 {
+		t.Errorf("got[0] = %+v want {1 Hot 50}", got[0])
+	}
+	if got[1].Name != "Iced" || got[1].Price != 80 {
+		t.Errorf("got[1] = %+v want {2 Iced 80}", got[1])
 	}
 }
 

@@ -11,10 +11,79 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adjustCashDrawerDenomination = `-- name: AdjustCashDrawerDenomination :one
+UPDATE cash_drawer_denominations
+SET count = count + $1, updated_at = now()
+WHERE denomination = $2
+RETURNING denomination, count
+`
+
+type AdjustCashDrawerDenominationParams struct {
+	Delta        int32 `db:"delta" json:"delta"`
+	Denomination int32 `db:"denomination" json:"denomination"`
+}
+
+type AdjustCashDrawerDenominationRow struct {
+	Denomination int32 `db:"denomination" json:"denomination"`
+	Count        int32 `db:"count" json:"count"`
+}
+
+// Relative add/remove (delta is signed). RETURNING lets the caller confirm the
+// row existed; the CHECK (count >= 0) makes an over-subtraction fail the
+// statement (and tx). The param is named `delta` (not `count`) to make clear it
+// is an increment, unlike SetCashDrawerDenomination's absolute count.
+func (q *Queries) AdjustCashDrawerDenomination(ctx context.Context, arg AdjustCashDrawerDenominationParams) (AdjustCashDrawerDenominationRow, error) {
+	row := q.db.QueryRow(ctx, adjustCashDrawerDenomination, arg.Delta, arg.Denomination)
+	var i AdjustCashDrawerDenominationRow
+	err := row.Scan(&i.Denomination, &i.Count)
+	return i, err
+}
+
+const appendCashDrawerDenomEvent = `-- name: AppendCashDrawerDenomEvent :one
+INSERT INTO cash_drawer_audit (event_type, amount, delta, note, actor, terminal, denominations)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, event_type, amount, delta, note, actor, terminal, created_at, denominations
+`
+
+type AppendCashDrawerDenomEventParams struct {
+	EventType     string      `db:"event_type" json:"event_type"`
+	Amount        pgtype.Int8 `db:"amount" json:"amount"`
+	Delta         pgtype.Int8 `db:"delta" json:"delta"`
+	Note          pgtype.Text `db:"note" json:"note"`
+	Actor         pgtype.Text `db:"actor" json:"actor"`
+	Terminal      pgtype.Text `db:"terminal" json:"terminal"`
+	Denominations []byte      `db:"denominations" json:"denominations"`
+}
+
+func (q *Queries) AppendCashDrawerDenomEvent(ctx context.Context, arg AppendCashDrawerDenomEventParams) (CashDrawerAudit, error) {
+	row := q.db.QueryRow(ctx, appendCashDrawerDenomEvent,
+		arg.EventType,
+		arg.Amount,
+		arg.Delta,
+		arg.Note,
+		arg.Actor,
+		arg.Terminal,
+		arg.Denominations,
+	)
+	var i CashDrawerAudit
+	err := row.Scan(
+		&i.ID,
+		&i.EventType,
+		&i.Amount,
+		&i.Delta,
+		&i.Note,
+		&i.Actor,
+		&i.Terminal,
+		&i.CreatedAt,
+		&i.Denominations,
+	)
+	return i, err
+}
+
 const appendCashDrawerEvent = `-- name: AppendCashDrawerEvent :one
 INSERT INTO cash_drawer_audit (event_type, amount, delta, note, actor, terminal)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, event_type, amount, delta, note, actor, terminal, created_at
+RETURNING id, event_type, amount, delta, note, actor, terminal, created_at, denominations
 `
 
 type AppendCashDrawerEventParams struct {
@@ -45,6 +114,38 @@ func (q *Queries) AppendCashDrawerEvent(ctx context.Context, arg AppendCashDrawe
 		&i.Actor,
 		&i.Terminal,
 		&i.CreatedAt,
+		&i.Denominations,
 	)
 	return i, err
+}
+
+const seedCashDrawerDenomination = `-- name: SeedCashDrawerDenomination :exec
+INSERT INTO cash_drawer_denominations (denomination, count)
+VALUES ($1, 0)
+ON CONFLICT (denomination) DO NOTHING
+`
+
+// Idempotent insert of one denomination row; does nothing if it already exists
+// so startup can run unconditionally without clobbering live counts.
+func (q *Queries) SeedCashDrawerDenomination(ctx context.Context, denomination int32) error {
+	_, err := q.db.Exec(ctx, seedCashDrawerDenomination, denomination)
+	return err
+}
+
+const setCashDrawerDenomination = `-- name: SetCashDrawerDenomination :exec
+UPDATE cash_drawer_denominations
+SET count = $2, updated_at = now()
+WHERE denomination = $1
+`
+
+type SetCashDrawerDenominationParams struct {
+	Denomination int32 `db:"denomination" json:"denomination"`
+	Count        int32 `db:"count" json:"count"`
+}
+
+// Absolute set of one denomination's count. Negative counts are rejected by the
+// table CHECK; the caller validates before calling.
+func (q *Queries) SetCashDrawerDenomination(ctx context.Context, arg SetCashDrawerDenominationParams) error {
+	_, err := q.db.Exec(ctx, setCashDrawerDenomination, arg.Denomination, arg.Count)
+	return err
 }

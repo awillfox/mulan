@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -29,28 +30,40 @@ const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // Sentinel errors translated to specific HTTP statuses by the handler.
 var (
-	ErrAlreadyPaid     = errors.New("order already paid")
-	ErrNoItems         = errors.New("no items")
-	ErrUnknownMenu     = errors.New("unknown menu")
-	ErrMenuInactive    = errors.New("menu inactive")
-	ErrInvalidOption   = errors.New("option not allowed for menu")
-	ErrUnknownOption   = errors.New("unknown option")
-	ErrMissingRequired = errors.New("missing required option")
-	ErrOrderNotFound    = errors.New("order not found")
-	ErrNotHeld          = errors.New("order is not held")
-	ErrCannotHold       = errors.New("order cannot be held")
-	ErrUnknownDiscount  = errors.New("unknown discount")
-	ErrDiscountInactive = errors.New("discount inactive")
+	ErrAlreadyPaid       = errors.New("order already paid")
+	ErrNoItems           = errors.New("no items")
+	ErrUnknownMenu       = errors.New("unknown menu")
+	ErrMenuInactive      = errors.New("menu inactive")
+	ErrInvalidOption     = errors.New("option not allowed for menu")
+	ErrUnknownOption     = errors.New("unknown option")
+	ErrMissingRequired   = errors.New("missing required option")
+	ErrMissingBaseOption = errors.New("missing base option")
+	ErrInvalidBaseOption = errors.New("invalid base option for menu")
+	ErrOrderNotFound     = errors.New("order not found")
+	ErrNotHeld           = errors.New("order is not held")
+	ErrCannotHold        = errors.New("order cannot be held")
+	ErrUnknownDiscount   = errors.New("unknown discount")
+	ErrDiscountInactive  = errors.New("discount inactive")
+	ErrShortTender       = errors.New("cash tendered is less than amount due")
+	ErrChangeNotMakeable = errors.New("cannot make change from drawer")
 )
+
+// CashDrawer is the subset of cashdrawer/service used at checkout. Defined here
+// (consumer side) to avoid a hard import cycle and keep the dependency explicit.
+type CashDrawer interface {
+	MakeChange(ctx context.Context, changeSatang int64) (map[int64]int, error)
+	ApplyCashSale(ctx context.Context, q *sqlc.Queries, tender, change map[int64]int, actor string) error
+}
 
 type OrderService struct {
 	pool     *pgxpool.Pool
 	q        *sqlc.Queries
 	settings *settingsservice.SettingsService
+	drawer   CashDrawer
 }
 
-func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsservice.SettingsService) *OrderService {
-	return &OrderService{pool: pool, q: q, settings: settings}
+func NewOrderService(pool *pgxpool.Pool, q *sqlc.Queries, settings *settingsservice.SettingsService, drawer CashDrawer) *OrderService {
+	return &OrderService{pool: pool, q: q, settings: settings, drawer: drawer}
 }
 
 type CreatedOrder struct {
@@ -74,10 +87,11 @@ func (s *OrderService) Create(ctx context.Context) (CreatedOrder, error) {
 // only trusts MenuID, Qty, OptionIDs, and DiscountIDs — Name and Price are
 // looked up server-side from the menus/options tables.
 type CheckoutItemInput struct {
-	MenuID      int32
-	Qty         int32
-	OptionIDs   []int32
-	DiscountIDs []int32 // per-line discounts applied to this line
+	MenuID       int32
+	Qty          int32
+	OptionIDs    []int32
+	DiscountIDs  []int32 // per-line discounts applied to this line
+	BaseOptionID int32   // chosen base option (0 = none)
 }
 
 // CustomerInput is the optional membership capture at checkout. An empty Phone
@@ -85,6 +99,15 @@ type CheckoutItemInput struct {
 type CustomerInput struct {
 	Phone string
 	Name  string
+}
+
+// CashPayment carries the per-denomination tender for a cash sale. Empty (nil or
+// IsCash=false) means a non-cash sale and the drawer is untouched. Tender is
+// satang-keyed denomination -> count.
+type CashPayment struct {
+	IsCash bool
+	Tender map[int64]int
+	Actor  string
 }
 
 // Checkout finalises an open order: it validates every line against the
@@ -98,7 +121,7 @@ type CustomerInput struct {
 // whole-order discounts reduce the net subtotal, then VAT is computed on the
 // discounted subtotal. Every applied discount is clamped so no line — and the
 // order total — can never go below zero.
-func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32, customer CustomerInput) (*domain.CheckoutResult, error) {
+func (s *OrderService) Checkout(ctx context.Context, code string, items []CheckoutItemInput, orderDiscountIDs []int32, customer CustomerInput, cash CashPayment) (*domain.CheckoutResult, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -133,6 +156,10 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 	if err != nil {
 		return nil, err
 	}
+	baseOptsByMenu, err := loadBaseOptions(ctx, q, menuByID)
+	if err != nil {
+		return nil, err
+	}
 	discByID, err := loadDiscounts(ctx, q, items, orderDiscountIDs)
 	if err != nil {
 		return nil, err
@@ -157,16 +184,22 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			return nil, err
 		}
 
-		unitPrice := m.Price + deltaSum
+		basePrice, baseName, err := resolveLineBase(m.Price, baseOptsByMenu[m.ID], in.BaseOptionID)
+		if err != nil {
+			return nil, err
+		}
+
+		unitPrice := basePrice + deltaSum
 		lineTotal := unitPrice * int64(in.Qty)
 		subtotalSatang += lineTotal
 
 		itemID, err := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
-			OrderID: order.ID,
-			MenuID:  pgtype.Int4{Int32: m.ID, Valid: true},
-			Name:    m.Name,
-			Price:   m.Price,
-			Qty:     in.Qty,
+			OrderID:        order.ID,
+			MenuID:         pgtype.Int4{Int32: m.ID, Valid: true},
+			Name:           m.Name,
+			Price:          basePrice,
+			Qty:            in.Qty,
+			BaseOptionName: textOrNull(baseName),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("insert order item: %w", err)
@@ -217,10 +250,11 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		}
 
 		resultItems = append(resultItems, domain.CheckoutResultItem{
-			Name:    m.Name,
-			Price:   m.Price,
-			Qty:     in.Qty,
-			Options: opts,
+			Name:           m.Name,
+			Price:          basePrice,
+			Qty:            in.Qty,
+			Options:        opts,
+			BaseOptionName: baseName,
 		})
 	}
 
@@ -267,6 +301,30 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		cfg.VatPercent,
 	)
 	totalSatang := t.CustomerPays
+
+	// Cash payment: round the amount due to whole baht, validate tender, compute
+	// the change breakdown against live drawer stock, and apply the movement in
+	// this same transaction so the drawer can never drift from the sale.
+	var roundedDueSatang, changeSatang int64
+	var changeBreakdown map[int64]int
+	if cash.IsCash {
+		roundedDueSatang = roundToBaht(totalSatang)
+		var tenderSatang int64
+		for d, c := range cash.Tender {
+			tenderSatang += d * int64(c)
+		}
+		if tenderSatang < roundedDueSatang {
+			return nil, ErrShortTender
+		}
+		changeSatang = tenderSatang - roundedDueSatang
+		changeBreakdown, err = s.drawer.MakeChange(ctx, changeSatang)
+		if err != nil {
+			return nil, ErrChangeNotMakeable
+		}
+		if err := s.drawer.ApplyCashSale(ctx, q, cash.Tender, changeBreakdown, cash.Actor); err != nil {
+			return nil, fmt.Errorf("apply cash sale: %w", err)
+		}
+	}
 
 	var memberID pgtype.Int4
 	var pointsEarned int64
@@ -338,6 +396,10 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 		MemberPhone:   memberPhone,
 		PointsEarned:  pointsEarned,
 		PointsBalance: pointsBalance,
+
+		RoundedDue:      float64(roundedDueSatang) / 100,
+		Change:          float64(changeSatang) / 100,
+		ChangeBreakdown: breakdownToStringMap(changeBreakdown),
 	}, nil
 }
 
@@ -497,6 +559,27 @@ func loadOptions(ctx context.Context, q *sqlc.Queries, items []CheckoutItemInput
 	return out, nil
 }
 
+// loadBaseOptions returns the base options attached to each menu being ordered,
+// keyed by menu id. Menus with no base options simply have no entry.
+func loadBaseOptions(ctx context.Context, q *sqlc.Queries, menus map[int32]sqlc.Menu) (map[int32][]sqlc.MenuBaseOption, error) {
+	ids := make([]int32, 0, len(menus))
+	for id := range menus {
+		ids = append(ids, id)
+	}
+	out := make(map[int32][]sqlc.MenuBaseOption, len(menus))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := q.ListBaseOptionsByMenuIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load base options: %w", err)
+	}
+	for _, b := range rows {
+		out[b.MenuID] = append(out[b.MenuID], b)
+	}
+	return out, nil
+}
+
 // resolveLineOptions returns the (server-trusted) options for one line and
 // their summed price delta. Each option must belong to an option group that
 // is attached to the menu being ordered, otherwise we reject the line —
@@ -517,6 +600,36 @@ func resolveLineOptions(in CheckoutItemInput, optByID map[int32]sqlc.Option, all
 		delta += o.PriceDelta
 	}
 	return opts, delta, nil
+}
+
+// resolveLineBase returns the per-unit base price and snapshot name for a line.
+// When the menu has base options exactly one valid baseOptionID is required and
+// its absolute price becomes the line base. When the menu has none, baseOptionID
+// must be zero and the base is the menu's own price.
+func resolveLineBase(menuPrice int64, baseOpts []sqlc.MenuBaseOption, baseOptionID int32) (int64, string, error) {
+	if len(baseOpts) == 0 {
+		if baseOptionID != 0 {
+			return 0, "", ErrInvalidBaseOption
+		}
+		return menuPrice, "", nil
+	}
+	if baseOptionID == 0 {
+		return 0, "", ErrMissingBaseOption
+	}
+	for _, b := range baseOpts {
+		if b.ID == baseOptionID {
+			return b.Price, b.Name, nil
+		}
+	}
+	return 0, "", ErrInvalidBaseOption
+}
+
+// textOrNull wraps a snapshot string into pgtype.Text, mapping "" to SQL NULL.
+func textOrNull(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
 }
 
 func uniqueMenuIDs(items []CheckoutItemInput) []int32 {
@@ -651,4 +764,27 @@ func generateCode() (string, error) {
 		code[i] = codeChars[int(v)%len(codeChars)]
 	}
 	return string(code), nil
+}
+
+// roundToBaht rounds a satang amount to the nearest whole baht (100 satang).
+// Cash is settled in whole baht because the smallest tracked coin is ฿1.
+func roundToBaht(satang int64) int64 {
+	r := satang % 100
+	if r == 0 {
+		return satang
+	}
+	if r >= 50 {
+		return satang - r + 100
+	}
+	return satang - r
+}
+
+// breakdownToStringMap converts a satang-keyed change breakdown to the
+// string-keyed shape the JSON API uses (nil-safe → empty map).
+func breakdownToStringMap(b map[int64]int) map[string]int {
+	out := make(map[string]int, len(b))
+	for d, n := range b {
+		out[strconv.FormatInt(d, 10)] = n
+	}
+	return out
 }

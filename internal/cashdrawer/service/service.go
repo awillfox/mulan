@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mulan/sqlc"
 )
@@ -20,11 +21,11 @@ import (
 // Event types persisted in cash_drawer_audit.event_type. Must match the CHECK
 // constraint declared in schema.hcl.
 const (
-	EventSet            = "set"
-	EventClear          = "clear"
-	EventAdjust         = "adjust"
-	EventKick           = "kick"
-	EventOpenForChange  = "open_for_change"
+	EventSet           = "set"
+	EventClear         = "clear"
+	EventAdjust        = "adjust"
+	EventKick          = "kick"
+	EventOpenForChange = "open_for_change"
 )
 
 var ErrInvalidAmount = errors.New("amount must be >= 0")
@@ -52,11 +53,12 @@ type AuditEvent struct {
 }
 
 type Service struct {
-	q *sqlc.Queries
+	pool *pgxpool.Pool
+	q    *sqlc.Queries
 }
 
-func NewService(q *sqlc.Queries) *Service {
-	return &Service{q: q}
+func NewService(pool *pgxpool.Pool, q *sqlc.Queries) *Service {
+	return &Service{pool: pool, q: q}
 }
 
 // SetFloat records an absolute float reading. Pass amount in satang. Delta is

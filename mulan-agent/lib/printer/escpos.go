@@ -86,10 +86,11 @@ type OrderItemOption struct {
 
 // OrderItem is one line item on the receipt.
 type OrderItem struct {
-	Name    string
-	Qty     int
-	Price   float64 // per unit base price, THB
-	Options []OrderItemOption
+	Name           string
+	Qty            int
+	Price          float64 // per unit base price, THB
+	Options        []OrderItemOption
+	BaseOptionName string // chosen base option, e.g. "Iced" (empty = none)
 }
 
 func (it OrderItem) UnitPrice() float64 {
@@ -98,6 +99,16 @@ func (it OrderItem) UnitPrice() float64 {
 		p += o.PriceDelta
 	}
 	return p
+}
+
+// displayName returns the line label with the chosen base option in
+// parentheses, e.g. "Americano (Iced)". The base option's price is already
+// baked into Price, so it is never printed as a separate sub-line.
+func (it OrderItem) displayName() string {
+	if it.BaseOptionName != "" {
+		return it.Name + " (" + it.BaseOptionName + ")"
+	}
+	return it.Name
 }
 
 // MemberInfo is the optional loyalty block printed on the receipt footer.
@@ -163,7 +174,7 @@ func (p *Printer) PrintOrderBill(orderCode string, items []OrderItem) error {
 
 	// Items — qty x name, no price; options indented as sub-lines
 	for _, it := range items {
-		writeln(fmt.Sprintf("%d x %s", it.Qty, it.Name))
+		writeln(fmt.Sprintf("%d x %s", it.Qty, it.displayName()))
 		for _, o := range it.Options {
 			writeln("    - " + o.Name)
 		}
@@ -271,7 +282,7 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 	// the print edge so column reading stays clean across all rows.
 	for _, it := range items {
 		amount := it.UnitPrice() * float64(it.Qty)
-		writeRow(it.Name, fmt.Sprintf("%d   %9.2f", it.Qty, amount))
+		writeRow(it.displayName(), fmt.Sprintf("%d   %9.2f", it.Qty, amount))
 		for _, o := range it.Options {
 			delta := ""
 			if o.PriceDelta > 0 {

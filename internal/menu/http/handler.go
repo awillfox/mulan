@@ -9,6 +9,7 @@ import (
 
 	"github.com/Rhymond/go-money"
 
+	baseoptionservice "mulan/internal/baseoption/service"
 	"mulan/internal/httpx"
 	"mulan/internal/hub"
 	"mulan/internal/menu/service"
@@ -18,9 +19,10 @@ import (
 )
 
 type MenuHandler struct {
-	svc       *service.MenuService
-	optionsvc *optiongroupservice.Service
-	hub       *hub.Hub
+	svc           *service.MenuService
+	optionsvc     *optiongroupservice.Service
+	baseoptionsvc *baseoptionservice.Service
+	hub           *hub.Hub
 }
 
 type menuOptionResponse struct {
@@ -37,6 +39,12 @@ type menuOptionGroupResponse struct {
 	Options       []menuOptionResponse `json:"options"`
 }
 
+type menuBaseOptionResponse struct {
+	ID    int32   `json:"id"`
+	Name  string  `json:"name"`
+	Price float64 `json:"price"`
+}
+
 type menuResponse struct {
 	ID           int                       `json:"id"`
 	Name         string                    `json:"name"`
@@ -45,10 +53,11 @@ type menuResponse struct {
 	VfdName      *string                   `json:"vfd_name,omitempty"`
 	Active       bool                      `json:"active"`
 	OptionGroups []menuOptionGroupResponse `json:"option_groups"`
+	BaseOptions  []menuBaseOptionResponse  `json:"base_options"`
 }
 
-func NewMenuHandler(s *service.MenuService, optionsvc *optiongroupservice.Service, h *hub.Hub) *MenuHandler {
-	return &MenuHandler{svc: s, optionsvc: optionsvc, hub: h}
+func NewMenuHandler(s *service.MenuService, optionsvc *optiongroupservice.Service, baseoptionsvc *baseoptionservice.Service, h *hub.Hub) *MenuHandler {
+	return &MenuHandler{svc: s, optionsvc: optionsvc, baseoptionsvc: baseoptionsvc, hub: h}
 }
 
 func toMenuResponse(m sqlc.Menu) menuResponse {
@@ -68,6 +77,7 @@ func toMenuResponse(m sqlc.Menu) menuResponse {
 		VfdName:      vfdName,
 		Active:       m.Active,
 		OptionGroups: []menuOptionGroupResponse{},
+		BaseOptions:  []menuBaseOptionResponse{},
 	}
 }
 
@@ -88,6 +98,18 @@ func toMenuOptionGroups(groups []optiongroupservice.GroupWithOptions) []menuOpti
 			SelectionMode: g.Group.SelectionMode,
 			Isolated:      g.Group.OwnerMenuID.Valid,
 			Options:       opts,
+		}
+	}
+	return out
+}
+
+func toMenuBaseOptions(opts []baseoptionservice.BaseOption) []menuBaseOptionResponse {
+	out := make([]menuBaseOptionResponse, len(opts))
+	for i, o := range opts {
+		out[i] = menuBaseOptionResponse{
+			ID:    o.ID,
+			Name:  o.Name,
+			Price: money.New(o.Price, money.THB).AsMajorUnits(),
 		}
 	}
 	return out
@@ -116,10 +138,16 @@ func (h *MenuHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusInternalServerError, "failed to list menu options", err)
 		return
 	}
+	baseByMenu, err := h.baseoptionsvc.ForMenus(r.Context(), ids)
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "failed to list menu base options", err)
+		return
+	}
 	out := make([]menuResponse, len(menus))
 	for i, m := range menus {
 		mr := toMenuResponse(m)
 		mr.OptionGroups = toMenuOptionGroups(groupsByMenu[m.ID])
+		mr.BaseOptions = toMenuBaseOptions(baseByMenu[m.ID])
 		out[i] = mr
 	}
 	response.OK(w, r, out)

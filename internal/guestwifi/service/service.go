@@ -19,10 +19,10 @@ const (
 )
 
 type Config struct {
-	Host         string // e.g. "192.168.1.39"
-	Port         int    // 8728
-	User         string
-	Password     string
+	Host          string // e.g. "192.168.1.39"
+	Port          int    // 8728
+	User          string
+	Password      string
 	HotspotServer string
 }
 

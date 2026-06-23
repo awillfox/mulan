@@ -135,6 +135,11 @@ table "cashiers" {
     null    = false
     default = true
   }
+  column "role" {
+    type    = varchar(20)
+    null    = false
+    default = "cashier"
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -152,6 +157,9 @@ table "cashiers" {
   index "cashiers_login_id_key" {
     columns = [column.login_id]
     unique  = true
+  }
+  check "cashiers_role_check" {
+    expr = "role IN ('cashier', 'manager')"
   }
 }
 
@@ -280,6 +288,10 @@ table "cash_drawer_audit" {
     type = varchar(120)
     null = true
   }
+  column "denominations" {
+    type = jsonb
+    null = true
+  }
   column "created_at" {
     type    = timestamptz
     null    = false
@@ -296,7 +308,33 @@ table "cash_drawer_audit" {
     columns = [column.event_type, column.created_at]
   }
   check "cash_drawer_audit_event_type" {
-    expr = "event_type IN ('set','clear','adjust','kick','open_for_change')"
+    expr = "event_type IN ('set','clear','adjust','kick','open_for_change','sale')"
+  }
+}
+
+table "cash_drawer_denominations" {
+  schema = schema.public
+
+  column "denomination" {
+    type = integer
+    null = false
+  }
+  column "count" {
+    type    = integer
+    null    = false
+    default = 0
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.denomination]
+  }
+  check "cash_drawer_denominations_count_nonneg" {
+    expr = "count >= 0"
   }
 }
 
@@ -326,6 +364,12 @@ table "order_items" {
   column "qty" {
     type = int
     null = false
+  }
+  # Snapshot of the chosen base option's name (e.g. "Iced"). NULL when the
+  # menu has no base options. The chosen base price is stored in `price`.
+  column "base_option_name" {
+    type = varchar(255)
+    null = true
   }
 
   primary_key {
@@ -552,6 +596,46 @@ table "menus" {
   }
 }
 
+table "menu_base_options" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "menu_id" {
+    type = int
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  # Absolute, VAT-inclusive satang price. Picking this base option sets the
+  # whole line's base price (it does NOT add to menus.price).
+  column "price" {
+    type = bigint
+    null = false
+  }
+  column "sort_order" {
+    type    = int
+    null    = false
+    default = 0
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_mbo_menu" {
+    columns     = [table.menu_base_options.column.menu_id]
+    ref_columns = [table.menus.column.id]
+    on_delete   = CASCADE
+  }
+  index "menu_base_options_menu_sort" {
+    columns = [column.menu_id, column.sort_order]
+  }
+}
+
 table "discounts" {
   schema = schema.public
 
@@ -664,5 +748,103 @@ table "order_discounts" {
   }
   index "order_discounts_order" {
     columns = [column.order_id]
+  }
+}
+
+table "manager_users" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "username" {
+    type = varchar(50)
+    null = false
+  }
+  column "password_hash" {
+    type = varchar(255)
+    null = false
+  }
+  column "name" {
+    type = varchar(255)
+    null = false
+  }
+  column "role" {
+    type    = varchar(20)
+    null    = false
+    default = "staff"
+  }
+  column "active" {
+    type    = boolean
+    null    = false
+    default = true
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "manager_users_username_key" {
+    columns = [column.username]
+    unique  = true
+  }
+  check "manager_users_role_check" {
+    expr = "role IN ('owner', 'staff')"
+  }
+}
+
+table "manager_sessions" {
+  schema = schema.public
+
+  column "id" {
+    type = serial
+    null = false
+  }
+  column "manager_user_id" {
+    type = integer
+    null = false
+  }
+  column "token_hash" {
+    type = varchar(64)
+    null = false
+  }
+  column "expires_at" {
+    type = timestamptz
+    null = false
+  }
+  column "created_at" {
+    type    = timestamptz
+    null    = false
+    default = sql("now()")
+  }
+  column "revoked_at" {
+    type = timestamptz
+    null = true
+  }
+
+  primary_key {
+    columns = [column.id]
+  }
+  index "manager_sessions_token_hash_key" {
+    columns = [column.token_hash]
+    unique  = true
+  }
+  index "manager_sessions_user_idx" {
+    columns = [column.manager_user_id]
+  }
+  foreign_key "manager_sessions_user_fk" {
+    columns     = [column.manager_user_id]
+    ref_columns = [table.manager_users.column.id]
+    on_delete   = CASCADE
   }
 }

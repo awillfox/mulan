@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/Rhymond/go-money"
 	"github.com/go-chi/chi/v5"
 
+	cashdrawerservice "mulan/internal/cashdrawer/service"
 	"mulan/internal/order/service"
 	"mulan/internal/response"
 )
@@ -152,10 +154,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 type checkoutItemRequest struct {
-	MenuID      int32   `json:"menu_id"`
-	Qty         int32   `json:"qty"`
-	OptionIDs   []int32 `json:"option_ids"`
-	DiscountIDs []int32 `json:"discount_ids"`
+	MenuID       int32   `json:"menu_id"`
+	BaseOptionID int32   `json:"base_option_id"`
+	Qty          int32   `json:"qty"`
+	OptionIDs    []int32 `json:"option_ids"`
+	DiscountIDs  []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
@@ -163,6 +166,9 @@ type checkoutRequest struct {
 	DiscountIDs   []int32               `json:"discount_ids"` // whole-order discounts
 	CustomerPhone string                `json:"customer_phone"`
 	CustomerName  string                `json:"customer_name"`
+	PaymentMethod string                `json:"payment_method"`
+	CashTender    map[string]int        `json:"cash_tender"` // satang string -> count
+	CashierName   string                `json:"cashier_name"`
 }
 
 type checkoutOptionResponse struct {
@@ -171,10 +177,11 @@ type checkoutOptionResponse struct {
 }
 
 type checkoutItemResponse struct {
-	Name    string                   `json:"name"`
-	Price   float64                  `json:"price"`
-	Qty     int32                    `json:"qty"`
-	Options []checkoutOptionResponse `json:"options"`
+	Name           string                   `json:"name"`
+	Price          float64                  `json:"price"`
+	Qty            int32                    `json:"qty"`
+	Options        []checkoutOptionResponse `json:"options"`
+	BaseOptionName string                   `json:"base_option_name,omitempty"`
 }
 
 type checkoutDiscountResponse struct {
@@ -185,23 +192,26 @@ type checkoutDiscountResponse struct {
 }
 
 type checkoutResponse struct {
-	Code          string                     `json:"code"`
-	Subtotal      float64                    `json:"subtotal"`
-	Discount      float64                    `json:"discount"`
-	Subsidy       float64                    `json:"subsidy"`
-	VAT           float64                    `json:"vat"`
-	VATPercent    float64                    `json:"vat_percent"`
-	ShopName      string                     `json:"shop_name"`
-	ReceiptFooter string                     `json:"receipt_footer"`
-	Total         float64                    `json:"total"`
-	Items         []checkoutItemResponse     `json:"items"`
-	Discounts     []checkoutDiscountResponse `json:"discounts"`
-	HasMember     bool                       `json:"has_member"`
-	MemberName    string                     `json:"member_name,omitempty"`
-	MemberPhone   string                     `json:"member_phone,omitempty"`
-	PointsEarned  int64                      `json:"points_earned"`
-	PointsBalance int64                      `json:"points_balance"`
-	WifiUsername  string                     `json:"wifi_username,omitempty"`
+	Code            string                     `json:"code"`
+	Subtotal        float64                    `json:"subtotal"`
+	Discount        float64                    `json:"discount"`
+	Subsidy         float64                    `json:"subsidy"`
+	VAT             float64                    `json:"vat"`
+	VATPercent      float64                    `json:"vat_percent"`
+	ShopName        string                     `json:"shop_name"`
+	ReceiptFooter   string                     `json:"receipt_footer"`
+	Total           float64                    `json:"total"`
+	Items           []checkoutItemResponse     `json:"items"`
+	Discounts       []checkoutDiscountResponse `json:"discounts"`
+	HasMember       bool                       `json:"has_member"`
+	MemberName      string                     `json:"member_name,omitempty"`
+	MemberPhone     string                     `json:"member_phone,omitempty"`
+	PointsEarned    int64                      `json:"points_earned"`
+	PointsBalance   int64                      `json:"points_balance"`
+	WifiUsername    string                     `json:"wifi_username,omitempty"`
+	RoundedDue      float64                    `json:"rounded_due"`
+	Change          float64                    `json:"change"`
+	ChangeBreakdown map[string]int             `json:"change_breakdown"`
 }
 
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
@@ -220,17 +230,36 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	items := make([]service.CheckoutItemInput, len(req.Items))
 	for i, it := range req.Items {
 		items[i] = service.CheckoutItemInput{
-			MenuID:      it.MenuID,
-			Qty:         it.Qty,
-			OptionIDs:   it.OptionIDs,
-			DiscountIDs: it.DiscountIDs,
+			MenuID:       it.MenuID,
+			Qty:          it.Qty,
+			OptionIDs:    it.OptionIDs,
+			DiscountIDs:  it.DiscountIDs,
+			BaseOptionID: it.BaseOptionID,
 		}
+	}
+
+	cash := service.CashPayment{}
+	if req.PaymentMethod == "cash" {
+		tender := make(map[int64]int, len(req.CashTender))
+		for k, v := range req.CashTender {
+			d, perr := strconv.ParseInt(k, 10, 64)
+			if perr != nil || !cashdrawerservice.TrackedDenom(d) {
+				response.Error(w, r, http.StatusBadRequest, "invalid denomination key", perr)
+				return
+			}
+			if v < 0 {
+				response.Error(w, r, http.StatusBadRequest, "tender count must be >= 0", nil)
+				return
+			}
+			tender[d] = v
+		}
+		cash = service.CashPayment{IsCash: true, Tender: tender, Actor: req.CashierName}
 	}
 
 	result, err := h.svc.Checkout(r.Context(), code, items, req.DiscountIDs, service.CustomerInput{
 		Phone: req.CustomerPhone,
 		Name:  req.CustomerName,
-	})
+	}, cash)
 	if err != nil {
 		status, msg := classifyCheckoutError(err)
 		response.Error(w, r, status, msg, err)
@@ -247,10 +276,11 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		respItems[i] = checkoutItemResponse{
-			Name:    it.Name,
-			Price:   money.New(it.Price, money.THB).AsMajorUnits(),
-			Qty:     it.Qty,
-			Options: opts,
+			Name:           it.Name,
+			Price:          money.New(it.Price, money.THB).AsMajorUnits(),
+			Qty:            it.Qty,
+			Options:        opts,
+			BaseOptionName: it.BaseOptionName,
 		}
 	}
 
@@ -274,23 +304,26 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.OK(w, r, checkoutResponse{
-		Code:          result.Code,
-		Subtotal:      result.Subtotal,
-		Discount:      result.Discount,
-		Subsidy:       result.Subsidy,
-		VAT:           result.VAT,
-		VATPercent:    result.VATPercent,
-		ShopName:      result.ShopName,
-		ReceiptFooter: result.ReceiptFooter,
-		Total:         result.Total,
-		Items:         respItems,
-		Discounts:     respDiscounts,
-		HasMember:     result.HasMember,
-		MemberName:    result.MemberName,
-		MemberPhone:   result.MemberPhone,
-		PointsEarned:  result.PointsEarned,
-		PointsBalance: result.PointsBalance,
-		WifiUsername:  wifiUsername,
+		Code:            result.Code,
+		Subtotal:        result.Subtotal,
+		Discount:        result.Discount,
+		Subsidy:         result.Subsidy,
+		VAT:             result.VAT,
+		VATPercent:      result.VATPercent,
+		ShopName:        result.ShopName,
+		ReceiptFooter:   result.ReceiptFooter,
+		Total:           result.Total,
+		Items:           respItems,
+		Discounts:       respDiscounts,
+		HasMember:       result.HasMember,
+		MemberName:      result.MemberName,
+		MemberPhone:     result.MemberPhone,
+		PointsEarned:    result.PointsEarned,
+		PointsBalance:   result.PointsBalance,
+		WifiUsername:    wifiUsername,
+		RoundedDue:      result.RoundedDue,
+		Change:          result.Change,
+		ChangeBreakdown: result.ChangeBreakdown,
 	})
 }
 
@@ -310,10 +343,18 @@ func classifyCheckoutError(err error) (int, string) {
 		return http.StatusBadRequest, "unknown option"
 	case errors.Is(err, service.ErrInvalidOption):
 		return http.StatusBadRequest, "option not valid for menu"
+	case errors.Is(err, service.ErrMissingBaseOption):
+		return http.StatusBadRequest, "base option required"
+	case errors.Is(err, service.ErrInvalidBaseOption):
+		return http.StatusBadRequest, "invalid base option for menu"
 	case errors.Is(err, service.ErrUnknownDiscount):
 		return http.StatusBadRequest, "unknown discount"
 	case errors.Is(err, service.ErrDiscountInactive):
 		return http.StatusBadRequest, "discount is not available"
+	case errors.Is(err, service.ErrShortTender):
+		return http.StatusBadRequest, "cash tendered is less than amount due"
+	case errors.Is(err, service.ErrChangeNotMakeable):
+		return http.StatusConflict, "cannot make exact change — restock the drawer"
 	default:
 		return http.StatusInternalServerError, "checkout failed"
 	}

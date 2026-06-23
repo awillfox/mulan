@@ -71,6 +71,6 @@ type noFlushWriter struct {
 	rec *httptest.ResponseRecorder
 }
 
-func (n *noFlushWriter) Header() http.Header     { return n.rec.Header() }
+func (n *noFlushWriter) Header() http.Header         { return n.rec.Header() }
 func (n *noFlushWriter) Write(b []byte) (int, error) { return n.rec.Write(b) }
-func (n *noFlushWriter) WriteHeader(c int)         { n.rec.WriteHeader(c) }
+func (n *noFlushWriter) WriteHeader(c int)           { n.rec.WriteHeader(c) }

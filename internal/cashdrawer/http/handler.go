@@ -26,12 +26,24 @@ func NewHandler(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// Routes registers the open (POS/agent-shared) cash-drawer endpoints. The
+// denomination WRITES are owner-gated and registered separately via OwnerRoutes.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.current)
 	r.Put("/float", h.setFloat)
 	r.Delete("/float", h.clearFloat)
 	r.Post("/kick", h.logKick)
 	r.Get("/audit", h.listAudit)
+	r.Get("/denominations", h.getDenominations)
+	r.Post("/change-preview", h.changePreview)
+}
+
+// OwnerRoutes registers the denomination write endpoints. main.go mounts these
+// under the same /cash-drawer prefix but wrapped in RequireRole(owner), so only
+// manager-auth owners can set/adjust the drawer's bill/coin counts.
+func (h *Handler) OwnerRoutes(r chi.Router) {
+	r.Put("/denominations", h.SetDenominations)
+	r.Post("/denominations/adjust", h.AdjustDenominations)
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────

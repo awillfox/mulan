@@ -121,8 +121,8 @@ func (h *Handler) PutLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.OK(w, r, map[string]any{
-		"size":      len(body),
-		"mime":      mime,
+		"size":       len(body),
+		"mime":       mime,
 		"updated_at": h.svc.GetLogo().UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }

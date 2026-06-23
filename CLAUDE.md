@@ -4,6 +4,10 @@
 Go-based Point of Sale (POS) system. Two modules:
 - **mulan** — main server (API, manager web UI)
 - **mulan-agent** — device agent running on POS terminal, serves POS UI, controls cash drawer (GS-410B) and VFD display (COM3)
+- **mulan-manager** (separate repo, `../mulan-manager`) — phone-first iOS-style **SvelteKit** frontend for the manager pages, deployed on render.com, consuming this backend's `/api/*` over Tailscale. Progressively replacing the Go `html/template` `/manager/*` pages (those still serve until fully replaced).
+
+## Deployment
+The backend runs on tailnet node **chaiyarak** (`100.109.90.83`) as **systemd service `mulan`** in `~/mulan-deploy/` (static `CGO_ENABLED=0` linux/amd64 binary + `templates/` + `elements/` + `.env`; DB = local Postgres on that host). Update: cross-build → `scp` to `~/mulan-deploy/mulan.new` → `mv -f mulan.new mulan` (can't overwrite a running binary — ETXTBSY) → `sudo systemctl restart mulan`. The render frontend reaches it at `http://100.109.90.83:8085` over Tailscale.
 
 Claude will update CLAUDE.md a long the way
 
@@ -36,6 +40,10 @@ Claude will update CLAUDE.md a long the way
 - `/manager/settings` — shop name + VAT percent (persisted in DB)
 
 ## API Endpoints
+
+**Auth (manager) — manager `/api/*` routes are auth-scoped; see Manager Authentication below. POS-shared reads stay open.**
+- `POST /api/auth/login` — `{username,password}` → `{token, expires_at, user:{id,username,name,role}}` (opaque bearer)
+- `POST /api/auth/logout` · `GET /api/auth/me` · `POST /api/auth/change-password` `{current_password,new_password}` — require bearer
 - `GET /api/menus` — returns list of menus (currently mock data)
 - `GET /api/menu-categories` — list all menu categories
 - `POST /api/menu-categories` — create a menu category `{name}`
@@ -57,17 +65,41 @@ Claude will update CLAUDE.md a long the way
 - `PATCH /api/options/{id}` — update option
 - `DELETE /api/options/{id}` — delete option
 - `PUT /api/menus/{id}/option-groups` — set the menu's option-group list `{groups: [..]}` (replaces all). Each entry is either shared `{isolated:false, id}` or isolated `{isolated:true, name, selection_mode, options:[{name, price_delta}]}` (price_delta in THB)
+- `PUT /api/menus/{id}/base-options` — set the menu's base options `{base_options: [{name, price}]}` (replaces all; price in THB, absolute). Empty list = no base option.
 - `GET /api/discounts` — list all preset discounts (manager)
 - `GET /api/discounts/active` — list active discounts only (POS picker)
 - `POST /api/discounts` — create `{name, discount_type, value, active, is_subsidy}` (types: `fixed`/`percent`; `is_subsidy` = sponsor-covered)
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
+- `GET /api/cash-drawer/denominations` — current bill/coin counts `{counts:{<satang>:count}, total}` (open; POS + manager web read)
+- `PUT /api/cash-drawer/denominations` — set counts `{counts:{<satang>:count}}` (**owner**, manager-auth) — replaces all
+- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{delta:{<satang>:±count}}` (**owner**; 409 if a count would go negative)
+- `POST /api/cash-drawer/change-preview` — `{due, tender:{<satang>:count}}` → `{rounded_due, change_total, breakdown, makeable}` (advisory; open)
+- `GET /api/reports/orders?from=&to=&status=&limit=&offset=` — **owner-gated** paginated order list with reconstructed totals + nested line items. `status`: `paid|open|held` (empty = all); dates shop-local ISO (default last 7 days, 92-day cap); `limit` default 100/max 200. Money in THB. Returns `{orders:[{code,status,created_at,member_name,member_phone,points_earned,item_count,qty,gross,discount,subsidy,net,line_items[],discounts[]}], total}`. Totals reconstructed (`orders` stores none); `gross` includes option deltas (matches dashboard revenue).
+- Cashiers carry `role` (`cashier|manager`); `POST/PATCH /api/cashiers` accept `role`, login/list responses include it. (The cashier `manager` role no longer gates anything now that drawer denomination management moved to the owner-gated manager web app; it's retained for future POS-side permissions.)
+- `POST /api/orders/{code}/checkout` accepts (cash) `{payment_method:"cash", cash_tender:{<satang>:count}, cashier_name}` and returns `{rounded_due, change, change_breakdown}` (see Cash Drawer Denominations)
 
 ## Option Groups
 Shared, reusable option groups attach to menus via `menu_option_groups`. Each group has a selection mode: `single_required` (must pick one), `single_optional` (zero or one), `multi` (any). Options carry a `price_delta` in satang. Order lines snapshot selected options into `order_item_options` (name + price_delta) so receipts stay stable when groups/options edit later. Menu API responses include `option_groups` populated with their options. POS opens a modal whenever a clicked menu has any attached group; selected options print as indented sub-lines on both the order bill (kitchen) and the receipt.
 
 ### Isolated (per-menu) groups
 When attaching a group to a menu item, the manager can tick **Customize** to isolate it. An isolated group is a private clone: `option_groups.owner_menu_id` points at the owning menu (NULL = shared preset). It is hidden from the shared list (`ListOptionGroups` filters `owner_menu_id IS NULL`) so it never appears when editing other items, and its options/prices are editable inline in the item dialog without touching the source preset. `SetMenuGroups` fully replaces a menu's groups in one transaction — it clears links, drops the menu's old private groups (`DeletePrivateGroupsForMenu`), then re-attaches shared groups and recreates isolated ones. Deleting a menu cascades its private groups. Menu API `option_groups[]` entries carry an `isolated` bool.
+
+## Base Option
+A menu may have at most one **Base Option** set: named, absolute-priced variants
+(e.g. Hot=50, Iced=80) stored in `menu_base_options(menu_id, name, price, sort_order)`.
+Picking one at POS *sets* the line's base price (it replaces `menus.price`, which
+becomes a fallback used only when a menu has no base options). Selection is
+required when a menu has base options. Normal `+delta` option groups still stack
+on top. The chosen variant is snapshotted onto `order_items.base_option_name`
+(and the chosen price into `order_items.price`), so receipts stay stable. The
+receipt/kitchen bill print the item inline as `Americano (Iced)  80` with no
+price breakdown for the base option. Managed in `/manager/items`; set via
+`PUT /api/menus/{id}/base-options`.
+
+Legacy delta-based "Serve" groups are migrated by `cmd/convert-base-option`
+(`base.price = menu.price + delta`; dry-run by default, `--apply` to commit,
+`--source-name` to override the matched group name). Runs against the local DB.
 
 ## Discounts
 Preset discounts created in `/manager/discounts`, applied by the cashier at POS.
@@ -101,6 +133,47 @@ Single-row `settings` table (PK check `id = 1`). Seeded on first startup with de
 
 ## Membership / Loyalty
 Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
+
+## Cash Drawer Denominations
+The drawer tracks how many of each THB bill/coin it holds: 9 denominations
+(1000,500,100,50,20,10,5,2,1) in `cash_drawer_denominations` (one row per
+denomination in **satang**, `count >= 0` CHECK, single physical drawer). The 9 rows
+are seeded (count 0) on startup. Total float = Σ(denom×count) — this **replaces** the
+old single-float concept; the legacy `GetCurrentCashDrawerFloat` query now filters
+`denominations IS NULL` so denomination events don't pollute it. Every change appends
+a `cash_drawer_audit` row carrying a signed per-denomination JSON delta
+(`denominations` jsonb) + net satang (`delta`); event types `set`/`adjust`/`sale`.
+
+**Setting the drawer counts** lives in the **manager web app** (mulan-manager
+`/drawer` page) — owner-only, via the `RequireRole(owner)` `PUT`/`adjust` endpoints
+(actor = the logged-in manager). The POS no longer edits drawer denominations. On a
+**cash** sale the cashier enters the exact denominations tendered; checkout rounds
+the amount due to the nearest ฿1 (smallest coin; card/QR charge exact satang),
+computes change as real bills/coins via a **bounded coin-change DP** against current
+stock (`internal/cashdrawer/service/change.go` — greedy is wrong with limited stock),
+and inside the existing checkout transaction adds the tender and subtracts the change
+(`ApplyCashSale` on the tx-bound queries → atomic with the order; rolls back on any
+error). **Block-until-restocked:** if exact change can't be made, checkout returns
+`409` and the order stays open; an **owner** restocks via the manager web `/drawer`
+page, then the cashier retries. POS shows a live `change-preview` (the exact
+bills/coins to return) as the cashier taps the denomination tender pad. `internal/cashdrawer/service/denominations.go`
+owns the state/audit/DP-glue; `change-preview` + the denomination endpoints live in
+`internal/cashdrawer/http/`.
+
+**Deploy ordering:** these queries reference the new `denominations` column +
+`cash_drawer_denominations` table — run `task migrate-prod` **before** swapping in the
+new binary, or drawer/audit queries error at runtime.
+
+## Manager Authentication
+`internal/managerauth/` — opaque bearer-token sessions for the SvelteKit manager, **separate from POS `cashiers`** (cashiers are PIN-only and now carry a `role` of `cashier|manager`, distinct from manager_users' `owner|staff`). Tables: `manager_users` (username, bcrypt `password_hash`, name, `role` = `owner|staff`, active) + `manager_sessions` (SHA-256-hashed token, `expires_at`, `revoked_at`; 30-day TTL). Middleware `RequireManager` (valid session → user in ctx) + `RequireRole(owner)`. Seed: `go run ./cmd/create-manager-user -username U -password P -name N -role owner|staff`. Login bcrypt-verifies and runs a dummy compare on unknown user (constant-time, anti-enumeration); passwords ≥8 chars; change-password validates the current password.
+
+**Route scoping (in `main.go`'s `/api` block):**
+- **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer` (incl. `GET /denominations`, `POST /change-preview`, float/kick/audit), `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`, **`GET /api/dashboard/*`** (reads only — see note). The drawer denomination **writes** (`PUT /cash-drawer/denominations`, `POST /cash-drawer/denominations/adjust`) are nested inside the `/cash-drawer` mount but wrapped in `RequireRole(owner)` — see below.
+  - **Dashboard reads are intentionally open.** The legacy Go `html/template` `/manager` dashboard sends no bearer token (no login flow), so an owner-gated `/api/dashboard/*` returned 401 and the page rendered zeros. The reads were moved to the open block; tailnet access is treated as trusted. This exposes revenue/top-menus/subsidies/heatmap to anyone who can reach the port. **Re-gate (move back under `RequireRole(owner)`) once the Go pages are retired in favour of the SvelteKit mulan-manager** (which logs in and sends the bearer).
+- **`RequireManager`** (any logged-in manager, reads): `GET /api/option-groups`, `GET /api/members`(+`/{id}/orders`), `GET /api/cashiers`, `GET /api/discounts`, `/api/auth/{me,logout,change-password}`.
+- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `GET /api/reports/*` (order history — owner-gated, deliberately NOT under the now-open `/dashboard`), and the cash-drawer denomination writes (`PUT /api/cash-drawer/denominations`, `POST /api/cash-drawer/denominations/adjust` — nested inside the open `/cash-drawer` mount but wrapped in owner middleware).
+
+Adding a manager route: register it in the right group in `main.go` AND add its prefix to the proxy `ALLOW` in mulan-manager's `src/routes/api/[...path]/+server.ts`. **Never wrap a POS-shared read** (it breaks the POS) — verify with a no-token curl returning 200.
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router

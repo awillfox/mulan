@@ -10,19 +10,25 @@ import (
 )
 
 const createCashier = `-- name: CreateCashier :one
-INSERT INTO cashiers (login_id, name, pin_hash)
-VALUES ($1, $2, $3)
-RETURNING id, login_id, name, pin_hash, active, created_at, updated_at
+INSERT INTO cashiers (login_id, name, pin_hash, role)
+VALUES ($1, $2, $3, $4)
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role
 `
 
 type CreateCashierParams struct {
 	LoginID string `db:"login_id" json:"login_id"`
 	Name    string `db:"name" json:"name"`
 	PinHash string `db:"pin_hash" json:"pin_hash"`
+	Role    string `db:"role" json:"role"`
 }
 
 func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (Cashier, error) {
-	row := q.db.QueryRow(ctx, createCashier, arg.LoginID, arg.Name, arg.PinHash)
+	row := q.db.QueryRow(ctx, createCashier,
+		arg.LoginID,
+		arg.Name,
+		arg.PinHash,
+		arg.Role,
+	)
 	var i Cashier
 	err := row.Scan(
 		&i.ID,
@@ -32,6 +38,7 @@ func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (C
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -49,19 +56,26 @@ const updateCashier = `-- name: UpdateCashier :one
 UPDATE cashiers
 SET name       = $2,
     active     = $3,
+    role       = $4,
     updated_at = now()
 WHERE id = $1
-RETURNING id, login_id, name, pin_hash, active, created_at, updated_at
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role
 `
 
 type UpdateCashierParams struct {
 	ID     int32  `db:"id" json:"id"`
 	Name   string `db:"name" json:"name"`
 	Active bool   `db:"active" json:"active"`
+	Role   string `db:"role" json:"role"`
 }
 
 func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (Cashier, error) {
-	row := q.db.QueryRow(ctx, updateCashier, arg.ID, arg.Name, arg.Active)
+	row := q.db.QueryRow(ctx, updateCashier,
+		arg.ID,
+		arg.Name,
+		arg.Active,
+		arg.Role,
+	)
 	var i Cashier
 	err := row.Scan(
 		&i.ID,
@@ -71,6 +85,7 @@ func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (C
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -80,7 +95,7 @@ UPDATE cashiers
 SET pin_hash   = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, login_id, name, pin_hash, active, created_at, updated_at
+RETURNING id, login_id, name, pin_hash, active, created_at, updated_at, role
 `
 
 type UpdateCashierPinParams struct {
@@ -99,6 +114,7 @@ func (q *Queries) UpdateCashierPin(ctx context.Context, arg UpdateCashierPinPara
 		&i.Active,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
 	)
 	return i, err
 }

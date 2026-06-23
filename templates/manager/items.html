@@ -643,6 +643,15 @@
                 </div>
                 <div class="col-span-2">
                     <div class="flex items-center justify-between mb-1.5">
+                        <label class="m3-label" style="margin:0">Base Option <span style="color:var(--md-sys-color-outline)">· one set; absolute price replaces item price</span></label>
+                        <button type="button" class="m3-btn-text" style="height:28px;padding:0 10px;font-size:13px" onclick="addBaseOptionRow()">
+                            <span class="material-symbols-rounded" style="font-size:16px">add</span>Add base option
+                        </button>
+                    </div>
+                    <div id="base-options-rows" class="space-y-1.5"></div>
+                </div>
+                <div class="col-span-2">
+                    <div class="flex items-center justify-between mb-1.5">
                         <label class="m3-label" style="margin:0">Option groups</label>
                         <button type="button" class="m3-btn-text" style="height:28px;padding:0 10px;font-size:13px"
                                 onclick="toggleInlineGroupForm()">
@@ -1062,6 +1071,72 @@ function populateCatSelect() {
     sel.value = prev;
 }
 
+// ── Base option editor (per-item) ─────────────────────────────────
+// baseOptionState holds {name, price(THB)} rows. Empty = menu has no base
+// option. When non-empty the menu price field is ignored at checkout.
+let baseOptionState = [];
+
+function buildBaseOptionState(m) {
+    baseOptionState = ((m && m.base_options) || []).map(b => ({ name: b.name, price: b.price }));
+}
+
+function baseOptRowHtml(i, b) {
+    return `
+        <div class="base-opt-row grid grid-cols-5 gap-2 items-center" data-bidx="${i}">
+            <input type="text" class="m3-input m3-input-sm col-span-3 base-opt-name" value="${esc(b.name)}" placeholder="e.g. Iced">
+            <input type="number" step="0.01" min="0" class="m3-input m3-input-sm col-span-1 base-opt-price" value="${b.price}" placeholder="0.00">
+            <button type="button" class="m3-icon-btn col-span-1 justify-self-end" onclick="removeBaseOption(${i})" title="Remove">
+                <span class="material-symbols-rounded" style="font-size:18px">close</span>
+            </button>
+        </div>`;
+}
+
+function renderBaseOptions() {
+    const el = document.getElementById('base-options-rows');
+    el.innerHTML = baseOptionState.length
+        ? baseOptionState.map((b, i) => baseOptRowHtml(i, b)).join('')
+        : `<p class="text-xs" style="color:var(--md-sys-color-on-surface-variant)">No base option. The item uses its own price above.</p>`;
+    syncMenuPriceDisabled();
+}
+
+// When the menu has base options, its own price is ignored at checkout, so
+// grey the field out to avoid confusion.
+function syncMenuPriceDisabled() {
+    const price = document.getElementById('menu-price');
+    const on = baseOptionState.length > 0;
+    price.disabled = on;
+    price.style.opacity = on ? '0.5' : '';
+    price.title = on ? 'Ignored — base option prices apply' : '';
+}
+
+function syncBaseOptionsFromDOM() {
+    baseOptionState = Array.from(document.querySelectorAll('#base-options-rows .base-opt-row')).map(r => ({
+        name: r.querySelector('.base-opt-name').value,
+        price: parseFloat(r.querySelector('.base-opt-price').value) || 0,
+    }));
+}
+
+function addBaseOptionRow() {
+    syncBaseOptionsFromDOM();
+    baseOptionState.push({ name: '', price: 0 });
+    renderBaseOptions();
+    const rows = document.querySelectorAll('#base-options-rows .base-opt-row');
+    if (rows.length) rows[rows.length - 1].querySelector('.base-opt-name').focus();
+}
+
+function removeBaseOption(i) {
+    syncBaseOptionsFromDOM();
+    baseOptionState.splice(i, 1);
+    renderBaseOptions();
+}
+
+function collectBaseOptionsPayload() {
+    syncBaseOptionsFromDOM();
+    return baseOptionState
+        .map(b => ({ name: (b.name || '').trim(), price: b.price || 0 }))
+        .filter(b => b.name);
+}
+
 function openMenuModal(id) {
     menuEditId = id || null;
     const m = id ? menus.find(x => x.id === id) : null;
@@ -1072,6 +1147,8 @@ function openMenuModal(id) {
     document.getElementById('menu-cat').value   = m && m.category_id != null ? m.category_id : '';
     document.getElementById('menu-vfd').value   = m && m.vfd_name ? m.vfd_name : '';
     buildMenuGroupState(m);
+    buildBaseOptionState(m);
+    renderBaseOptions();
     renderMenuGroups();
     cancelInlineGroup();
     document.getElementById('menu-modal').classList.add('is-open');
@@ -1366,8 +1443,13 @@ async function saveMenu() {
     const price = parseFloat(document.getElementById('menu-price').value);
     const catVal = document.getElementById('menu-cat').value;
     const vfd   = document.getElementById('menu-vfd').value.trim() || null;
-    if (!name || isNaN(price)) return;
-    const body = { name, price, category_id: catVal ? parseInt(catVal) : null, vfd_name: vfd };
+    // Derive hasBase from the FILTERED payload (blank-name rows are dropped),
+    // so a stray empty base row can't both grey the price field and vanish on
+    // save — which would otherwise persist a ฿0 item with no base options.
+    const baseOptions = collectBaseOptionsPayload();
+    const hasBase = baseOptions.length > 0;
+    if (!name || (!hasBase && isNaN(price))) return;
+    const body = { name, price: isNaN(price) ? 0 : price, category_id: catVal ? parseInt(catVal) : null, vfd_name: vfd };
     const groups = collectMenuGroupsPayload();
 
     let menuId = menuEditId;
@@ -1387,6 +1469,10 @@ async function saveMenu() {
         await fetch(`/api/menus/${menuId}/option-groups`, {
             method: 'PUT', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ groups }),
+        });
+        await fetch(`/api/menus/${menuId}/base-options`, {
+            method: 'PUT', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ base_options: baseOptions }),
         });
     }
     snack(menuEditId ? 'Item updated.' : 'Item added.');

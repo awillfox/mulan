@@ -10,6 +10,7 @@ import (
 
 	"mulan/internal/cashier/service"
 	"mulan/internal/response"
+	"mulan/sqlc"
 )
 
 type Handler struct {
@@ -21,19 +22,24 @@ func NewHandler(svc *service.Service) *Handler {
 }
 
 func (h *Handler) Routes(r chi.Router) {
-	r.Get("/", h.list)
-	r.Post("/", h.create)
-	r.Post("/login", h.login)
-	r.Patch("/{id}", h.update)
-	r.Patch("/{id}/pin", h.updatePin)
-	r.Delete("/{id}", h.delete)
+	r.Get("/", h.List)
+	r.Post("/", h.Create)
+	r.Post("/login", h.Login)
+	r.Patch("/{id}", h.Update)
+	r.Patch("/{id}/pin", h.UpdatePin)
+	r.Delete("/{id}", h.Delete)
 }
 
 type cashierResponse struct {
-	ID       int32  `json:"id"`
-	LoginID  string `json:"login_id"`
-	Name     string `json:"name"`
-	Active   bool   `json:"active"`
+	ID      int32  `json:"id"`
+	LoginID string `json:"login_id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+	Active  bool   `json:"active"`
+}
+
+func toCashierResponse(c sqlc.Cashier) cashierResponse {
+	return cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Role: c.Role, Active: c.Active}
 }
 
 type loginRequest struct {
@@ -45,18 +51,20 @@ type createRequest struct {
 	LoginID string `json:"login_id"`
 	Name    string `json:"name"`
 	PIN     string `json:"pin"`
+	Role    string `json:"role"`
 }
 
 type updateRequest struct {
 	Name   string `json:"name"`
 	Active bool   `json:"active"`
+	Role   string `json:"role"`
 }
 
 type updatePinRequest struct {
 	PIN string `json:"pin"`
 }
 
-func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
@@ -75,10 +83,10 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusInternalServerError, "login failed", err)
 		return
 	}
-	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.OK(w, r, toCashierResponse(c))
 }
 
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	cashiers, err := h.svc.List(r.Context())
 	if err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to list cashiers", err)
@@ -86,12 +94,12 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]cashierResponse, len(cashiers))
 	for i, c := range cashiers {
-		out[i] = cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active}
+		out[i] = toCashierResponse(c)
 	}
 	response.OK(w, r, out)
 }
 
-func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
@@ -105,19 +113,23 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, "pin must be at least 4 digits", nil)
 		return
 	}
-	c, err := h.svc.Create(r.Context(), req.LoginID, req.Name, req.PIN)
+	c, err := h.svc.Create(r.Context(), req.LoginID, req.Name, req.PIN, req.Role)
 	if err != nil {
 		if errors.Is(err, service.ErrLoginIDTaken) {
 			response.Error(w, r, http.StatusConflict, "login ID already in use", err)
 			return
 		}
+		if errors.Is(err, service.ErrInvalidRole) {
+			response.Error(w, r, http.StatusBadRequest, "invalid role", err)
+			return
+		}
 		response.Error(w, r, http.StatusInternalServerError, "failed to create cashier", err)
 		return
 	}
-	response.Created(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.Created(w, r, toCashierResponse(c))
 }
 
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)
@@ -132,19 +144,23 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, http.StatusBadRequest, "name is required", nil)
 		return
 	}
-	c, err := h.svc.Update(r.Context(), int32(id), req.Name, req.Active)
+	c, err := h.svc.Update(r.Context(), int32(id), req.Name, req.Active, req.Role)
 	if err != nil {
 		if errors.Is(err, service.ErrCashierNotFound) {
 			response.Error(w, r, http.StatusNotFound, "cashier not found", err)
 			return
 		}
+		if errors.Is(err, service.ErrInvalidRole) {
+			response.Error(w, r, http.StatusBadRequest, "invalid role", err)
+			return
+		}
 		response.Error(w, r, http.StatusInternalServerError, "failed to update cashier", err)
 		return
 	}
-	response.OK(w, r, cashierResponse{ID: c.ID, LoginID: c.LoginID, Name: c.Name, Active: c.Active})
+	response.OK(w, r, toCashierResponse(c))
 }
 
-func (h *Handler) updatePin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdatePin(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)
@@ -170,7 +186,7 @@ func (h *Handler) updatePin(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w, r)
 }
 
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid id", err)

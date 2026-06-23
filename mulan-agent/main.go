@@ -294,12 +294,13 @@ func cashDrawerHandler() http.HandlerFunc {
 }
 
 type checkoutRequestItem struct {
-	MenuID      int32   `json:"menu_id"`
-	Name        string  `json:"name"`
-	Price       float64 `json:"price"`
-	Qty         int32   `json:"qty"`
-	OptionIDs   []int32 `json:"option_ids"`
-	DiscountIDs []int32 `json:"discount_ids"`
+	MenuID       int32   `json:"menu_id"`
+	Name         string  `json:"name"`
+	Price        float64 `json:"price"`
+	Qty          int32   `json:"qty"`
+	BaseOptionID int32   `json:"base_option_id"`
+	OptionIDs    []int32 `json:"option_ids"`
+	DiscountIDs  []int32 `json:"discount_ids"`
 }
 
 type checkoutRequest struct {
@@ -309,6 +310,8 @@ type checkoutRequest struct {
 	PaymentMethod string                `json:"payment_method,omitempty"` // "cash" | "card" | "qr"
 	CashTendered  float64               `json:"cash_tendered,omitempty"`  // THB, cash payments only
 	CashChange    float64               `json:"cash_change,omitempty"`    // THB, cash payments only
+	CashTender    map[string]int        `json:"cash_tender,omitempty"`    // satang string -> count
+	CashierName   string                `json:"cashier_name,omitempty"`
 	CustomerPhone string                `json:"customer_phone,omitempty"`
 	CustomerName  string                `json:"customer_name,omitempty"`
 }
@@ -319,29 +322,33 @@ type checkoutOption struct {
 }
 
 type checkoutItem struct {
-	Name    string           `json:"name"`
-	Price   float64          `json:"price"`
-	Qty     int32            `json:"qty"`
-	Options []checkoutOption `json:"options"`
+	Name           string           `json:"name"`
+	Price          float64          `json:"price"`
+	Qty            int32            `json:"qty"`
+	Options        []checkoutOption `json:"options"`
+	BaseOptionName string           `json:"base_option_name"`
 }
 
 type checkoutResponse struct {
-	Code          string         `json:"code"`
-	Subtotal      float64        `json:"subtotal"`
-	Discount      float64        `json:"discount"`
-	Subsidy       float64        `json:"subsidy"`
-	VAT           float64        `json:"vat"`
-	VATPercent    float64        `json:"vat_percent"`
-	ShopName      string         `json:"shop_name"`
-	ReceiptFooter string         `json:"receipt_footer"`
-	Total         float64        `json:"total"`
-	Items         []checkoutItem `json:"items"`
-	HasMember     bool           `json:"has_member"`
-	MemberName    string         `json:"member_name"`
-	MemberPhone   string         `json:"member_phone"`
-	PointsEarned  int64          `json:"points_earned"`
-	PointsBalance int64          `json:"points_balance"`
-	WifiUsername  string         `json:"wifi_username,omitempty"`
+	Code            string         `json:"code"`
+	Subtotal        float64        `json:"subtotal"`
+	Discount        float64        `json:"discount"`
+	Subsidy         float64        `json:"subsidy"`
+	VAT             float64        `json:"vat"`
+	VATPercent      float64        `json:"vat_percent"`
+	ShopName        string         `json:"shop_name"`
+	ReceiptFooter   string         `json:"receipt_footer"`
+	Total           float64        `json:"total"`
+	Items           []checkoutItem `json:"items"`
+	HasMember       bool           `json:"has_member"`
+	MemberName      string         `json:"member_name"`
+	MemberPhone     string         `json:"member_phone"`
+	PointsEarned    int64          `json:"points_earned"`
+	PointsBalance   int64          `json:"points_balance"`
+	WifiUsername    string         `json:"wifi_username,omitempty"`
+	RoundedDue      float64        `json:"rounded_due"`
+	Change          float64        `json:"change"`
+	ChangeBreakdown map[string]int `json:"change_breakdown"`
 }
 
 type checkoutEnvelope struct {
@@ -362,10 +369,14 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 		}
 
 		// Forward to mulan API to persist order items and get computed totals
-		result, err := callCheckout(apiBase, req.OrderCode, req.Items, req.DiscountIDs, req.CustomerPhone, req.CustomerName)
+		result, upstreamStatus, err := callCheckout(apiBase, req.OrderCode, req.Items, req.DiscountIDs, req.CustomerPhone, req.CustomerName, req.PaymentMethod, req.CashTender, req.CashierName)
 		if err != nil {
-			log.Printf("checkout API error: %v", err)
-			http.Error(w, "checkout failed", http.StatusBadGateway)
+			log.Printf("checkout API error (upstream %d): %v", upstreamStatus, err)
+			if upstreamStatus == http.StatusConflict {
+				http.Error(w, err.Error(), http.StatusConflict)
+			} else {
+				http.Error(w, "checkout failed", http.StatusBadGateway)
+			}
 			return
 		}
 
@@ -378,10 +389,11 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 					opts[j] = printer.OrderItemOption{Name: o.Name, PriceDelta: o.PriceDelta}
 				}
 				items[i] = printer.OrderItem{
-					Name:    it.Name,
-					Qty:     int(it.Qty),
-					Price:   it.Price,
-					Options: opts,
+					Name:           it.Name,
+					Qty:            int(it.Qty),
+					Price:          it.Price,
+					Options:        opts,
+					BaseOptionName: it.BaseOptionName,
 				}
 			}
 			if err := p.PrintOrderBill(req.OrderCode, items); err != nil {
@@ -418,29 +430,43 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 	}
 }
 
-func callCheckout(apiBase, code string, items any, discountIDs []int32, customerPhone, customerName string) (*checkoutResponse, error) {
-	body, _ := json.Marshal(map[string]any{
+// callCheckout POSTs to the backend checkout endpoint and returns the decoded
+// response, the upstream HTTP status code, and any error. The upstream status is
+// returned even on error so the caller can propagate meaningful codes (e.g. 409
+// "cannot make change") rather than always responding 502.
+func callCheckout(apiBase, code string, items any, discountIDs []int32, customerPhone, customerName, paymentMethod string, cashTender map[string]int, cashierName string) (*checkoutResponse, int, error) {
+	payload := map[string]any{
 		"items":          items,
 		"discount_ids":   discountIDs,
 		"customer_phone": customerPhone,
 		"customer_name":  customerName,
-	})
+		"payment_method": paymentMethod,
+		"cash_tender":    cashTender,
+		"cashier_name":   cashierName,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, 0, err
+	}
 	resp, err := http.Post(apiBase+"/api/orders/"+code+"/checkout", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned %d", resp.StatusCode)
-	}
+	// Always attempt to decode the envelope so we can extract the error message.
 	var env checkoutEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return nil, err
+	_ = json.NewDecoder(resp.Body).Decode(&env)
+	if resp.StatusCode != http.StatusOK {
+		msg := env.Error
+		if msg == "" {
+			msg = fmt.Sprintf("API returned %d", resp.StatusCode)
+		}
+		return nil, resp.StatusCode, fmt.Errorf("%s", msg)
 	}
 	if env.Error != "" {
-		return nil, fmt.Errorf("API error: %s", env.Error)
+		return nil, resp.StatusCode, fmt.Errorf("API error: %s", env.Error)
 	}
-	return &env.Data, nil
+	return &env.Data, resp.StatusCode, nil
 }
 
 func fetchLogo(url string) []byte {

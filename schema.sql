@@ -12,13 +12,22 @@ CREATE TABLE "public"."cash_drawer_audit" (
   "actor" character varying(120) NULL,
   "terminal" character varying(120) NULL,
   "created_at" timestamptz NOT NULL DEFAULT now(),
+  "denominations" jsonb NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY ((ARRAY['set'::character varying, 'clear'::character varying, 'adjust'::character varying, 'kick'::character varying, 'open_for_change'::character varying])::text[]))
+  CONSTRAINT "cash_drawer_audit_event_type" CHECK ((event_type)::text = ANY (ARRAY[('set'::character varying)::text, ('clear'::character varying)::text, ('adjust'::character varying)::text, ('kick'::character varying)::text, ('open_for_change'::character varying)::text, ('sale'::character varying)::text]))
 );
 -- Create index "cash_drawer_audit_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_created_at" ON "public"."cash_drawer_audit" ("created_at");
 -- Create index "cash_drawer_audit_event_type_created_at" to table: "cash_drawer_audit"
 CREATE INDEX "cash_drawer_audit_event_type_created_at" ON "public"."cash_drawer_audit" ("event_type", "created_at");
+-- Create "cash_drawer_denominations" table
+CREATE TABLE "public"."cash_drawer_denominations" (
+  "denomination" integer NOT NULL,
+  "count" integer NOT NULL DEFAULT 0,
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("denomination"),
+  CONSTRAINT "cash_drawer_denominations_count_nonneg" CHECK (count >= 0)
+);
 -- Create "cashiers" table
 CREATE TABLE "public"."cashiers" (
   "id" serial NOT NULL,
@@ -28,22 +37,12 @@ CREATE TABLE "public"."cashiers" (
   "active" boolean NOT NULL DEFAULT true,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
+  "role" character varying(20) NOT NULL DEFAULT 'cashier',
+  PRIMARY KEY ("id"),
+  CONSTRAINT "cashiers_role_check" CHECK ((role)::text = ANY (ARRAY[('cashier'::character varying)::text, ('manager'::character varying)::text]))
 );
 -- Create index "cashiers_login_id_key" to table: "cashiers"
 CREATE UNIQUE INDEX "cashiers_login_id_key" ON "public"."cashiers" ("login_id");
--- Create "members" table
-CREATE TABLE "public"."members" (
-  "id" serial NOT NULL,
-  "phone" character varying(20) NOT NULL,
-  "name" character varying(255) NULL,
-  "points" bigint NOT NULL DEFAULT 0,
-  "created_at" timestamptz NOT NULL DEFAULT now(),
-  "updated_at" timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
-);
--- Create index "members_phone_key" to table: "members"
-CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "settings" table
 CREATE TABLE "public"."settings" (
   "id" integer NOT NULL DEFAULT 1,
@@ -57,6 +56,18 @@ CREATE TABLE "public"."settings" (
   PRIMARY KEY ("id"),
   CONSTRAINT "settings_singleton" CHECK (id = 1)
 );
+-- Create "members" table
+CREATE TABLE "public"."members" (
+  "id" serial NOT NULL,
+  "phone" character varying(20) NOT NULL,
+  "name" character varying(255) NULL,
+  "points" bigint NOT NULL DEFAULT 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id")
+);
+-- Create index "members_phone_key" to table: "members"
+CREATE UNIQUE INDEX "members_phone_key" ON "public"."members" ("phone");
 -- Create "orders" table
 CREATE TABLE "public"."orders" (
   "id" serial NOT NULL,
@@ -92,6 +103,36 @@ CREATE TABLE "public"."guest_wifi_users" (
 CREATE INDEX "guest_wifi_users_state" ON "public"."guest_wifi_users" ("state");
 -- Create index "guest_wifi_users_username_key" to table: "guest_wifi_users"
 CREATE UNIQUE INDEX "guest_wifi_users_username_key" ON "public"."guest_wifi_users" ("username");
+-- Create "manager_users" table
+CREATE TABLE "public"."manager_users" (
+  "id" serial NOT NULL,
+  "username" character varying(50) NOT NULL,
+  "password_hash" character varying(255) NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "role" character varying(20) NOT NULL DEFAULT 'staff',
+  "active" boolean NOT NULL DEFAULT true,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id"),
+  CONSTRAINT "manager_users_role_check" CHECK ((role)::text = ANY ((ARRAY['owner'::character varying, 'staff'::character varying])::text[]))
+);
+-- Create index "manager_users_username_key" to table: "manager_users"
+CREATE UNIQUE INDEX "manager_users_username_key" ON "public"."manager_users" ("username");
+-- Create "manager_sessions" table
+CREATE TABLE "public"."manager_sessions" (
+  "id" serial NOT NULL,
+  "manager_user_id" integer NOT NULL,
+  "token_hash" character varying(64) NOT NULL,
+  "expires_at" timestamptz NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "revoked_at" timestamptz NULL,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "manager_sessions_user_fk" FOREIGN KEY ("manager_user_id") REFERENCES "public"."manager_users" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+);
+-- Create index "manager_sessions_token_hash_key" to table: "manager_sessions"
+CREATE UNIQUE INDEX "manager_sessions_token_hash_key" ON "public"."manager_sessions" ("token_hash");
+-- Create index "manager_sessions_user_idx" to table: "manager_sessions"
+CREATE INDEX "manager_sessions_user_idx" ON "public"."manager_sessions" ("manager_user_id");
 -- Create "menu_categories" table
 CREATE TABLE "public"."menu_categories" (
   "id" serial NOT NULL,
@@ -109,6 +150,18 @@ CREATE TABLE "public"."menus" (
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_menu_category" FOREIGN KEY ("category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
+-- Create "menu_base_options" table
+CREATE TABLE "public"."menu_base_options" (
+  "id" serial NOT NULL,
+  "menu_id" integer NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "price" bigint NOT NULL,
+  "sort_order" integer NOT NULL DEFAULT 0,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "fk_mbo_menu" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+);
+-- Create index "menu_base_options_menu_sort" to table: "menu_base_options"
+CREATE INDEX "menu_base_options_menu_sort" ON "public"."menu_base_options" ("menu_id", "sort_order");
 -- Create "option_groups" table
 CREATE TABLE "public"."option_groups" (
   "id" serial NOT NULL,
@@ -160,6 +213,7 @@ CREATE TABLE "public"."order_items" (
   "name" character varying(255) NOT NULL,
   "price" bigint NOT NULL,
   "qty" integer NOT NULL,
+  "base_option_name" character varying(255) NULL,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_order_items_menu" FOREIGN KEY ("menu_id") REFERENCES "public"."menus" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "fk_order_items_order" FOREIGN KEY ("order_id") REFERENCES "public"."orders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
