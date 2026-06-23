@@ -34,10 +34,9 @@ Claude will update CLAUDE.md a long the way
 
 ## Pages
 - `/pos` — POS interface, responsive layout (target: 15" Flytech POS485, also usable on tablets/desktops) **(served by mulan-agent)**
-- `/manager` — dashboard, responsive for modern devices **(served by mulan)**
-- `/manager/items` — item/category manager (also attaches option groups to menus)
-- `/manager/option-groups` — manage shared option groups + their options
-- `/manager/settings` — shop name + VAT percent (persisted in DB)
+- `/manager` — read-only dashboard, responsive for modern devices **(served by mulan)**
+
+The legacy Go `html/template` **write** pages (`/manager/{items,option-groups,discounts,members,cashiers,settings}`) were **retired**: they sent no bearer token, so once their `/api/*` writes moved under `RequireRole(owner)` every save returned 401/403. The SvelteKit **mulan-manager** app (menu/option-groups/discounts/members/cashiers/settings) fully covers them. Only the read-only `/manager` dashboard remains served by Go (it still uses the open `/api/dashboard/*` reads — see Manager Authentication).
 
 ## API Endpoints
 

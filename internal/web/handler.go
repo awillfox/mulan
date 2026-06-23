@@ -14,32 +14,11 @@ func NewHandler(templateDir string) *Handler {
 	return &Handler{templateDir: templateDir}
 }
 
+// Manager serves the read-only legacy dashboard. The write-capable legacy pages
+// (items, option-groups, discounts, members, cashiers, settings) were retired in
+// favour of the SvelteKit mulan-manager app; their handlers were removed.
 func (h *Handler) Manager(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layouts/manager.html", "manager/index.html")
-}
-
-func (h *Handler) Items(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/items.html")
-}
-
-func (h *Handler) Settings(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/settings.html")
-}
-
-func (h *Handler) OptionGroups(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/option_groups.html")
-}
-
-func (h *Handler) Discounts(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/discounts.html")
-}
-
-func (h *Handler) Members(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/members.html")
-}
-
-func (h *Handler) Cashiers(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "layouts/manager.html", "manager/cashiers.html")
 }
 
 func (h *Handler) render(w http.ResponseWriter, files ...string) {

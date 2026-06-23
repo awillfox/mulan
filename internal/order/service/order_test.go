@@ -103,3 +103,25 @@ func TestComputeDiscountAmountRoundsUpToBaht(t *testing.T) {
 		})
 	}
 }
+
+func TestPointsForPayment(t *testing.T) {
+	tests := []struct {
+		name       string
+		paidSatang int64
+		rate       float64
+		want       int64
+	}{
+		{"whole baht rate 1", 10300, 1, 103},       // ฿103 cash (rounded) -> 103 pts
+		{"fractional total rate 1", 10250, 1, 102}, // ฿102.50 card -> floor -> 102
+		{"rate 1.5 floors", 10000, 1.5, 150},
+		{"rate 0 earns nothing", 10300, 0, 0},
+		{"zero paid", 0, 1, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pointsForPayment(tc.paidSatang, tc.rate); got != tc.want {
+				t.Errorf("pointsForPayment(%d, %v) = %d, want %d", tc.paidSatang, tc.rate, got, tc.want)
+			}
+		})
+	}
+}

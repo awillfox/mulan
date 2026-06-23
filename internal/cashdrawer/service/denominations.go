@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"mulan/sqlc"
@@ -192,6 +193,13 @@ func (s *Service) ApplyCashSale(ctx context.Context, q *sqlc.Queries, tender, ch
 			Denomination: int32(d),
 			Delta:        int32(diff),
 		}); err != nil {
+			// A nonneg-CHECK violation means the change denominations exceed
+			// live stock (MakeChange read stale stock, e.g. a restock/sale
+			// interleaved). Surface it as not-makeable so checkout returns the
+			// 409 restock path instead of an opaque 500.
+			if isCountUnderflow(err) {
+				return ErrChangeNotMakeable
+			}
 			return fmt.Errorf("apply cash sale denom %d: %w", d, err)
 		}
 	}
@@ -199,6 +207,15 @@ func (s *Service) ApplyCashSale(ctx context.Context, q *sqlc.Queries, tender, ch
 }
 
 // ── helpers ────────────────────────────────────────────────────────
+
+// isCountUnderflow reports whether err is the nonneg CHECK violation
+// (SQLSTATE 23514) the drawer raises when a denomination count would drop
+// below zero — i.e. the requested change exceeds live stock. The only CHECK
+// on cash_drawer_denominations is count >= 0, so 23514 here is unambiguous.
+func isCountUnderflow(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23514"
+}
 
 func totalSatang(counts map[int64]int) int64 {
 	var t int64

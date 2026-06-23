@@ -73,3 +73,38 @@ func TestLoginAuthenticateLogout(t *testing.T) {
 		t.Fatalf("Authenticate(garbage) err = %v, want ErrInvalidSession", err)
 	}
 }
+
+func TestChangePasswordRevokesSessions(t *testing.T) {
+	svc, pool := newTestService(t)
+	defer pool.Close()
+	ctx := context.Background()
+
+	username := "test_pwchg_" + time.Now().Format("150405.000000")
+	if _, err := svc.CreateUser(ctx, username, "old-password", "Pw Chg", domain.RoleOwner); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM manager_users WHERE username = $1", username)
+	})
+
+	_, token, _, err := svc.Login(ctx, username, "old-password")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if _, err := svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("Authenticate before change: %v", err)
+	}
+
+	if err := svc.ChangePassword(ctx, username, "old-password", "new-password"); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+
+	// The pre-change token must no longer authenticate.
+	if _, err := svc.Authenticate(ctx, token); err != ErrInvalidSession {
+		t.Fatalf("Authenticate after change err = %v, want ErrInvalidSession", err)
+	}
+	// New password works and yields a usable session.
+	if _, newTok, _, err := svc.Login(ctx, username, "new-password"); err != nil || newTok == "" {
+		t.Fatalf("Login(new) err=%v token=%q", err, newTok)
+	}
+}

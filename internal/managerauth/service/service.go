@@ -165,8 +165,13 @@ func (s *Service) ChangePassword(ctx context.Context, username, current, newPass
 	if err != nil {
 		return err
 	}
-	return s.q.UpdateManagerUserPassword(ctx, sqlc.UpdateManagerUserPasswordParams{
+	if err := s.q.UpdateManagerUserPassword(ctx, sqlc.UpdateManagerUserPasswordParams{
 		ID:           u.ID,
 		PasswordHash: string(hash),
-	})
+	}); err != nil {
+		return err
+	}
+	// Invalidate every existing session so a leaked/stolen token cannot survive
+	// a password change. The caller must log in again to get a fresh token.
+	return s.q.RevokeAllManagerSessionsForUser(ctx, u.ID)
 }
