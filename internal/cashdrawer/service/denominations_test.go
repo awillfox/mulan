@@ -2,8 +2,11 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestDenomDeltaJSON(t *testing.T) {
@@ -35,5 +38,20 @@ func TestChangeStockBaht(t *testing.T) {
 	want := map[int]int{500: 1, 20: 3}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("stock = %v, want %v", got, want)
+	}
+}
+
+func TestIsCountUnderflow(t *testing.T) {
+	if !isCountUnderflow(&pgconn.PgError{Code: "23514"}) {
+		t.Error("check_violation (23514) should be treated as stock underflow")
+	}
+	if isCountUnderflow(&pgconn.PgError{Code: "23505"}) {
+		t.Error("unique_violation (23505) is not a stock underflow")
+	}
+	if isCountUnderflow(errors.New("some other error")) {
+		t.Error("plain error is not a stock underflow")
+	}
+	if isCountUnderflow(nil) {
+		t.Error("nil is not a stock underflow")
 	}
 }

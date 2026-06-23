@@ -81,6 +81,17 @@ func (q *Queries) DeleteExpiredManagerSessions(ctx context.Context) error {
 	return err
 }
 
+const revokeAllManagerSessionsForUser = `-- name: RevokeAllManagerSessionsForUser :exec
+UPDATE manager_sessions
+SET revoked_at = now()
+WHERE manager_user_id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAllManagerSessionsForUser(ctx context.Context, managerUserID int32) error {
+	_, err := q.db.Exec(ctx, revokeAllManagerSessionsForUser, managerUserID)
+	return err
+}
+
 const revokeManagerSession = `-- name: RevokeManagerSession :exec
 UPDATE manager_sessions
 SET revoked_at = now()

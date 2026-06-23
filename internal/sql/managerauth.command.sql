@@ -13,6 +13,11 @@ UPDATE manager_sessions
 SET revoked_at = now()
 WHERE token_hash = $1 AND revoked_at IS NULL;
 
+-- name: RevokeAllManagerSessionsForUser :exec
+UPDATE manager_sessions
+SET revoked_at = now()
+WHERE manager_user_id = $1 AND revoked_at IS NULL;
+
 -- name: DeleteExpiredManagerSessions :exec
 DELETE FROM manager_sessions
 WHERE expires_at < now();

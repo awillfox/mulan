@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	cashdrawerservice "mulan/internal/cashdrawer/service"
 	"mulan/internal/order/domain"
 	settingsservice "mulan/internal/settings/service"
 	"mulan/sqlc"
@@ -322,6 +323,12 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 			return nil, ErrChangeNotMakeable
 		}
 		if err := s.drawer.ApplyCashSale(ctx, q, cash.Tender, changeBreakdown, cash.Actor); err != nil {
+			// Stock depleted between MakeChange and apply (stale read): return
+			// the not-makeable sentinel so the handler maps it to 409 (restock)
+			// rather than a 500.
+			if errors.Is(err, cashdrawerservice.ErrChangeNotMakeable) {
+				return nil, ErrChangeNotMakeable
+			}
 			return nil, fmt.Errorf("apply cash sale: %w", err)
 		}
 	}
@@ -350,7 +357,13 @@ func (s *OrderService) Checkout(ctx context.Context, code string, items []Checko
 				return nil, fmt.Errorf("create member: %w", err)
 			}
 		}
-		pointsEarned = int64(float64(totalSatang) / 100 * cfg.PointsPerBaht)
+		// Award on the amount the customer actually pays: cash is rounded to
+		// whole baht, card/QR is charged the exact total.
+		paidSatang := totalSatang
+		if cash.IsCash {
+			paidSatang = roundedDueSatang
+		}
+		pointsEarned = pointsForPayment(paidSatang, cfg.PointsPerBaht)
 		updated, err := q.AddMemberPoints(ctx, sqlc.AddMemberPointsParams{
 			Delta: pointsEarned,
 			ID:    member.ID,
@@ -777,6 +790,17 @@ func roundToBaht(satang int64) int64 {
 		return satang - r + 100
 	}
 	return satang - r
+}
+
+// pointsForPayment returns loyalty points earned on the amount actually paid
+// (satang), per the documented rule floor(total_paid_THB × points_per_baht).
+// The rate is a configurable double, so the multiply is float by necessity;
+// the result is floored to whole points.
+func pointsForPayment(paidSatang int64, ratePerBaht float64) int64 {
+	if paidSatang <= 0 || ratePerBaht <= 0 {
+		return 0
+	}
+	return int64(float64(paidSatang) / 100 * ratePerBaht)
 }
 
 // breakdownToStringMap converts a satang-keyed change breakdown to the
