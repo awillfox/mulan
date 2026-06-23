@@ -141,13 +141,11 @@ func main() {
 		AllowedHeaders: []string{"Content-Type"},
 	}))
 
+	// Legacy Go management pages (items, option-groups, discounts, members,
+	// cashiers, settings) are retired: every write they make is unauthenticated
+	// and now rejected by RequireRole(owner), and the SvelteKit mulan-manager
+	// app fully covers them. Only the read-only dashboard remains.
 	r.Get("/manager", webHandler.Manager)
-	r.Get("/manager/items", webHandler.Items)
-	r.Get("/manager/option-groups", webHandler.OptionGroups)
-	r.Get("/manager/discounts", webHandler.Discounts)
-	r.Get("/manager/members", webHandler.Members)
-	r.Get("/manager/cashiers", webHandler.Cashiers)
-	r.Get("/manager/settings", webHandler.Settings)
 	r.Get("/events", eventHub.ServeHTTP)
 	// Logo lives in the settings table so it survives redeploys and is shared
 	// across terminals. We intercept the specific path before falling back
