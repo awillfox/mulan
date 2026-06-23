@@ -1359,6 +1359,8 @@ function renderCategories() {
     const countByCat = id => menus.filter(m => m.category_id === id).length;
     const countUncat = menus.filter(m => m.category_id == null).length;
     catList = [{ id: null, name: 'All', count: menus.length }];
+    const countFav = menus.filter(m => m.favourite).length;
+    if (countFav) catList.push({ id: 'fav', name: '★ Favourite', count: countFav });
     for (const c of categories) catList.push({ id: c.id, name: c.name, count: countByCat(c.id) });
     if (countUncat) catList.push({ id: 'uncat', name: 'Uncategorised', count: countUncat });
     renderCatCurrent();
@@ -1440,7 +1442,8 @@ function filterCategory(id) {
 function filteredMenus() {
     const q = searchText.trim().toLowerCase();
     return menus.filter(m => {
-        if (activeCategory === 'uncat') { if (m.category_id != null) return false; }
+        if (activeCategory === 'fav') { if (!m.favourite) return false; }
+        else if (activeCategory === 'uncat') { if (m.category_id != null) return false; }
         else if (activeCategory !== null && m.category_id !== activeCategory) return false;
         if (q) {
             const hay = (m.name + ' ' + (m.vfd_name || '')).toLowerCase();

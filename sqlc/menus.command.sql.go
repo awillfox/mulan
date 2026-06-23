@@ -12,9 +12,9 @@ import (
 )
 
 const createMenu = `-- name: CreateMenu :one
-INSERT INTO menus (name, price, category_id, vfd_name)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, price, category_id, vfd_name, active
+INSERT INTO menus (name, price, category_id, vfd_name, favourite)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, price, category_id, vfd_name, active, favourite
 `
 
 type CreateMenuParams struct {
@@ -22,6 +22,7 @@ type CreateMenuParams struct {
 	Price      int64       `db:"price" json:"price"`
 	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
 	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
+	Favourite  bool        `db:"favourite" json:"favourite"`
 }
 
 func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error) {
@@ -30,6 +31,7 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 		arg.Price,
 		arg.CategoryID,
 		arg.VfdName,
+		arg.Favourite,
 	)
 	var i Menu
 	err := row.Scan(
@@ -39,6 +41,7 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 		&i.CategoryID,
 		&i.VfdName,
 		&i.Active,
+		&i.Favourite,
 	)
 	return i, err
 }
@@ -54,7 +57,7 @@ func (q *Queries) DeleteMenu(ctx context.Context, id int32) error {
 
 const toggleMenu = `-- name: ToggleMenu :one
 UPDATE menus SET active = NOT active WHERE id = $1
-RETURNING id, name, price, category_id, vfd_name, active
+RETURNING id, name, price, category_id, vfd_name, active, favourite
 `
 
 func (q *Queries) ToggleMenu(ctx context.Context, id int32) (Menu, error) {
@@ -67,14 +70,15 @@ func (q *Queries) ToggleMenu(ctx context.Context, id int32) (Menu, error) {
 		&i.CategoryID,
 		&i.VfdName,
 		&i.Active,
+		&i.Favourite,
 	)
 	return i, err
 }
 
 const updateMenu = `-- name: UpdateMenu :one
-UPDATE menus SET name = $2, price = $3, category_id = $4, vfd_name = $5
+UPDATE menus SET name = $2, price = $3, category_id = $4, vfd_name = $5, favourite = $6
 WHERE id = $1
-RETURNING id, name, price, category_id, vfd_name, active
+RETURNING id, name, price, category_id, vfd_name, active, favourite
 `
 
 type UpdateMenuParams struct {
@@ -83,6 +87,7 @@ type UpdateMenuParams struct {
 	Price      int64       `db:"price" json:"price"`
 	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
 	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
+	Favourite  bool        `db:"favourite" json:"favourite"`
 }
 
 func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error) {
@@ -92,6 +97,7 @@ func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, e
 		arg.Price,
 		arg.CategoryID,
 		arg.VfdName,
+		arg.Favourite,
 	)
 	var i Menu
 	err := row.Scan(
@@ -101,6 +107,7 @@ func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, e
 		&i.CategoryID,
 		&i.VfdName,
 		&i.Active,
+		&i.Favourite,
 	)
 	return i, err
 }

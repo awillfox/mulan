@@ -100,6 +100,18 @@ Legacy delta-based "Serve" groups are migrated by `cmd/convert-base-option`
 (`base.price = menu.price + delta`; dry-run by default, `--apply` to commit,
 `--source-name` to override the matched group name). Runs against the local DB.
 
+## Favourites
+A menu may be flagged `favourite` (`menus.favourite` bool, `NOT NULL DEFAULT
+false`). Set it from the SvelteKit mulan-manager menu editor (the ★ toggle, sent
+as `favourite` in the `POST`/`PATCH /api/menus` body); it's returned on every
+`/api/menus` entry. At POS, favourites get their own **★ Favourite** category tab
+(shown next to **All** when any menu is favourited) listing only favourited
+items. Display-only — not snapshotted onto orders.
+
+**Deploy ordering:** `ListMenus`/`GetMenu`/`GetMenusByIDs` now `SELECT favourite`,
+so run `task migrate-prod` (adds the column) **before** swapping in the new
+binary, or every menu read errors (`column "favourite" does not exist`).
+
 ## Discounts
 Preset discounts created in `/manager/discounts`, applied by the cashier at POS.
 A discount is either `fixed` (flat THB off) or `percent` (% off). The `discounts.value`

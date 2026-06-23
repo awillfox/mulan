@@ -93,6 +93,7 @@ type Menu struct {
 	CategoryID pgtype.Int4 `db:"category_id" json:"category_id"`
 	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
 	Active     bool        `db:"active" json:"active"`
+	Favourite  bool        `db:"favourite" json:"favourite"`
 }
 
 type MenuBaseOption struct {
