@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -298,7 +299,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request) {
 	if h.wifi != nil {
 		if err := h.wifi.EnableForOrder(r.Context(), result.OrderID); err != nil {
 			// log but don't fail — payment already committed
-			_ = err
+			log.Printf("guestwifi: enable for order %d: %v", result.OrderID, err)
 		}
 		wifiUsername = h.wifi.GetUsernameForOrder(r.Context(), result.OrderID)
 	}

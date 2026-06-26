@@ -78,12 +78,15 @@ func (s *Service) mikrotikCreate(username string) error {
 		return fmt.Errorf("mikrotik dial: %w", err)
 	}
 	defer c.Close()
+	// Pool users are created already enabled so that checkout never depends on a
+	// live MikroTik API call to make a printed voucher work. The expire loop and
+	// reconcile loop disable accounts once their order is done.
 	_, err = c.RunArgs([]string{
 		"/ip/hotspot/user/add",
 		"=name=" + username,
 		"=password=",
 		"=server=" + s.cfg.HotspotServer,
-		"=disabled=yes",
+		"=disabled=no",
 	})
 	return err
 }
@@ -169,16 +172,12 @@ func (s *Service) AssignToOrder(ctx context.Context, orderID int32) (string, err
 	return assigned.Username, nil
 }
 
-// EnableForOrder enables the MikroTik hotspot user assigned to this order.
-// Called at checkout (after payment confirmed, inside or just after the tx).
+// EnableForOrder marks this order's assigned hotspot user active (DB only).
+// Called at checkout. The MikroTik account is already enabled (created enabled
+// in FillPool), so checkout deliberately does NOT make a live MikroTik API call
+// here — a transient API outage must never produce a printed-but-dead voucher.
+// The reconcile loop is the backstop that keeps MikroTik in sync with the DB.
 func (s *Service) EnableForOrder(ctx context.Context, orderID int32) error {
-	row, err := s.q.GetAssignedWifiUserByOrder(ctx, pgtype.Int4{Int32: orderID, Valid: true})
-	if err != nil {
-		return nil // order had no wifi user — ok
-	}
-	if err := s.mikrotikSetDisabled(row.Username, false); err != nil {
-		return fmt.Errorf("enable mikrotik user %q: %w", row.Username, err)
-	}
 	return s.q.ActivateGuestWifiUser(ctx, pgtype.Int4{Int32: orderID, Valid: true})
 }
 
@@ -221,4 +220,99 @@ func (s *Service) expireOnce() {
 			log.Printf("guestwifi: expired %q", u.Username)
 		}
 	}
+}
+
+// ReconcileLoop periodically forces MikroTik state to match the DB, healing any
+// drift left by transient API failures (a failed enable at checkout, a failed
+// disable at expiry). It runs every 2 minutes and once immediately.
+func (s *Service) ReconcileLoop(ctx context.Context) {
+	go func() {
+		if err := s.Reconcile(ctx); err != nil {
+			log.Printf("guestwifi: reconcile error: %v", err)
+		}
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.Reconcile(ctx); err != nil {
+					log.Printf("guestwifi: reconcile error: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+// Reconcile makes MikroTik match the DB on a single connection:
+//   - DB state pending/assigned/active  → user enabled  (recreated if missing)
+//   - DB state expired                  → user disabled
+//
+// MikroTik users not present in the DB (e.g. the built-in "guest"/trial account)
+// are never touched.
+func (s *Service) Reconcile(ctx context.Context) error {
+	users, err := s.q.ListGuestWifiUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("reconcile list db: %w", err)
+	}
+
+	c, err := s.dial()
+	if err != nil {
+		return fmt.Errorf("reconcile dial: %w", err)
+	}
+	defer c.Close()
+
+	reply, err := c.RunArgs([]string{"/ip/hotspot/user/print", "=.proplist=.id,name,disabled"})
+	if err != nil {
+		return fmt.Errorf("reconcile list mikrotik: %w", err)
+	}
+	type mtUser struct {
+		id       string
+		disabled bool
+	}
+	existing := make(map[string]mtUser, len(reply.Re))
+	for _, re := range reply.Re {
+		d := re.Map["disabled"]
+		existing[re.Map["name"]] = mtUser{id: re.Map[".id"], disabled: d == "true" || d == "yes"}
+	}
+
+	var enabled, disabled, created, errs int
+	for _, u := range users {
+		wantDisabled := u.State == "expired"
+		mt, ok := existing[u.Username]
+		if !ok {
+			if wantDisabled {
+				continue // expired and already gone from MikroTik — nothing to do
+			}
+			if err := s.mikrotikCreate(u.Username); err != nil {
+				errs++
+				log.Printf("guestwifi: reconcile recreate %q: %v", u.Username, err)
+			} else {
+				created++
+			}
+			continue
+		}
+		if mt.disabled == wantDisabled {
+			continue
+		}
+		val := "no"
+		if wantDisabled {
+			val = "yes"
+		}
+		if _, err := c.RunArgs([]string{"/ip/hotspot/user/set", "=.id=" + mt.id, "=disabled=" + val}); err != nil {
+			errs++
+			log.Printf("guestwifi: reconcile set %q disabled=%s: %v", u.Username, val, err)
+			continue
+		}
+		if wantDisabled {
+			disabled++
+		} else {
+			enabled++
+		}
+	}
+	if enabled+disabled+created+errs > 0 {
+		log.Printf("guestwifi: reconcile enabled=%d disabled=%d created=%d errs=%d", enabled, disabled, created, errs)
+	}
+	return nil
 }

@@ -96,6 +96,7 @@ func main() {
 			log.Printf("guestwifi: initial pool fill: %v", err)
 		}
 		wifiSvc.ExpireLoop(ctx)
+		wifiSvc.ReconcileLoop(ctx)
 	}
 	wifiHandler := guestwifihttp.New(wifiSvc)
 

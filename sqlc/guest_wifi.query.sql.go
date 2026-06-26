@@ -55,6 +55,39 @@ func (q *Queries) GetPendingWifiUser(ctx context.Context) (GuestWifiUser, error)
 	return i, err
 }
 
+const listGuestWifiUsers = `-- name: ListGuestWifiUsers :many
+SELECT id, username, state, order_id, assigned_at, expires_at, created_at FROM guest_wifi_users
+ORDER BY id
+`
+
+func (q *Queries) ListGuestWifiUsers(ctx context.Context) ([]GuestWifiUser, error) {
+	rows, err := q.db.Query(ctx, listGuestWifiUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GuestWifiUser{}
+	for rows.Next() {
+		var i GuestWifiUser
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.State,
+			&i.OrderID,
+			&i.AssignedAt,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const usernameExists = `-- name: UsernameExists :one
 SELECT count(*) FROM guest_wifi_users WHERE username = $1
 `
