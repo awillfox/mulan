@@ -145,6 +145,18 @@ Single-row `settings` table (PK check `id = 1`). Seeded on first startup with de
 ## Membership / Loyalty
 Optional, phone-keyed membership. `members` table: `phone` (unique), `name` (optional), `points` (bigint balance), timestamps. A phone is captured at the POS via a modal on **Pay** (Skip = no member); the modal live-looks-up an existing member via `/api/members/lookup`. On checkout, if a phone is provided, the order service find-or-creates the member, awards `floor(total_paid_THB × points_per_baht)` points, and snapshots `orders.member_id` + `orders.points_earned` — all inside the existing checkout transaction (atomic, no double-award on re-checkout). **Points are earn-and-track only for now — no redemption.** Members are also managed manually at `/manager/members`. The receipt prints a member/points footer block; the kitchen order bill does not. Earn rate is configurable in Settings (`points_per_baht`).
 
+## Guest WiFi (hotspot vouchers)
+`internal/guestwifi/` — MikroTik hotspot voucher pool (config via `MIKROTIK_*` env; the
+server dials the RouterOS API over the WiFi-station uplink, which intermittently times out).
+A pool of pre-generated hotspot users is kept topped up (`FillPool`/`AssignToOrder` refills
+when low). **Pool users are created already enabled** (`=disabled=no`) so a printed voucher
+works without any live API call at checkout: `EnableForOrder` (checkout) is **DB-only** — it
+never dials MikroTik, so a transient API outage can't print a dead voucher. `ExpireLoop`
+disables finished accounts; `ReconcileLoop` (startup + every 2 min, via `ListGuestWifiUsers`)
+force-heals MikroTik to match the DB (enable/recreate pending/assigned/active, disable
+expired, never touch users absent from the DB e.g. the built-in `guest`). `GET /api/wifi/order/{id}`
+→ assigned username (printed on the receipt). States: `pending`→`assigned`→`active`→`expired`.
+
 ## Cash Drawer Denominations
 The drawer tracks how many of each THB bill/coin it holds: 9 denominations
 (1000,500,100,50,20,10,5,2,1) in `cash_drawer_denominations` (one row per
