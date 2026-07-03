@@ -148,9 +148,11 @@ CREATE TABLE "public"."menus" (
   "vfd_name" character varying(20) NULL,
   "active" boolean NOT NULL DEFAULT true,
   "favourite" boolean NOT NULL DEFAULT false,
+  "sort_order" integer NOT NULL DEFAULT 0,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_menu_category" FOREIGN KEY ("category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
+CREATE INDEX "menus_category_sort" ON "public"."menus" ("category_id", "sort_order");
 -- Create "menu_base_options" table
 CREATE TABLE "public"."menu_base_options" (
   "id" serial NOT NULL,

@@ -589,6 +589,11 @@ table "menus" {
     null    = false
     default = false
   }
+  column "sort_order" {
+    type    = int
+    null    = false
+    default = 0
+  }
 
   primary_key {
     columns = [column.id]
@@ -598,6 +603,9 @@ table "menus" {
     columns     = [column.category_id]
     ref_columns = [table.menu_categories.column.id]
     on_delete   = SET_NULL
+  }
+  index "menus_category_sort" {
+    columns = [column.category_id, column.sort_order]
   }
 }
 
