@@ -24,6 +24,7 @@ func TestToMenuResponse(t *testing.T) {
 				CategoryID: pgtype.Int4{Int32: 7, Valid: true},
 				VfdName:    pgtype.Text{String: "PAD THAI", Valid: true},
 				Active:     true,
+				SortOrder:  4,
 			},
 			want: menuResponse{
 				ID:         1,
@@ -32,6 +33,7 @@ func TestToMenuResponse(t *testing.T) {
 				CategoryID: ptr(int32(7)),
 				VfdName:    ptr("PAD THAI"),
 				Active:     true,
+				SortOrder:  4,
 			},
 		},
 		{
@@ -61,6 +63,9 @@ func TestToMenuResponse(t *testing.T) {
 			}
 			if got.Price != tc.want.Price {
 				t.Fatalf("price: got %v want %v", got.Price, tc.want.Price)
+			}
+			if got.SortOrder != tc.want.SortOrder {
+				t.Fatalf("sort_order: got %v want %v", got.SortOrder, tc.want.SortOrder)
 			}
 			if !ptrEqual(got.CategoryID, tc.want.CategoryID) {
 				t.Fatalf("category: got %v want %v", got.CategoryID, tc.want.CategoryID)

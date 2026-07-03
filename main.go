@@ -208,6 +208,7 @@ func main() {
 				r.Post("/menus", menuHandler.Create)
 				r.Patch("/menus/{id}", menuHandler.Update)
 				r.Patch("/menus/{id}/toggle", menuHandler.Toggle)
+				r.Patch("/menus/reorder", menuHandler.Reorder)
 				r.Delete("/menus/{id}", menuHandler.Delete)
 				r.Put("/menus/{id}/option-groups", optionGroupHandler.SetMenuGroups)
 				r.Put("/menus/{id}/base-options", baseOptionHandler.SetMenuBaseOptions)

@@ -64,3 +64,16 @@ func (s *MenuService) Toggle(ctx context.Context, id int32) (db.Menu, error) {
 func (s *MenuService) Delete(ctx context.Context, id int32) error {
 	return s.q.DeleteMenu(ctx, id)
 }
+
+// Reorder assigns each menu in orderedIDs a 1-based sort_order within its
+// category. Ids that don't belong to categoryID are ignored by the query.
+func (s *MenuService) Reorder(ctx context.Context, categoryID *int32, orderedIDs []int32) error {
+	catID := pgtype.Int4{}
+	if categoryID != nil {
+		catID = pgtype.Int4{Int32: *categoryID, Valid: true}
+	}
+	return s.q.SetMenuOrder(ctx, db.SetMenuOrderParams{
+		Ids:        orderedIDs,
+		CategoryID: catID,
+	})
+}

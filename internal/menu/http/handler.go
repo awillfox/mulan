@@ -53,6 +53,7 @@ type menuResponse struct {
 	VfdName      *string                   `json:"vfd_name,omitempty"`
 	Active       bool                      `json:"active"`
 	Favourite    bool                      `json:"favourite"`
+	SortOrder    int32                     `json:"sort_order"`
 	OptionGroups []menuOptionGroupResponse `json:"option_groups"`
 	BaseOptions  []menuBaseOptionResponse  `json:"base_options"`
 }
@@ -78,6 +79,7 @@ func toMenuResponse(m sqlc.Menu) menuResponse {
 		VfdName:      vfdName,
 		Active:       m.Active,
 		Favourite:    m.Favourite,
+		SortOrder:    m.SortOrder,
 		OptionGroups: []menuOptionGroupResponse{},
 		BaseOptions:  []menuBaseOptionResponse{},
 	}
@@ -238,6 +240,25 @@ func (h *MenuHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
 		response.Error(w, r, http.StatusInternalServerError, "failed to delete menu", err)
+		return
+	}
+	response.NoContent(w, r)
+}
+
+type reorderRequest struct {
+	CategoryID *int32  `json:"category_id"`
+	OrderedIDs []int32 `json:"ordered_ids"`
+}
+
+// Reorder sets the display order of menus within one category. PATCH /api/menus/reorder
+func (h *MenuHandler) Reorder(w http.ResponseWriter, r *http.Request) {
+	var req reorderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, r, http.StatusBadRequest, "invalid body", err)
+		return
+	}
+	if err := h.svc.Reorder(r.Context(), req.CategoryID, req.OrderedIDs); err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "failed to reorder menus", err)
 		return
 	}
 	response.NoContent(w, r)
