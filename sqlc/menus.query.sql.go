@@ -10,7 +10,8 @@ import (
 )
 
 const getMenu = `-- name: GetMenu :one
-SELECT id, name, price, category_id, vfd_name, active, favourite FROM menus WHERE id = $1
+SELECT id, name, price, category_id, vfd_name, active, favourite, sort_order
+FROM menus WHERE id = $1
 `
 
 func (q *Queries) GetMenu(ctx context.Context, id int32) (Menu, error) {
@@ -24,12 +25,13 @@ func (q *Queries) GetMenu(ctx context.Context, id int32) (Menu, error) {
 		&i.VfdName,
 		&i.Active,
 		&i.Favourite,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const getMenusByIDs = `-- name: GetMenusByIDs :many
-SELECT id, name, price, category_id, vfd_name, active, favourite
+SELECT id, name, price, category_id, vfd_name, active, favourite, sort_order
 FROM menus
 WHERE id = ANY($1::int[])
 `
@@ -51,6 +53,7 @@ func (q *Queries) GetMenusByIDs(ctx context.Context, ids []int32) ([]Menu, error
 			&i.VfdName,
 			&i.Active,
 			&i.Favourite,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -63,7 +66,9 @@ func (q *Queries) GetMenusByIDs(ctx context.Context, ids []int32) ([]Menu, error
 }
 
 const listMenus = `-- name: ListMenus :many
-SELECT id, name, price, category_id, vfd_name, active, favourite FROM menus ORDER BY id
+SELECT id, name, price, category_id, vfd_name, active, favourite, sort_order
+FROM menus
+ORDER BY category_id, sort_order, name
 `
 
 func (q *Queries) ListMenus(ctx context.Context) ([]Menu, error) {
@@ -83,6 +88,7 @@ func (q *Queries) ListMenus(ctx context.Context) ([]Menu, error) {
 			&i.VfdName,
 			&i.Active,
 			&i.Favourite,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}

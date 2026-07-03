@@ -94,6 +94,7 @@ type Menu struct {
 	VfdName    pgtype.Text `db:"vfd_name" json:"vfd_name"`
 	Active     bool        `db:"active" json:"active"`
 	Favourite  bool        `db:"favourite" json:"favourite"`
+	SortOrder  int32       `db:"sort_order" json:"sort_order"`
 }
 
 type MenuBaseOption struct {
