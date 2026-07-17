@@ -126,7 +126,7 @@ func main() {
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
 	// Server (mulan) LAN address. Override per-device via .env if it moves.
-	viper.SetDefault("API_BASE", "http://192.168.1.100:8085")
+	viper.SetDefault("API_BASE", "http://localhost:8085")
 	viper.SetDefault("PORT", "8081")
 	viper.SetDefault("INPOUTX64_DLL", `C:\Tools\inpoutx64.dll`)
 	viper.SetDefault("RECEIPT_PRINTER_ADDR", "")
@@ -134,12 +134,16 @@ func main() {
 	// glyphs compose correctly. 26 = TIS-620 / Thai Character Code 18 (common
 	// Epson TM-T default). Override for other printer families.
 	viper.SetDefault("RECEIPT_PRINTER_CODEPAGE", 26)
+	// POS-local payment-channel config (which of cash/card/QR are offered +
+	// the default). Stored on disk beside the agent so it survives restarts.
+	viper.SetDefault("POS_CONFIG_FILE", "pos-config.json")
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("no .env file found, using defaults: %v", err)
 	}
 
 	apiBase := viper.GetString("API_BASE")
 	port := viper.GetString("PORT")
+	payConfigStore := newPaymentConfigStore(viper.GetString("POS_CONFIG_FILE"))
 
 	cashdrawer.Init(viper.GetString("INPOUTX64_DLL"))
 
@@ -173,7 +177,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
-		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type"},
 	}))
 
@@ -182,6 +186,8 @@ func main() {
 	r.Post("/vfd/payment", vfdPaymentHandler(ctrl))
 	r.Post("/cash-drawer/open", cashDrawerHandler())
 	r.Post("/checkout", checkoutHandler(rcptPrinter, apiBase))
+	r.Get("/config/payment", getPaymentConfigHandler(payConfigStore))
+	r.Put("/config/payment", putPaymentConfigHandler(payConfigStore))
 	r.Post("/restart", restartHandler())
 
 	log.Printf("mulan-agent starting on :%s (API_BASE=%s)", port, apiBase)

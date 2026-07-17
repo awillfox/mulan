@@ -617,6 +617,38 @@
   .deno-pad button.clear:active { background: var(--danger); color: #fff; }
   .deno-pad button.span-3 { grid-column: span 3; height: 48px; }
 
+  /* ── Cash-in-drawer rows ──────────────────────────────────────── */
+  .dc-rows { display: flex; flex-direction: column; gap: 8px; }
+  .dc-row { display: flex; align-items: center; gap: 10px; }
+  .dc-row .dc-label {
+    width: 68px; flex: none; text-align: right;
+    font-family: 'Roboto Mono', monospace; font-weight: 600; font-size: 16px; color: var(--on-surf);
+  }
+  .dc-step {
+    width: 44px; height: 44px; flex: none; border-radius: var(--shape-md);
+    background: var(--surf-2); color: var(--on-surf); border: 1px solid var(--outline-soft);
+    font-size: 22px; font-weight: 600; line-height: 1;
+    transition: background .12s, transform .08s;
+  }
+  .dc-step:hover { background: var(--p-ctr); border-color: var(--p-ctr); }
+  .dc-step:active { transform: scale(.94); }
+  .dc-row input.dc-count {
+    flex: 1; min-width: 0; height: 44px; text-align: center;
+    border: 1px solid var(--outline); border-radius: var(--shape-md);
+    font-family: 'Roboto Mono', monospace; font-size: 18px; font-weight: 600; color: var(--on-surf);
+    background: var(--surf); padding: 0 6px;
+  }
+  .dc-row .dc-sub {
+    width: 92px; flex: none; text-align: right;
+    font-family: 'Roboto Mono', monospace; font-size: 14px; color: var(--on-surf-var); font-variant-numeric: tabular-nums;
+  }
+  .dc-total {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--outline-soft);
+    font-family: 'Google Sans Display'; font-size: 18px; font-weight: 600; color: var(--on-surf);
+  }
+  .dc-total .mono { font-size: 20px; }
+
   /* ── Snackbar ─────────────────────────────────────────────────── */
   #toast-container {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -1102,6 +1134,14 @@
                     <span class="material-symbols-rounded">point_of_sale</span>
                     <span>Open cash drawer</span>
                 </button>
+                <button class="util-btn settings-act" onclick="openDrawerCash()">
+                    <span class="material-symbols-rounded">savings</span>
+                    <span>Cash in drawer</span>
+                </button>
+                <button class="util-btn settings-act" onclick="openPayConfig()">
+                    <span class="material-symbols-rounded">tune</span>
+                    <span>Payment channels</span>
+                </button>
                 <button class="util-btn settings-act" onclick="reloadMenus()">
                     <span class="material-symbols-rounded">refresh</span>
                     <span>Reload menus</span>
@@ -1111,6 +1151,87 @@
                     <span>Restart agent</span>
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Cash-in-drawer modal (set exact denomination counts) ──────── -->
+<div id="drawer-cash-modal" class="scrim">
+    <div class="dialog" style="max-width:560px">
+        <div class="d-head">
+            <h3>Cash in drawer</h3>
+            <button class="icon-btn" onclick="closeDrawerCash()"><span class="material-symbols-rounded">close</span></button>
+        </div>
+        <div class="d-body">
+            <p style="font-size:13px;color:var(--on-surf-var);margin-bottom:10px">Set the exact count of each bill and coin currently in the drawer.</p>
+            <div id="drawer-cash-rows" class="dc-rows"></div>
+            <div class="dc-total">
+                <span>Total in drawer</span>
+                <span class="mono" id="drawer-cash-total">฿0.00</span>
+            </div>
+            <!-- Manager authorisation — shown only when the logged-in cashier is not a manager -->
+            <div id="drawer-cash-auth" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--outline-soft)">
+                <div style="font-size:13px;font-weight:500;color:var(--on-surf-var);margin-bottom:8px">Manager authorisation required</div>
+                <div style="display:flex;gap:10px">
+                    <input id="drawer-cash-mgr-id" type="text" inputmode="numeric" placeholder="Manager ID" autocomplete="off"
+                           style="flex:1;height:48px;border:1px solid var(--outline);border-radius:var(--shape-md);padding:0 14px;font-size:16px;background:var(--surf)">
+                    <input id="drawer-cash-mgr-pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"
+                           style="flex:1;height:48px;border:1px solid var(--outline);border-radius:var(--shape-md);padding:0 14px;font-size:16px;background:var(--surf)">
+                </div>
+            </div>
+            <div id="drawer-cash-err" style="color:var(--danger);font-size:13px;min-height:18px;margin-top:10px"></div>
+        </div>
+        <div class="d-foot split">
+            <button class="btn-text" onclick="closeDrawerCash()">Cancel</button>
+            <button class="btn-filled" id="drawer-cash-save" onclick="saveDrawerCash()">
+                <span class="material-symbols-rounded" style="font-size:20px">check</span>
+                <span>Save</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Payment-channel config modal (POS-local, agent-stored) ────── -->
+<div id="pay-config-modal" class="scrim">
+    <div class="dialog" style="max-width:460px">
+        <div class="d-head">
+            <h3>Payment channels</h3>
+            <button class="icon-btn" onclick="closePayConfig()"><span class="material-symbols-rounded">close</span></button>
+        </div>
+        <div class="d-body">
+            <p style="font-size:13px;color:var(--on-surf-var);margin-bottom:12px">Choose which payment methods the cashier can use at checkout, and which one is selected first.</p>
+
+            <div id="pc-cash" class="pref-row" onclick="pcToggle('cash')">
+                <span class="material-symbols-rounded" style="color:var(--on-surf-var)">payments</span>
+                <div class="pref-text"><div class="pref-title">Cash</div></div>
+                <div class="switch"></div>
+            </div>
+            <div id="pc-card" class="pref-row" onclick="pcToggle('card')">
+                <span class="material-symbols-rounded" style="color:var(--on-surf-var)">credit_card</span>
+                <div class="pref-text"><div class="pref-title">Card</div></div>
+                <div class="switch"></div>
+            </div>
+            <div id="pc-qr" class="pref-row" onclick="pcToggle('qr')">
+                <span class="material-symbols-rounded" style="color:var(--on-surf-var)">qr_code_2</span>
+                <div class="pref-text"><div class="pref-title">QR / PromptPay</div></div>
+                <div class="switch"></div>
+            </div>
+
+            <div style="font-size:13px;font-weight:500;color:var(--on-surf-var);margin:16px 0 8px 4px">Default method</div>
+            <div class="pay-tabs" id="pc-default-tabs">
+                <button class="pay-tab" data-method="cash" onclick="pcSetDefault('cash')"><span class="material-symbols-rounded">payments</span>Cash</button>
+                <button class="pay-tab" data-method="card" onclick="pcSetDefault('card')"><span class="material-symbols-rounded">credit_card</span>Card</button>
+                <button class="pay-tab" data-method="qr" onclick="pcSetDefault('qr')"><span class="material-symbols-rounded">qr_code_2</span>QR</button>
+            </div>
+
+            <div id="pc-err" style="color:var(--danger);font-size:13px;min-height:18px;margin-top:12px"></div>
+        </div>
+        <div class="d-foot split">
+            <button class="btn-text" onclick="closePayConfig()">Cancel</button>
+            <button class="btn-filled" id="pc-save" onclick="savePayConfig()">
+                <span class="material-symbols-rounded" style="font-size:20px">check</span>
+                <span>Save</span>
+            </button>
         </div>
     </div>
 </div>
@@ -1165,7 +1286,10 @@
 const API_BASE = "{{.APIBase}}";
 
 // ── Cashier login ──────────────────────────────────────────────────
-let loggedInCashier = null; // {id, login_id, name}
+let loggedInCashier = null; // {id, login_id, name, role}
+let sessionPin = null;      // PIN kept in memory (never persisted) so a manager
+                            // cashier can authorise a drawer cash update without
+                            // re-entering it; cleared on logout.
 let loginStep = 'id';       // 'id' | 'pin'
 let loginIDDigits = '';
 let loginPINDigits = '';
@@ -1257,6 +1381,7 @@ async function loginNext() {
         }
         const cashier = await r.json().then(d => d.data ?? d);
         loggedInCashier = cashier;
+        sessionPin = loginPINDigits;
         document.getElementById('login-overlay').style.display = 'none';
         document.getElementById('pos-shell').style.visibility = '';
         document.getElementById('cashier-badge-name').textContent = cashier.name;
@@ -1277,6 +1402,7 @@ function confirmLogout() {
 
 function doLogout() {
     loggedInCashier = null;
+    sessionPin = null;
     loginStep = 'id';
     loginIDDigits = '';
     loginPINDigits = '';
@@ -1333,6 +1459,12 @@ async function init() {
                 if (typeof s.vat_percent === 'number') vatPercent = s.vat_percent;
             }
         } catch (_) {}
+        // POS-local payment-channel config (agent-served); keep defaults on error.
+        try {
+            const pc = await fetch('/config/payment').then(r => r.ok ? r.json() : null);
+            if (pc) payConfig = pc;
+        } catch (_) {}
+        applyPayConfig();
         renderCategories();
         renderMenus();
         renderOrder();
@@ -1969,6 +2101,27 @@ function confirmDiscount() {
 
 // ── Tender (payment) ──────────────────────────────────────────────
 let payMethod = 'cash';
+// payConfig mirrors the agent's on-disk pos-config.json: which channels are
+// offered and which is pre-selected. Loaded on boot; defaults keep the POS
+// working if the agent is older / the fetch fails.
+let payConfig = { cash: true, card: true, qr: true, default: 'cash' };
+
+// effectiveDefault returns the configured default when it's enabled, else the
+// first enabled channel (cash → card → qr). Guards against a stale default.
+function effectiveDefault() {
+    if (payConfig[payConfig.default]) return payConfig.default;
+    return ['cash', 'card', 'qr'].find(m => payConfig[m]) || 'cash';
+}
+
+// applyPayConfig hides the tender pay-tabs for disabled channels so the
+// cashier only sees the methods the shop accepts.
+function applyPayConfig() {
+    ['cash', 'card', 'qr'].forEach(m => {
+        const tab = document.querySelector(`#pay-tabs .pay-tab[data-method="${m}"]`);
+        if (tab) tab.style.display = payConfig[m] ? '' : 'none';
+    });
+}
+
 let cashTendered = 0; // in THB
 let customerPhone = '';
 let customerName  = '';
@@ -2052,11 +2205,13 @@ function scheduleMemberLookup() {
 }
 
 function openTenderDirect() {
-    payMethod = 'cash';
+    const def = effectiveDefault();
+    payMethod = def;
     cashTendered = 0;
     tenderDenoms = {};
+    applyPayConfig();
     renderTender();
-    setMethod('cash');
+    setMethod(def);
     document.getElementById('tender-modal').classList.add('is-open');
     runChangePreview();
 }
@@ -2440,10 +2595,16 @@ function trashHeld(code) {
 }
 
 // ── Void order ────────────────────────────────────────────────────
+// Voiding fully clears the cart AND drops the order code, so the next menu
+// pick starts a brand-new order (ensureOrderCode mints a fresh code). Mirrors
+// the reset done after checkout/hold. The abandoned code holds no line items
+// server-side (items are only persisted at checkout), so nothing to clean up.
 function voidOrder() {
     if (!order.length) return;
-    confirmDialog('Void this order?', `${order.length} line${order.length>1?'s':''} will be discarded. The order code stays open.`, () => {
+    confirmDialog('Void this order?', `${order.length} line${order.length>1?'s':''} will be discarded and a new order started.`, () => {
         order = [];
+        orderCode = null;
+        wifiUsername = null;
         orderDiscounts = [];
         renderOrder();
         snack('Order voided.', 'warn');
@@ -2458,6 +2619,128 @@ function kickDrawer() {
             snack('Drawer opened.', 'success');
         })
         .catch(() => snack('Drawer kick failed.', 'danger'));
+}
+
+// ── Cash in drawer (set exact denomination counts) ────────────────
+// The drawer denomination write is manager-gated server-side: a manager
+// cashier's id + PIN go in the X-Cashier-* headers (VerifyManager). If the
+// logged-in cashier is already a manager we reuse their session PIN, otherwise
+// we prompt for a manager's credentials in the modal.
+let drawerCashCounts = {}; // satang string -> count
+
+async function openDrawerCash() {
+    closeSettings();
+    drawerCashCounts = {};
+    document.getElementById('drawer-cash-err').textContent = '';
+    document.getElementById('drawer-cash-mgr-id').value = '';
+    document.getElementById('drawer-cash-mgr-pin').value = '';
+    const isManager = loggedInCashier && loggedInCashier.role === 'manager' && sessionPin;
+    document.getElementById('drawer-cash-auth').style.display = isManager ? 'none' : '';
+    // Prefill from the current drawer state.
+    try {
+        const d = await fetch(API_BASE + '/api/cash-drawer/denominations').then(unwrap);
+        DENOMS_SATANG.forEach(s => { drawerCashCounts[s] = (d && d.counts && d.counts[s]) || 0; });
+    } catch (_) {
+        DENOMS_SATANG.forEach(s => { drawerCashCounts[s] = 0; });
+    }
+    renderDrawerCashRows();
+    document.getElementById('drawer-cash-save').disabled = false;
+    document.getElementById('drawer-cash-modal').classList.add('is-open');
+}
+
+function renderDrawerCashRows() {
+    const box = document.getElementById('drawer-cash-rows');
+    box.innerHTML = DENOMS_SATANG.map(s => `
+        <div class="dc-row">
+            <span class="dc-label">฿${denomBaht(s).toLocaleString('th-TH')}</span>
+            <button class="dc-step" onclick="drawerCashStep(${s}, -1)" aria-label="Remove one">−</button>
+            <input class="dc-count" type="text" inputmode="numeric" value="${drawerCashCounts[s] || 0}"
+                   oninput="drawerCashInput(${s}, this.value)">
+            <button class="dc-step" onclick="drawerCashStep(${s}, 1)" aria-label="Add one">+</button>
+            <span class="dc-sub" id="dc-sub-${s}"></span>
+        </div>`).join('');
+    updateDrawerCashTotal();
+}
+
+function drawerCashInput(satang, val) {
+    let n = parseInt(String(val).replace(/[^0-9]/g, ''), 10);
+    if (isNaN(n) || n < 0) n = 0;
+    drawerCashCounts[satang] = n;
+    updateDrawerCashTotal();
+}
+
+function drawerCashStep(satang, dir) {
+    const n = Math.max(0, (drawerCashCounts[satang] || 0) + dir);
+    drawerCashCounts[satang] = n;
+    const input = document.querySelector(`#drawer-cash-rows .dc-row input[oninput*="drawerCashInput(${satang},"]`);
+    if (input) input.value = n;
+    updateDrawerCashTotal();
+}
+
+function updateDrawerCashTotal() {
+    let totalSatang = 0;
+    DENOMS_SATANG.forEach(s => {
+        const c = drawerCashCounts[s] || 0;
+        totalSatang += s * c;
+        const sub = document.getElementById('dc-sub-' + s);
+        if (sub) sub.textContent = c ? fmtPlain(denomBaht(s) * c) : '';
+    });
+    document.getElementById('drawer-cash-total').textContent = fmt(totalSatang / 100);
+}
+
+function closeDrawerCash() {
+    document.getElementById('drawer-cash-modal').classList.remove('is-open');
+}
+
+async function saveDrawerCash() {
+    const errEl = document.getElementById('drawer-cash-err');
+    errEl.textContent = '';
+    const saveBtn = document.getElementById('drawer-cash-save');
+    saveBtn.disabled = true;
+
+    // Resolve the manager credentials that authorise the write.
+    let mgrId, mgrPin;
+    if (loggedInCashier && loggedInCashier.role === 'manager' && sessionPin) {
+        mgrId = loggedInCashier.id;
+        mgrPin = sessionPin;
+    } else {
+        const loginId = document.getElementById('drawer-cash-mgr-id').value.trim();
+        const pin = document.getElementById('drawer-cash-mgr-pin').value;
+        if (!loginId || !pin) { errEl.textContent = 'Enter a manager ID and PIN.'; saveBtn.disabled = false; return; }
+        try {
+            const lr = await fetch(API_BASE + '/api/cashiers/login', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ login_id: loginId, pin }),
+            });
+            if (!lr.ok) { errEl.textContent = 'Invalid manager ID or PIN.'; saveBtn.disabled = false; return; }
+            const mgr = await lr.json().then(d => d.data ?? d);
+            if (mgr.role !== 'manager') { errEl.textContent = 'That cashier is not a manager.'; saveBtn.disabled = false; return; }
+            mgrId = mgr.id; mgrPin = pin;
+        } catch (_) { errEl.textContent = 'Connection error.'; saveBtn.disabled = false; return; }
+    }
+
+    const counts = {};
+    DENOMS_SATANG.forEach(s => { counts[String(s)] = drawerCashCounts[s] || 0; });
+
+    try {
+        const r = await fetch(API_BASE + '/api/cash-drawer/denominations', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Cashier-Id': String(mgrId),
+                'X-Cashier-Pin': mgrPin,
+            },
+            body: JSON.stringify({ counts }),
+        });
+        if (r.status === 403) { errEl.textContent = 'Manager authorisation failed.'; saveBtn.disabled = false; return; }
+        if (!r.ok) { errEl.textContent = 'Could not update the drawer.'; saveBtn.disabled = false; return; }
+        const d = await r.json().then(x => x.data ?? x);
+        snack('Drawer cash updated — total ' + fmt(d.total) + '.', 'success');
+        closeDrawerCash();
+    } catch (_) {
+        errEl.textContent = 'Connection error.';
+        saveBtn.disabled = false;
+    }
 }
 
 // ── Settings ──────────────────────────────────────────────────────
@@ -2487,6 +2770,81 @@ function toggleHideSearch() {
     snack(next ? 'Search bar hidden.' : 'Search bar shown.', 'success');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('is-open'); }
+
+// ── Payment-channel config (POS-local, persisted by the agent) ─────
+// A working copy is edited in the modal and only committed to the agent
+// (and to the live payConfig) on Save, so a half-toggled state can't break
+// checkout.
+let pcDraft = null;
+
+function openPayConfig() {
+    pcDraft = { cash: payConfig.cash, card: payConfig.card, qr: payConfig.qr, default: payConfig.default };
+    document.getElementById('pc-err').textContent = '';
+    renderPayConfig();
+    closeSettings();
+    document.getElementById('pay-config-modal').classList.add('is-open');
+}
+function closePayConfig() { document.getElementById('pay-config-modal').classList.remove('is-open'); }
+
+function renderPayConfig() {
+    ['cash', 'card', 'qr'].forEach(m => {
+        document.getElementById('pc-' + m).classList.toggle('is-on', !!pcDraft[m]);
+        const tab = document.querySelector(`#pc-default-tabs .pay-tab[data-method="${m}"]`);
+        if (tab) {
+            tab.classList.toggle('is-active', pcDraft.default === m);
+            // A disabled channel can't be the default: grey it out.
+            tab.style.opacity = pcDraft[m] ? '' : '.4';
+            tab.style.pointerEvents = pcDraft[m] ? '' : 'none';
+        }
+    });
+}
+
+function pcToggle(method) {
+    const enabledCount = ['cash', 'card', 'qr'].filter(m => pcDraft[m]).length;
+    // Block turning off the last enabled channel — the POS must accept something.
+    if (pcDraft[method] && enabledCount === 1) {
+        document.getElementById('pc-err').textContent = 'At least one payment channel must stay enabled.';
+        return;
+    }
+    document.getElementById('pc-err').textContent = '';
+    pcDraft[method] = !pcDraft[method];
+    // If we just disabled the current default, move it to the first enabled one.
+    if (!pcDraft[pcDraft.default]) {
+        pcDraft.default = ['cash', 'card', 'qr'].find(m => pcDraft[m]);
+    }
+    renderPayConfig();
+}
+
+function pcSetDefault(method) {
+    if (!pcDraft[method]) return; // disabled channels aren't selectable
+    pcDraft.default = method;
+    renderPayConfig();
+}
+
+async function savePayConfig() {
+    const btn = document.getElementById('pc-save');
+    btn.disabled = true;
+    try {
+        const r = await fetch('/config/payment', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(pcDraft),
+        });
+        if (!r.ok) {
+            const msg = await r.text().catch(() => '');
+            document.getElementById('pc-err').textContent = msg || 'Failed to save.';
+            return;
+        }
+        payConfig = await r.json();
+        applyPayConfig();
+        closePayConfig();
+        snack('Payment channels updated.', 'success');
+    } catch (_) {
+        document.getElementById('pc-err').textContent = 'Failed to save — check the agent.';
+    } finally {
+        btn.disabled = false;
+    }
+}
 
 // ── Terminal id + drawer-kick audit ───────────────────────────────
 // Drawer denomination management lives in the manager web app now; the POS
@@ -2622,6 +2980,8 @@ document.addEventListener('keydown', e => {
     if (document.getElementById('discount-modal').classList.contains('is-open')) return closeDiscountModal();
     if (document.getElementById('options-modal').classList.contains('is-open')) return closeOptionsModal();
     if (document.getElementById('held-scrim').classList.contains('is-open'))    return closeHeldSheet();
+    if (document.getElementById('pay-config-modal').classList.contains('is-open')) return closePayConfig();
+    if (document.getElementById('drawer-cash-modal').classList.contains('is-open')) return closeDrawerCash();
     if (document.getElementById('settings-modal').classList.contains('is-open'))return closeSettings();
 });
 

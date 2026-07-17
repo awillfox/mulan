@@ -39,8 +39,8 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 // OwnerRoutes registers the denomination write endpoints. main.go mounts these
-// under the same /cash-drawer prefix but wrapped in RequireRole(owner), so only
-// manager-auth owners can set/adjust the drawer's bill/coin counts.
+// under the same /cash-drawer prefix wrapped in RequireDrawerWriteAuth, so an
+// owner manager token OR a manager-cashier PIN can set/adjust the bill/coin counts.
 func (h *Handler) OwnerRoutes(r chi.Router) {
 	r.Put("/denominations", h.SetDenominations)
 	r.Post("/denominations/adjust", h.AdjustDenominations)

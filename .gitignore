@@ -53,3 +53,6 @@ Thumbs.db
 # Debug
 *.log
 __debug_bin*
+
+# mulan-agent runtime config (POS-local, generated at runtime)
+/mulan-agent/pos-config.json

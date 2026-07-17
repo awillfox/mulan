@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -10,7 +11,10 @@ import (
 	"github.com/Rhymond/go-money"
 
 	"mulan/internal/cashdrawer/service"
+	cashierservice "mulan/internal/cashier/service"
+	managerauthdomain "mulan/internal/managerauth/domain"
 	managerauthhttp "mulan/internal/managerauth/http"
+	managerauthservice "mulan/internal/managerauth/service"
 	"mulan/internal/response"
 )
 
@@ -44,13 +48,56 @@ type denomWriteRequest struct {
 	Delta  map[string]int `json:"delta"`  // for adjust (relative)
 }
 
-// actorFromCtx returns the audit actor name for a drawer write. These handlers
-// run behind RequireRole(owner), so a manager user is always in context.
+// actorCtxKey holds the resolved audit-actor name stashed by RequireDrawerWriteAuth.
+type actorCtxKey struct{}
+
+func withActor(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, actorCtxKey{}, name)
+}
+
+// actorFromCtx returns the audit actor name for a drawer write. It prefers the
+// name resolved by RequireDrawerWriteAuth (owner user or manager cashier), then
+// falls back to a manager user set by a plain RequireManager chain.
 func actorFromCtx(r *http.Request) string {
+	if name, ok := r.Context().Value(actorCtxKey{}).(string); ok && name != "" {
+		return name
+	}
 	if u, ok := managerauthhttp.UserFromContext(r.Context()); ok {
 		return u.Name
 	}
 	return ""
+}
+
+// RequireDrawerWriteAuth gates the drawer denomination writes. It accepts either
+// of the two clients that legitimately set the drawer:
+//
+//  1. an owner manager bearer token — the SvelteKit manager /drawer page, or
+//  2. a manager-cashier id + PIN via the X-Cashier-Id / X-Cashier-Pin headers —
+//     the POS kiosk on the trusted tailnet (no manager login flow).
+//
+// The resolved name is stashed in context so the audit log records who set the
+// drawer. On failure it responds 403.
+func RequireDrawerWriteAuth(mgr *managerauthservice.Service, cash *cashierservice.Service) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 1) owner manager bearer token
+			if u, err := mgr.Authenticate(r.Context(), managerauthhttp.BearerToken(r)); err == nil && u.Role == managerauthdomain.RoleOwner {
+				next.ServeHTTP(w, r.WithContext(withActor(r.Context(), u.Name)))
+				return
+			}
+			// 2) manager-cashier PIN (POS kiosk)
+			idStr, pin := r.Header.Get("X-Cashier-Id"), r.Header.Get("X-Cashier-Pin")
+			if idStr != "" && pin != "" {
+				if id, err := strconv.Atoi(idStr); err == nil {
+					if c, err := cash.VerifyManager(r.Context(), int32(id), pin); err == nil {
+						next.ServeHTTP(w, r.WithContext(withActor(r.Context(), c.Name)))
+						return
+					}
+				}
+			}
+			response.Error(w, r, http.StatusForbidden, "manager authorization required", nil)
+		})
+	}
 }
 
 // SetDenominations replaces the drawer's per-denomination counts. Owner-gated

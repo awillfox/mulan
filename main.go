@@ -165,10 +165,11 @@ func main() {
 		r.Route("/orders", orderHandler.Routes)
 		r.Route("/cash-drawer", func(r chi.Router) {
 			cashDrawerHandler.Routes(r) // open: reads + change-preview + float/kick/audit
-			// Denomination writes are owner-gated (manager web app sets the drawer).
+			// Denomination writes accept either an owner manager token (the
+			// SvelteKit manager /drawer page) or a manager-cashier PIN via the
+			// X-Cashier-* headers (the POS kiosk). See RequireDrawerWriteAuth.
 			r.Group(func(r chi.Router) {
-				r.Use(managerauthhttp.RequireManager(managerAuthSvc))
-				r.Use(managerauthhttp.RequireRole(managerauthdomain.RoleOwner))
+				r.Use(cashdrawerhttp.RequireDrawerWriteAuth(managerAuthSvc, cashierSvc))
 				cashDrawerHandler.OwnerRoutes(r)
 			})
 		})

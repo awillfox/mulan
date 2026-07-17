@@ -71,8 +71,8 @@ The legacy Go `html/template` **write** pages (`/manager/{items,option-groups,di
 - `PATCH /api/discounts/{id}` — update a discount
 - `DELETE /api/discounts/{id}` — delete a discount
 - `GET /api/cash-drawer/denominations` — current bill/coin counts `{counts:{<satang>:count}, total}` (open; POS + manager web read)
-- `PUT /api/cash-drawer/denominations` — set counts `{counts:{<satang>:count}}` (**owner**, manager-auth) — replaces all
-- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{delta:{<satang>:±count}}` (**owner**; 409 if a count would go negative)
+- `PUT /api/cash-drawer/denominations` — set counts `{counts:{<satang>:count}}` (**owner token OR manager-cashier PIN** via `X-Cashier-Id`/`X-Cashier-Pin`; see Cash Drawer Denominations) — replaces all
+- `POST /api/cash-drawer/denominations/adjust` — relative add/remove `{delta:{<satang>:±count}}` (**owner token OR manager-cashier PIN**; 409 if a count would go negative)
 - `POST /api/cash-drawer/change-preview` — `{due, tender:{<satang>:count}}` → `{rounded_due, change_total, breakdown, makeable}` (advisory; open)
 - `GET /api/reports/orders?from=&to=&status=&limit=&offset=` — **owner-gated** paginated order list with reconstructed totals + nested line items. `status`: `paid|open|held` (empty = all); dates shop-local ISO (default last 7 days, 92-day cap); `limit` default 100/max 200. Money in THB. Returns `{orders:[{code,status,created_at,member_name,member_phone,points_earned,item_count,qty,gross,discount,subsidy,net,line_items[],discounts[]}], total}`. Totals reconstructed (`orders` stores none); `gross` includes option deltas (matches dashboard revenue).
 - Cashiers carry `role` (`cashier|manager`); `POST/PATCH /api/cashiers` accept `role`, login/list responses include it. (The cashier `manager` role no longer gates anything now that drawer denomination management moved to the owner-gated manager web app; it's retained for future POS-side permissions.)
@@ -139,6 +139,26 @@ backend computes VAT as the inclusive portion of the shop-received amount
 earlier bug that added VAT on top. Reports show a waterfall: Gross − Discounts =
 Net sales, + Subsidy; `/api/dashboard/subsidies` lists subsidy spend by program.
 
+## Payment Channels (POS-local)
+Which payment methods the cashier can pick at checkout (**Cash / Card / QR**) and
+which one is **pre-selected** when the tender modal opens are configured from the
+POS itself: **Settings → Payment channels** → a modal with three toggles + a
+default picker. This is **POS-local**, not DB-backed: the **mulan-agent** persists
+it to a JSON file (`pos-config.json`, path via `POS_CONFIG_FILE` env, default
+next to the agent binary) so it survives agent restarts and browser-data clears,
+and every browser pointed at that terminal's agent shares it. Per-terminal by
+design (fine for the single Flytech POS). Not manager-gated — it's a display
+guardrail, not a policy: `/checkout` still accepts any `payment_method`.
+
+Agent endpoints (served by mulan-agent, same origin as `/pos`, **not** the main
+API): `GET /config/payment` → `{cash,card,qr,default}`; `PUT /config/payment`
+(same body) validates (≥1 channel enabled; `default` must be an enabled channel)
+→ 400 otherwise, atomic temp-file+rename write. The POS loads it in `init()`
+(keeps all-enabled defaults if the fetch fails), hides disabled `.pay-tab`s, and
+opens the tender modal on `effectiveDefault()` (configured default if still
+enabled, else first enabled). `mulan-agent/paymentconfig.go` owns the store +
+handlers.
+
 ## Settings (DB-backed)
 Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
 
@@ -167,9 +187,16 @@ old single-float concept; the legacy `GetCurrentCashDrawerFloat` query now filte
 a `cash_drawer_audit` row carrying a signed per-denomination JSON delta
 (`denominations` jsonb) + net satang (`delta`); event types `set`/`adjust`/`sale`.
 
-**Setting the drawer counts** lives in the **manager web app** (mulan-manager
-`/drawer` page) — owner-only, via the `RequireRole(owner)` `PUT`/`adjust` endpoints
-(actor = the logged-in manager). The POS no longer edits drawer denominations. On a
+**Setting the drawer counts** can be done from two places: the **manager web app**
+(mulan-manager `/drawer` page, owner bearer token) **and the POS** (Settings →
+**Cash in drawer** → modal that sets the exact per-denomination counts). Both hit the
+same `PUT /api/cash-drawer/denominations` (+ `/adjust`) endpoints, now wrapped in
+`RequireDrawerWriteAuth` (`internal/cashdrawer/http/denominations.go`) which accepts
+**either** an owner manager token **or** a manager-cashier id + PIN via the
+`X-Cashier-Id`/`X-Cashier-Pin` headers (verified server-side by `cashier.Service.VerifyManager`).
+The POS sends those headers: if the logged-in cashier's role is `manager` it reuses
+their in-memory session PIN (no prompt), otherwise the modal prompts for a manager's
+ID + PIN. The verified name is recorded as the audit actor. On a
 **cash** sale the cashier enters the exact denominations tendered; checkout rounds
 the amount due to the nearest ฿1 (smallest coin; card/QR charge exact satang),
 computes change as real bills/coins via a **bounded coin-change DP** against current
@@ -194,7 +221,7 @@ new binary, or drawer/audit queries error at runtime.
 - **Open** (POS/agent/shared, no auth): `GET /api/menus`, `GET /api/menu-categories`, `GET /api/settings`(+`/logo`), `GET /api/members/lookup`, `POST /api/cashiers/login`, `/api/orders`, `/api/cash-drawer` (incl. `GET /denominations`, `POST /change-preview`, float/kick/audit), `/api/wifi`, `GET /api/discounts/active`, `POST /api/auth/login`, **`GET /api/dashboard/*`** (reads only — see note). The drawer denomination **writes** (`PUT /cash-drawer/denominations`, `POST /cash-drawer/denominations/adjust`) are nested inside the `/cash-drawer` mount but wrapped in `RequireRole(owner)` — see below.
   - **Dashboard reads are intentionally open.** The legacy Go `html/template` `/manager` dashboard sends no bearer token (no login flow), so an owner-gated `/api/dashboard/*` returned 401 and the page rendered zeros. The reads were moved to the open block; tailnet access is treated as trusted. This exposes revenue/top-menus/subsidies/heatmap to anyone who can reach the port. **Re-gate (move back under `RequireRole(owner)`) once the Go pages are retired in favour of the SvelteKit mulan-manager** (which logs in and sends the bearer).
 - **`RequireManager`** (any logged-in manager, reads): `GET /api/option-groups`, `GET /api/members`(+`/{id}/orders`), `GET /api/cashiers`, `GET /api/discounts`, `/api/auth/{me,logout,change-password}`.
-- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `GET /api/reports/*` (order history — owner-gated, deliberately NOT under the now-open `/dashboard`), and the cash-drawer denomination writes (`PUT /api/cash-drawer/denominations`, `POST /api/cash-drawer/denominations/adjust` — nested inside the open `/cash-drawer` mount but wrapped in owner middleware).
+- **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `GET /api/reports/*` (order history — owner-gated, deliberately NOT under the now-open `/dashboard`), and the cash-drawer denomination writes (`PUT /api/cash-drawer/denominations`, `POST /api/cash-drawer/denominations/adjust` — nested inside the open `/cash-drawer` mount but wrapped in `RequireDrawerWriteAuth`, which accepts an owner manager token **or** a manager-cashier PIN via `X-Cashier-Id`/`X-Cashier-Pin` so the POS kiosk can set the drawer too — see Cash Drawer Denominations).
 
 Adding a manager route: register it in the right group in `main.go` AND add its prefix to the proxy `ALLOW` in mulan-manager's `src/routes/api/[...path]/+server.ts`. **Never wrap a POS-shared read** (it breaks the POS) — verify with a no-token curl returning 200.
 
