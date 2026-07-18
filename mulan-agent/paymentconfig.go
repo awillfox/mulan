@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"sync"
+
+	"mulan-agent/lib/promptpay"
 )
 
 // paymentConfig is the POS-local, on-disk configuration for the checkout
@@ -20,6 +22,13 @@ type paymentConfig struct {
 	Card    bool   `json:"card"`
 	QR      bool   `json:"qr"`
 	Default string `json:"default"` // "cash" | "card" | "qr"; must be enabled
+
+	// PromptPayID is the shop's PromptPay target (10-digit mobile, 13-digit
+	// national id, or 15-digit e-wallet). When set, a QR-paid order prints a
+	// payable PromptPay QR for the order total at the foot of the receipt.
+	// Empty = no QR printed, which is also what an older config file (written
+	// before this field existed) unmarshals to.
+	PromptPayID string `json:"promptpay_id"`
 }
 
 func defaultPaymentConfig() paymentConfig {
@@ -52,6 +61,11 @@ func (c paymentConfig) validate() error {
 	}
 	if !c.enabled(c.Default) {
 		return fmt.Errorf("default channel %q is not enabled", c.Default)
+	}
+	// An unencodable id would fail silently at print time (receipt with no QR),
+	// so reject it here where the cashier can see the error.
+	if err := promptpay.ValidateID(c.PromptPayID); err != nil {
+		return err
 	}
 	return nil
 }

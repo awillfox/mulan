@@ -1224,6 +1224,12 @@
                 <button class="pay-tab" data-method="qr" onclick="pcSetDefault('qr')"><span class="material-symbols-rounded">qr_code_2</span>QR</button>
             </div>
 
+            <div style="font-size:13px;font-weight:500;color:var(--on-surf-var);margin:16px 0 8px 4px">PromptPay ID</div>
+            <input id="pc-promptpay" type="tel" inputmode="numeric" autocomplete="off"
+                   placeholder="0XXXXXXXXX or 13-digit tax ID"
+                   style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--outline);background:var(--surf);color:var(--on-surf);font-size:16px">
+            <p style="font-size:12px;color:var(--on-surf-var);margin:6px 4px 0">Printed as a scannable QR on the receipt for QR-paid orders, with the order total already filled in. Leave blank to print no QR.</p>
+
             <div id="pc-err" style="color:var(--danger);font-size:13px;min-height:18px;margin-top:12px"></div>
         </div>
         <div class="d-foot split">
@@ -2778,7 +2784,8 @@ function closeSettings() { document.getElementById('settings-modal').classList.r
 let pcDraft = null;
 
 function openPayConfig() {
-    pcDraft = { cash: payConfig.cash, card: payConfig.card, qr: payConfig.qr, default: payConfig.default };
+    pcDraft = { cash: payConfig.cash, card: payConfig.card, qr: payConfig.qr, default: payConfig.default, promptpay_id: payConfig.promptpay_id || '' };
+    document.getElementById('pc-promptpay').value = pcDraft.promptpay_id;
     document.getElementById('pc-err').textContent = '';
     renderPayConfig();
     closeSettings();
@@ -2824,6 +2831,10 @@ function pcSetDefault(method) {
 async function savePayConfig() {
     const btn = document.getElementById('pc-save');
     btn.disabled = true;
+    // The input is the source of truth for the id — it's free text, so it is
+    // never mirrored into pcDraft on every keystroke. The agent validates the
+    // format and returns 400 with a message we surface in #pc-err.
+    pcDraft.promptpay_id = document.getElementById('pc-promptpay').value.trim();
     try {
         const r = await fetch('/config/payment', {
             method: 'PUT',

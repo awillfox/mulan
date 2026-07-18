@@ -7,12 +7,15 @@ import (
 	"image/color"
 	_ "image/png"
 	"log"
+	"math"
 	"net"
 	"strings"
 	"time"
 	"unicode"
 
 	"golang.org/x/text/encoding/charmap"
+
+	"mulan-agent/lib/promptpay"
 )
 
 const printerWidth = 42
@@ -214,7 +217,9 @@ func (pm Payment) label() string {
 // sponsor-covered THB (customer pays less but the shop is made whole), vat is
 // the inclusive VAT portion of the shop-received amount, and total is what the
 // customer actually pays.
-func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, subsidy, vat, vatPercent, total float64, pay Payment, member MemberInfo, wifiUsername string) error {
+// promptPayID, when non-empty and the order was paid by QR, adds a payable
+// PromptPay QR for total at the foot of the receipt.
+func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subtotal, discount, subsidy, vat, vatPercent, total float64, pay Payment, member MemberInfo, wifiUsername, promptPayID string) error {
 	conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial printer: %w", err)
@@ -347,6 +352,31 @@ func (p *Printer) PrintReceipt(storeName, footer string, items []OrderItem, subt
 		writeCenter("SSID: THCoffee_Guest")
 		writeRow("Username", wifiUsername)
 		writeCenter("(valid 2 hours)")
+	}
+
+	// PromptPay QR — only for QR-paid orders, and only when the terminal has a
+	// PromptPay id configured. The amount is embedded, so the customer scans
+	// and confirms without typing anything.
+	//
+	// A failure here is logged and skipped rather than aborting: the rest of
+	// the receipt is still a valid record of the sale, and returning an error
+	// would leave the cashier with no slip at all.
+	if pay.Method == "qr" && promptPayID != "" {
+		satang := int64(math.Round(total * 100))
+		if payload, err := promptpay.Payload(promptPayID, satang); err != nil {
+			log.Printf("promptpay qr skipped: %v", err)
+		} else {
+			divider()
+			writeCenter("Scan to pay with PromptPay")
+			writeln("")
+			write(cmdAlignCenter)
+			if err := printQR(conn, payload, 360); err != nil {
+				log.Printf("promptpay qr print failed: %v", err)
+			}
+			write(cmdAlignLeft)
+			writeln("")
+			writeCenter(fmt.Sprintf("%.2f THB", total))
+		}
 	}
 
 	// Footer — configurable in manager settings. Falls back to a default

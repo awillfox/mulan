@@ -185,7 +185,7 @@ func main() {
 	r.Post("/vfd/item", vfdItemHandler(ctrl))
 	r.Post("/vfd/payment", vfdPaymentHandler(ctrl))
 	r.Post("/cash-drawer/open", cashDrawerHandler())
-	r.Post("/checkout", checkoutHandler(rcptPrinter, apiBase))
+	r.Post("/checkout", checkoutHandler(rcptPrinter, apiBase, payConfigStore))
 	r.Get("/config/payment", getPaymentConfigHandler(payConfigStore))
 	r.Put("/config/payment", putPaymentConfigHandler(payConfigStore))
 	r.Post("/restart", restartHandler())
@@ -362,7 +362,7 @@ type checkoutEnvelope struct {
 	Error string           `json:"error,omitempty"`
 }
 
-func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
+func checkoutHandler(p *printer.Printer, apiBase string, payConfig *paymentConfigStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req checkoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -417,7 +417,19 @@ func checkoutHandler(p *printer.Printer, apiBase string) http.HandlerFunc {
 				Earned:  result.PointsEarned,
 				Balance: result.PointsBalance,
 			}
-			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.Subsidy, result.VAT, result.VATPercent, result.Total, pay, member, result.WifiUsername); err != nil {
+			// PromptPay id is read per checkout rather than cached at startup so
+			// a change in POS Settings takes effect on the next sale, with no
+			// agent restart. A read failure only costs the QR block, so the
+			// receipt still prints.
+			promptPayID := ""
+			if payConfig != nil {
+				if cfg, err := payConfig.load(); err != nil {
+					log.Printf("payment config load failed, receipt QR skipped: %v", err)
+				} else {
+					promptPayID = cfg.PromptPayID
+				}
+			}
+			if err := p.PrintReceipt(result.ShopName, result.ReceiptFooter, items, result.Subtotal, result.Discount, result.Subsidy, result.VAT, result.VATPercent, result.Total, pay, member, result.WifiUsername, promptPayID); err != nil {
 				log.Printf("receipt print error: %v", err)
 			}
 		}
