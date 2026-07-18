@@ -112,7 +112,9 @@ fi
 
 # ── 5. Start service + verify ─────────────────────────────────────────────
 step "Starting $SERVICE"
-ssh "$REMOTE" "C:\\Users\\Coffee\\mulan-agent\\nssm.exe start $SERVICE" > /dev/null
+# NSSM exits non-zero on SERVICE_START_PENDING, which is a normal start — the
+# real check is the status poll + /pos probe below, so don't let set -e abort here.
+ssh "$REMOTE" "C:\\Users\\Coffee\\mulan-agent\\nssm.exe start $SERVICE" > /dev/null 2>&1 || true
 
 # Give it 2s to bind the port, then poll status + health endpoint.
 sleep 2
