@@ -9,6 +9,21 @@ Go-based Point of Sale (POS) system. Two modules:
 ## Deployment
 The backend runs on tailnet host **`coffee-server`** (`coffee@100.86.43.70`) as **systemd service `mulan`** (system unit; `coffee` has passwordless `sudo` for it). `WorkingDirectory=/home/coffee/mulan`, `ExecStart=/home/coffee/mulan/mulan-linux-amd64` (static `CGO_ENABLED=0` linux/amd64 binary + `templates/` + `elements/` + `.env`; DB = local Postgres on that host). **There is no Go toolchain on the host** — cross-build elsewhere and copy the binary. Update: `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o mulan-linux-amd64.new .` → `scp` to `/home/coffee/mulan/mulan-linux-amd64.new` → `mv -f mulan-linux-amd64.new mulan-linux-amd64` (staged `.new` avoids ETXTBSY on the running binary) → `sudo systemctl restart mulan`. **A plain `systemctl restart` reruns the current binary — you must copy the new one in first.** The service takes ~4–5s to become ready (DB connect + settings load) before it serves HTTP, so wait/poll before verifying. The render frontend reaches it at `http://100.86.43.70:8085` over Tailscale (render env var `BACKEND_URL`). Verify a deploy landed: `curl -s http://127.0.0.1:8085/api/menus | grep -o '"sort_order":[0-9-]*'` (any recent schema field works). Keep a `.bak` of the old binary for quick rollback.
 
+### Agent deploy (Windows POS terminal)
+The **mulan-agent** runs on the Flytech box `coffee@100.115.144.52` (hostname
+`CoffeeStation`) as NSSM service **`MulanAgent`**, working dir
+`C:\Users\Coffee\mulan-agent`, logs in `mulan-agent\logs\stderr.log`. Deploy with
+**`mulan-agent/deploy.sh`** (`--templates` to also sync `templates/`, `--env` to
+overwrite the remote `.env`, `--tail` to follow logs). It cross-builds
+windows/amd64, stops the service (NSSM holds a file handle — `scp` fails
+otherwise), ships, restarts, then verifies `/pos` returns 200.
+
+`coffee` is a **member of Administrators**, so Windows sshd reads the key from
+`C:\ProgramData\ssh\administrators_authorized_keys` — **not** `~/.ssh/authorized_keys`
+(a key installed there is silently ignored). The file's ACL must be restricted to
+Administrators + SYSTEM or sshd rejects it. Verify key auth with
+`ssh -o BatchMode=yes coffee@100.115.144.52 hostname`.
+
 Claude will update CLAUDE.md a long the way
 
 ## Target Hardware
@@ -151,13 +166,41 @@ design (fine for the single Flytech POS). Not manager-gated — it's a display
 guardrail, not a policy: `/checkout` still accepts any `payment_method`.
 
 Agent endpoints (served by mulan-agent, same origin as `/pos`, **not** the main
-API): `GET /config/payment` → `{cash,card,qr,default}`; `PUT /config/payment`
-(same body) validates (≥1 channel enabled; `default` must be an enabled channel)
-→ 400 otherwise, atomic temp-file+rename write. The POS loads it in `init()`
+API): `GET /config/payment` → `{cash,card,qr,default,promptpay_id}`;
+`PUT /config/payment` (same body) validates (≥1 channel enabled; `default` must be
+an enabled channel; `promptpay_id` must be encodable or empty) → 400 otherwise,
+atomic temp-file+rename write. The POS loads it in `init()`
 (keeps all-enabled defaults if the fetch fails), hides disabled `.pay-tab`s, and
 opens the tender modal on `effectiveDefault()` (configured default if still
 enabled, else first enabled). `mulan-agent/paymentconfig.go` owns the store +
 handlers.
+
+## PromptPay QR on the receipt
+A **QR-paid** order prints a scannable PromptPay QR above the receipt footer with
+the order total already embedded, so the customer scans and confirms without
+typing an amount. Printed **after** checkout has been recorded — the slip is the
+payment prompt, so the order is marked paid before the transfer actually lands.
+
+- `mulan-agent/lib/promptpay/` — EMVCo TLV payload builder + CRC-16/CCITT-FALSE.
+  Accepts a 10-digit mobile (emitted as `0066`+number, sub-tag 01), 13-digit
+  national/tax id (02), or 15-digit e-wallet (03). Tag `01` (point of initiation)
+  is `12` (dynamic) when an amount is present, `11` when not. Amount is tag `54`
+  as a THB decimal string. Pinned by test against a real bank-issued QR
+  byte-for-byte.
+- `mulan-agent/lib/printer/qr.go` — renders it as a `GS v 0` raster, the same
+  command path as `printLogo`. Scales by **whole modules** (never resampling):
+  a fractional module boundary lands mid-dot on a thermal head and blurs the
+  finder patterns. Default target width 360 dots (`escpos.go`) — shrink if the
+  symbol overflows narrower paper.
+- Emitted only when `payment_method == "qr"` **and** `promptpay_id` is set.
+  Encode/print failure is logged and skipped so the receipt still prints.
+- The id lives in `pos-config.json` beside the payment channels (POS-local, per
+  terminal), edited at **POS → Settings → Payment channels → PromptPay ID**, and
+  is read **per checkout** so a change applies to the next sale with no agent
+  restart. Empty = no QR (also what a config file predating the field loads as).
+- Tests decode the bytes actually written to the printer: each `GS v 0` raster is
+  rebuilt into a PNG and scanned with `zbarimg`, asserting the decoded payload.
+  Requires `zbarimg` on PATH, else those tests skip.
 
 ## Settings (DB-backed)
 Single-row `settings` table (PK check `id = 1`). Seeded on first startup with defaults. Holds `shop_name`, `vat_percent` (double precision, 0 disables VAT), and `points_per_baht` (double precision, default 1 = 1 loyalty point per ฿1; 0 disables earning). `SettingsService` caches the row in memory and refreshes on update. Shop name is delivered to the agent via the `/api/orders/{code}/checkout` response (no STORE_NAME env var).
@@ -224,6 +267,8 @@ new binary, or drawer/audit queries error at runtime.
 - **`RequireRole(owner)`** (writes + owner data): all menu/category/option-group/option/member/cashier/settings **writes** (incl. `PUT …/option-groups`, `…/base-options`, `…/toggle`), discount writes, `GET /api/reports/*` (order history — owner-gated, deliberately NOT under the now-open `/dashboard`), and the cash-drawer denomination writes (`PUT /api/cash-drawer/denominations`, `POST /api/cash-drawer/denominations/adjust` — nested inside the open `/cash-drawer` mount but wrapped in `RequireDrawerWriteAuth`, which accepts an owner manager token **or** a manager-cashier PIN via `X-Cashier-Id`/`X-Cashier-Pin` so the POS kiosk can set the drawer too — see Cash Drawer Denominations).
 
 Adding a manager route: register it in the right group in `main.go` AND add its prefix to the proxy `ALLOW` in mulan-manager's `src/routes/api/[...path]/+server.ts`. **Never wrap a POS-shared read** (it breaks the POS) — verify with a no-token curl returning 200.
+
+**CORS: any new custom request header must be added to `AllowedHeaders` in `main.go`.** The POS browser calls the backend cross-origin (`API_BASE`), so a custom header (e.g. `X-Cashier-Id`/`X-Cashier-Pin` for drawer writes) triggers a preflight, and chi/cors omits `Access-Control-Allow-Headers` for anything unlisted — the browser then blocks the request before it is sent and the POS shows a misleading "Connection error." Plain GETs have no custom headers, so reads keep working and the breakage looks endpoint-specific. Verify: `curl -i -X OPTIONS <url> -H 'Origin: http://localhost:8090' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: <hdr>'` must echo the header back in `Access-Control-Allow-Headers`. Note `AllowedOrigins` is only `localhost`/`127.0.0.1` — driving the POS from another machine by IP fails every `/api/*` call.
 
 ## Project Structure
 - `main.go` — entry point: viper config, DB connection, chi router
