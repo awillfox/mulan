@@ -139,7 +139,11 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
 		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type"},
+		// X-Cashier-Id/X-Cashier-Pin are the POS drawer-write credentials
+		// (RequireDrawerWriteAuth). Custom headers force a preflight, and chi/cors
+		// omits Allow-Headers for anything not listed here, so the browser blocks
+		// the PUT before it ever leaves the page.
+		AllowedHeaders: []string{"Content-Type", "X-Cashier-Id", "X-Cashier-Pin", "Authorization"},
 	}))
 
 	// Legacy Go management pages (items, option-groups, discounts, members,
