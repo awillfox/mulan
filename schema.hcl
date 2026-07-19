@@ -80,6 +80,10 @@ table "orders" {
     null    = false
     default = sql("now()")
   }
+  column "paid_at" {
+    type = timestamptz
+    null = true
+  }
   column "held_at" {
     type = timestamptz
     null = true

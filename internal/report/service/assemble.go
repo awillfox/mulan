@@ -3,6 +3,8 @@ package service
 import (
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"mulan/internal/report/domain"
 )
 
@@ -13,6 +15,7 @@ type OrderRow struct {
 	Code         string
 	Status       string
 	CreatedAt    time.Time
+	PaidAt       pgtype.Timestamptz
 	MemberName   string
 	MemberPhone  string
 	PointsEarned int64
@@ -63,6 +66,7 @@ func assemble(orders []OrderRow, items []ItemRow, options []OptionRow, discounts
 			Code:         o.Code,
 			Status:       o.Status,
 			CreatedAt:    o.CreatedAt,
+			PaidAt:       o.PaidAt,
 			MemberName:   o.MemberName,
 			MemberPhone:  o.MemberPhone,
 			PointsEarned: o.PointsEarned,

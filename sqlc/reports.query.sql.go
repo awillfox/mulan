@@ -152,7 +152,7 @@ func (q *Queries) ListOrderItemsByOrderIDs(ctx context.Context, orderIds []int32
 }
 
 const listOrdersPage = `-- name: ListOrdersPage :many
-SELECT o.id, o.code, o.status, o.created_at, o.points_earned,
+SELECT o.id, o.code, o.status, o.created_at, o.paid_at, o.points_earned,
        COALESCE(m.name, '')  AS member_name,
        COALESCE(m.phone, '') AS member_phone
 FROM orders o
@@ -177,6 +177,7 @@ type ListOrdersPageRow struct {
 	Code         string             `db:"code" json:"code"`
 	Status       string             `db:"status" json:"status"`
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	PaidAt       pgtype.Timestamptz `db:"paid_at" json:"paid_at"`
 	PointsEarned int64              `db:"points_earned" json:"points_earned"`
 	MemberName   string             `db:"member_name" json:"member_name"`
 	MemberPhone  string             `db:"member_phone" json:"member_phone"`
@@ -202,6 +203,7 @@ func (q *Queries) ListOrdersPage(ctx context.Context, arg ListOrdersPageParams) 
 			&i.Code,
 			&i.Status,
 			&i.CreatedAt,
+			&i.PaidAt,
 			&i.PointsEarned,
 			&i.MemberName,
 			&i.MemberPhone,

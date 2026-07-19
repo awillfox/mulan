@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // OptionLine is a chosen option snapshotted on an order line. Price in THB.
 type OptionLine struct {
@@ -28,20 +32,21 @@ type DiscountLine struct {
 
 // Order is one row of the orders report. Money fields are THB.
 type Order struct {
-	Code         string         `json:"code"`
-	Status       string         `json:"status"`
-	CreatedAt    time.Time      `json:"created_at"`
-	MemberName   string         `json:"member_name"`
-	MemberPhone  string         `json:"member_phone"`
-	PointsEarned int64          `json:"points_earned"`
-	ItemCount    int            `json:"item_count"`
-	Qty          int64          `json:"qty"`
-	Gross        float64        `json:"gross"`
-	Discount     float64        `json:"discount"`
-	Subsidy      float64        `json:"subsidy"`
-	Net          float64        `json:"net"`
-	LineItems    []LineItem     `json:"line_items"`
-	Discounts    []DiscountLine `json:"discounts"`
+	Code         string             `json:"code"`
+	Status       string             `json:"status"`
+	CreatedAt    time.Time          `json:"created_at"`
+	PaidAt       pgtype.Timestamptz `json:"paid_at"`
+	MemberName   string             `json:"member_name"`
+	MemberPhone  string             `json:"member_phone"`
+	PointsEarned int64              `json:"points_earned"`
+	ItemCount    int                `json:"item_count"`
+	Qty          int64              `json:"qty"`
+	Gross        float64            `json:"gross"`
+	Discount     float64            `json:"discount"`
+	Subsidy      float64            `json:"subsidy"`
+	Net          float64            `json:"net"`
+	LineItems    []LineItem         `json:"line_items"`
+	Discounts    []DiscountLine     `json:"discounts"`
 }
 
 // Page is the paginated response body.

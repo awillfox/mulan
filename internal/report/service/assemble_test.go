@@ -3,12 +3,15 @@ package service
 import (
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestAssemble(t *testing.T) {
 	created := time.Date(2026, 6, 14, 15, 0, 0, 0, time.UTC)
+	paid := pgtype.Timestamptz{Time: created.Add(3 * time.Minute), Valid: true}
 	orders := []OrderRow{
-		{ID: 1, Code: "AAA", Status: "paid", CreatedAt: created, MemberName: "Cream", MemberPhone: "08", PointsEarned: 9},
+		{ID: 1, Code: "AAA", Status: "paid", CreatedAt: created, PaidAt: paid, MemberName: "Cream", MemberPhone: "08", PointsEarned: 9},
 		{ID: 2, Code: "BBB", Status: "open", CreatedAt: created, MemberName: "", MemberPhone: "", PointsEarned: 0},
 	}
 	items := []ItemRow{
@@ -31,6 +34,9 @@ func TestAssemble(t *testing.T) {
 	if a.Code != "AAA" {
 		t.Fatalf("want AAA first, got %s", a.Code)
 	}
+	if !a.PaidAt.Valid || !a.PaidAt.Time.Equal(paid.Time) {
+		t.Errorf("paid_at not carried through: %+v", a.PaidAt)
+	}
 	if a.Gross != 90.00 {
 		t.Errorf("gross: want 90, got %v", a.Gross)
 	}
@@ -47,6 +53,9 @@ func TestAssemble(t *testing.T) {
 		t.Errorf("line/options not assembled: %+v", a.LineItems)
 	}
 	b := got[1]
+	if b.PaidAt.Valid {
+		t.Errorf("open order should have null paid_at, got %+v", b.PaidAt)
+	}
 	if b.Gross != 100.00 || b.Discount != 0 || b.Net != 100.00 {
 		t.Errorf("open order: want gross 100/disc 0/net 100, got %v/%v/%v", b.Gross, b.Discount, b.Net)
 	}

@@ -79,6 +79,7 @@ CREATE TABLE "public"."orders" (
   "held_payload" jsonb NOT NULL DEFAULT '{}',
   "member_id" integer NULL,
   "points_earned" bigint NOT NULL DEFAULT 0,
+  "paid_at" timestamptz NULL,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_orders_member" FOREIGN KEY ("member_id") REFERENCES "public"."members" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
