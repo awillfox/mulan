@@ -15,6 +15,7 @@ VALUES ($1, $2, $3, $4);
 -- name: PayOrder :exec
 UPDATE orders
 SET status = 'paid',
+    paid_at = now(),
     member_id = sqlc.narg('member_id'),
     points_earned = sqlc.arg('points_earned')
 WHERE code = sqlc.arg('code');

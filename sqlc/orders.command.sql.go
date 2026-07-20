@@ -140,6 +140,7 @@ func (q *Queries) HoldOrder(ctx context.Context, arg HoldOrderParams) (HoldOrder
 const payOrder = `-- name: PayOrder :exec
 UPDATE orders
 SET status = 'paid',
+    paid_at = now(),
     member_id = $1,
     points_earned = $2
 WHERE code = $3

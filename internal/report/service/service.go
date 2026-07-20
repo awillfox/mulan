@@ -53,6 +53,7 @@ func (s *Service) ListOrders(ctx context.Context, p ListParams) (domain.Page, er
 			Code:         r.Code,
 			Status:       r.Status,
 			CreatedAt:    r.CreatedAt.Time,
+			PaidAt:       r.PaidAt,
 			MemberName:   r.MemberName,
 			MemberPhone:  r.MemberPhone,
 			PointsEarned: r.PointsEarned,

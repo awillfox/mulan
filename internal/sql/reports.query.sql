@@ -1,5 +1,5 @@
 -- name: ListOrdersPage :many
-SELECT o.id, o.code, o.status, o.created_at, o.points_earned,
+SELECT o.id, o.code, o.status, o.created_at, o.paid_at, o.points_earned,
        COALESCE(m.name, '')  AS member_name,
        COALESCE(m.phone, '') AS member_phone
 FROM orders o

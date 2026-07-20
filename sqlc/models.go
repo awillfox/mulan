@@ -141,6 +141,7 @@ type Order struct {
 	HeldPayload  []byte             `db:"held_payload" json:"held_payload"`
 	MemberID     pgtype.Int4        `db:"member_id" json:"member_id"`
 	PointsEarned int64              `db:"points_earned" json:"points_earned"`
+	PaidAt       pgtype.Timestamptz `db:"paid_at" json:"paid_at"`
 }
 
 type OrderDiscount struct {
