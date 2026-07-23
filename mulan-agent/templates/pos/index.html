@@ -1394,6 +1394,11 @@ async function loginNext() {
         loginIDDigits = '';
         loginPINDigits = '';
         loginStep = 'id';
+        // Auto-enter full screen. Login button click is the user gesture;
+        // the local login fetch is fast enough to stay inside the browser's
+        // transient-activation window. Rejection (slow fetch / blocked) is
+        // swallowed — cashier can still tap the full-screen button.
+        enterFullscreen();
     } catch (e) {
         document.getElementById('login-err').textContent = 'Connection error';
         btn.disabled = false;
@@ -2895,6 +2900,11 @@ function auditDrawerKick(reason, note) {
 function toggleFullscreen() {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen();
     else document.exitFullscreen();
+}
+function enterFullscreen() {
+    if (document.fullscreenElement) return;
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
 }
 function syncFullscreenLabels() {
     const inFs = !!document.fullscreenElement;
