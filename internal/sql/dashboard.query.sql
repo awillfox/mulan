@@ -1,4 +1,6 @@
 -- name: TopMenusBySales :many
+-- row_limit NULL means "no limit" (Postgres treats LIMIT NULL as unbounded):
+-- the dashboard's item-mix donut passes 10, the "All items" list passes NULL.
 SELECT oi.name,
        SUM(oi.qty)::bigint              AS qty_sold,
        SUM(oi.price * oi.qty)::bigint   AS revenue
@@ -9,7 +11,7 @@ WHERE o.status = 'paid'
   AND o.created_at < sqlc.arg('to_at')::timestamptz
 GROUP BY oi.name
 ORDER BY qty_sold DESC
-LIMIT 10;
+LIMIT sqlc.narg('row_limit')::bigint;
 
 -- name: SalesByDay :many
 SELECT date_trunc('day', o.created_at AT TIME ZONE sqlc.arg('tz')::text)::date AS day,

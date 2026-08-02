@@ -234,12 +234,13 @@ WHERE o.status = 'paid'
   AND o.created_at < $2::timestamptz
 GROUP BY oi.name
 ORDER BY qty_sold DESC
-LIMIT 10
+LIMIT $3::bigint
 `
 
 type TopMenusBySalesParams struct {
-	FromAt pgtype.Timestamptz `db:"from_at" json:"from_at"`
-	ToAt   pgtype.Timestamptz `db:"to_at" json:"to_at"`
+	FromAt   pgtype.Timestamptz `db:"from_at" json:"from_at"`
+	ToAt     pgtype.Timestamptz `db:"to_at" json:"to_at"`
+	RowLimit pgtype.Int8        `db:"row_limit" json:"row_limit"`
 }
 
 type TopMenusBySalesRow struct {
@@ -248,8 +249,10 @@ type TopMenusBySalesRow struct {
 	Revenue int64  `db:"revenue" json:"revenue"`
 }
 
+// row_limit NULL means "no limit" (Postgres treats LIMIT NULL as unbounded):
+// the dashboard's item-mix donut passes 10, the "All items" list passes NULL.
 func (q *Queries) TopMenusBySales(ctx context.Context, arg TopMenusBySalesParams) ([]TopMenusBySalesRow, error) {
-	rows, err := q.db.Query(ctx, topMenusBySales, arg.FromAt, arg.ToAt)
+	rows, err := q.db.Query(ctx, topMenusBySales, arg.FromAt, arg.ToAt, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
