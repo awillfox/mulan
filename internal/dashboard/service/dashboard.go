@@ -174,13 +174,17 @@ func (s *DashboardService) Compare(ctx context.Context, from, to time.Time) (*Co
 	return &CompareResult{Current: current, Previous: previous}, nil
 }
 
-func (s *DashboardService) TopMenus(ctx context.Context, from, to time.Time) ([]TopMenuItem, error) {
+// menuSales aggregates paid order items by name over [from, to), newest
+// sales included, ordered by quantity descending. A rowLimit that is not
+// Valid means SQL NULL, which Postgres reads as "no limit".
+func (s *DashboardService) menuSales(ctx context.Context, from, to time.Time, rowLimit pgtype.Int8) ([]TopMenuItem, error) {
 	rows, err := s.q.TopMenusBySales(ctx, sqlc.TopMenusBySalesParams{
-		FromAt: pgtype.Timestamptz{Time: from, Valid: true},
-		ToAt:   pgtype.Timestamptz{Time: to, Valid: true},
+		FromAt:   pgtype.Timestamptz{Time: from, Valid: true},
+		ToAt:     pgtype.Timestamptz{Time: to, Valid: true},
+		RowLimit: rowLimit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("top menus: %w", err)
+		return nil, fmt.Errorf("menu sales: %w", err)
 	}
 	out := make([]TopMenuItem, len(rows))
 	for i, r := range rows {
@@ -191,6 +195,21 @@ func (s *DashboardService) TopMenus(ctx context.Context, from, to time.Time) ([]
 		}
 	}
 	return out, nil
+}
+
+// topMenusLimit is how many items the dashboard's item-mix donut shows.
+// More slices than this stops being readable on a phone.
+const topMenusLimit = 10
+
+// TopMenus backs the dashboard's item-mix donut.
+func (s *DashboardService) TopMenus(ctx context.Context, from, to time.Time) ([]TopMenuItem, error) {
+	return s.menuSales(ctx, from, to, pgtype.Int8{Int64: topMenusLimit, Valid: true})
+}
+
+// MenuItems backs the dashboard's "All items" list: every item sold in the
+// window, no cap.
+func (s *DashboardService) MenuItems(ctx context.Context, from, to time.Time) ([]TopMenuItem, error) {
+	return s.menuSales(ctx, from, to, pgtype.Int8{})
 }
 
 type SubsidyProgram struct {
