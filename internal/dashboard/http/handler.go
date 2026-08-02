@@ -15,8 +15,9 @@ import (
 // maxRangeDays caps how wide a from..to window the dashboard accepts.
 // Wider ranges aggregate over the full order_items table and can produce
 // hundreds of rows; clamp at the handler so a misbehaving client can't
-// pull "all-time" by accident.
-const maxRangeDays = 92
+// pull "all-time" by accident. One year + a leap day, so the manager's
+// custom date picker can cover a full year.
+const maxRangeDays = 366
 
 // shopLocation is the IANA zone used for "today" defaults and as the
 // bucket timezone in dashboard SQL. Kept consistent with dashboard.shopTZ.
