@@ -18,6 +18,8 @@ import (
 // hundreds of rows; clamp at the handler so a misbehaving client can't
 // pull "all-time" by accident. One year + a leap day, so the manager's
 // custom date picker can cover a full year.
+// Mirrored in ../mulan-manager/src/lib/dashboard/range.ts as MAX_RANGE_DAYS
+// — keep both in sync.
 const maxRangeDays = 366
 
 // shopLocation is the IANA zone used for "today" defaults and as the
