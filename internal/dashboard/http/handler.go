@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -42,6 +43,7 @@ func NewHandler(svc *service.DashboardService) *Handler {
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/", h.Summary)
 	r.Get("/top-menus", h.TopMenus)
+	r.Get("/menu-items", h.MenuItems)
 	r.Get("/sales-by-day", h.SalesByDay)
 	r.Get("/heatmap", h.Heatmap)
 	r.Get("/compare", h.Compare)
@@ -127,18 +129,37 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, out)
 }
 
-func (h *Handler) TopMenus(w http.ResponseWriter, r *http.Request) {
+// menuList serves an aggregated menu-sales list: parse the window, call
+// load, envelope the result. Shared by TopMenus and MenuItems, which
+// differ only in whether the list is capped.
+func (h *Handler) menuList(
+	w http.ResponseWriter,
+	r *http.Request,
+	load func(context.Context, time.Time, time.Time) ([]service.TopMenuItem, error),
+	failMsg string,
+) {
 	from, to, err := rangeFromQuery(r)
 	if err != nil {
 		response.Error(w, r, http.StatusBadRequest, err.Error(), err)
 		return
 	}
-	items, err := h.svc.TopMenus(r.Context(), from, to)
+	items, err := load(r.Context(), from, to)
 	if err != nil {
-		response.Error(w, r, http.StatusInternalServerError, "failed to load top menus", err)
+		response.Error(w, r, http.StatusInternalServerError, failMsg, err)
 		return
 	}
 	response.OK(w, r, items)
+}
+
+// TopMenus returns the capped list behind the dashboard's item-mix donut.
+func (h *Handler) TopMenus(w http.ResponseWriter, r *http.Request) {
+	h.menuList(w, r, h.svc.TopMenus, "failed to load top menus")
+}
+
+// MenuItems returns every item sold in the window, behind the dashboard's
+// "All items" list.
+func (h *Handler) MenuItems(w http.ResponseWriter, r *http.Request) {
+	h.menuList(w, r, h.svc.MenuItems, "failed to load menu items")
 }
 
 func (h *Handler) Subsidies(w http.ResponseWriter, r *http.Request) {
